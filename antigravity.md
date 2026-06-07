@@ -25,12 +25,12 @@ This file contains crucial instructions, project overview, and development logs 
 
 ### `main.swift`
 - **AppState**: Holds the application state, grid configuration, custom style options, and active process reference.
-- **FontPanelBridge**: Bridges macOS standard `NSFontPanel` with SwiftUI to let users select any installed system font.
-- **NSImage Extension**: `pixelSize` and `aspectRatio` calculated directly from `representations.first` to avoid Retina/DPI scaling issues.
-- **Segmented Picker Icon Hack**: Icons inside macOS segmented pickers are rendered using inline string interpolation `Text("\(Image(systemName: ...)) Title")`.
+- **FontPanelBridge**: Bridges macOS standard `NSFontPanel` with SwiftUI to let users select any installed system font, resolving the selected font to its physical `.ttf`/`.ttc` file path.
+- **NSImage Extension**: Defines `pixelSize` and `aspectRatio` calculated directly from `representations.first` to avoid Retina/DPI scaling issues during preview rendering.
+- **Segmented Picker Icon-Only Style**: Renders clean SF Symbols in the Segmented Picker tabs with tooltips, bypassing macOS SwiftUI segmented cell limitations.
 
 ### `build.sh`
-- Compilation script that cleans the build folder, resizes the `AppIcon.png` into standard icns resolutions using `sips`, compiles `main.swift`, injects custom `Info.plist` (with NSHumanReadableCopyright metadata), and launches the app.
+- Compilation script that cleans the build folder, resizes the `AppIcon.png` into standard icns resolutions using `sips`, compiles `main.swift`, injects custom `Info.plist` (with NSHumanReadableCopyright metadata and version `0.2.0`), and launches the app.
 - Automatically terminates (`killall`) any running instances of `FrameSheet` before building to prevent old cached processes from overriding the launch.
 
 ---
@@ -38,5 +38,6 @@ This file contains crucial instructions, project overview, and development logs 
 ## Dev Logs & Known Behaviors
 
 - **Monaco Tofu Text Issue (Resolved)**: Monaco was initially chosen as default but caused tofu (□) characters on Japanese titles/paths. Fixed by switching default font to `Hiragino Sans W3` (`/System/Library/Fonts/ヒラギノ角ゴシック W3.ttc`).
-- **NFD/NFC String normalization (Resolved)**: Highlighting Unicode NFD vs NFC mismatches when checking if a Japanese font path exists via `FileManager.fileExists`.
-- **Double Scrollbar on Fit (Resolved)**: Solved by subtracting 160px vertical margin (accounting for card + footer views) and basing computation on pixel-based `NSImage.aspectRatio`.
+- **NFD/NFC Path Normalization (Resolved)**: Standardized CLI command paths (vcsi, video file, output, and font) to precomposed Unicode (NFC) using `precomposedStringWithCanonicalMapping` to prevent file-not-found errors caused by native macOS NFD filesystem encoding.
+- **Fit Screen Layout & Dynamic Padding (Resolved)**: Extracted raw pixel dimensions via `representations.first` (`aspectRatio`) to resolve scale calculation errors on Retina displays. Improved the calculation by dynamically calculating top/bottom UI offsets to eliminate excessive vertical whitespace.
+- **Version Release (v0.2.0)**: Initialized Git version control inside the project directory and bumped version metadata to `0.2.0` (build 2).

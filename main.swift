@@ -343,11 +343,15 @@ class AppState: ObservableObject {
         default: vcsiPosition = "se"
         }
         
+        let nfcVcsiPath = vcsiPath.precomposedStringWithCanonicalMapping
+        let nfcVideoPath = video.path.precomposedStringWithCanonicalMapping
+        let nfcOutputPath = outputPath.precomposedStringWithCanonicalMapping
+        
         // Construct arguments
         var args = [
-            "\"\(vcsiPath)\"",
-            "\"\(video.path)\"",
-            "-o \"\(outputPath)\"",
+            "\"\(nfcVcsiPath)\"",
+            "\"\(nfcVideoPath)\"",
+            "-o \"\(nfcOutputPath)\"",
             "-g \(columns)x\(rows)",
             "-w \(imageWidth)",
             "--grid-spacing \(gridSpacing)",
@@ -381,8 +385,9 @@ class AppState: ObservableObject {
             break
         }
         if !fontPath.isEmpty && FileManager.default.fileExists(atPath: fontPath) {
-            args.append("--timestamp-font \"\(fontPath)\"")
-            args.append("--metadata-font \"\(fontPath)\"")
+            let nfcFontPath = fontPath.precomposedStringWithCanonicalMapping
+            args.append("--timestamp-font \"\(nfcFontPath)\"")
+            args.append("--metadata-font \"\(nfcFontPath)\"")
         }
         
         // Metadata header visibility
@@ -457,7 +462,17 @@ class AppState: ObservableObject {
     func fitToScreen() {
         guard let img = previewImage else { return }
         let containerW = containerWidth - 55 // Margin to avoid scrollbar
-        let containerH = containerHeight - 160 // Safe padding for header card + footer bar + margin
+        
+        // Calculate vertical offset dynamically depending on visible UI elements
+        var offsetH: CGFloat = 30 // Base padding (top/bottom)
+        if selectedVideo != nil {
+            offsetH += 45 // Video info card height
+        }
+        if previewImage != nil && !isGenerating {
+            offsetH += 45 // Copy/Save action bar height
+        }
+        
+        let containerH = containerHeight - offsetH
         let imgW = CGFloat(imageWidth)
         let imgH = imgW * img.aspectRatio
         
@@ -735,11 +750,17 @@ struct SidebarView: View {
         VStack(spacing: 0) {
             // Segmented Picker for Tab Selectors
             Picker("", selection: $state.activeTab) {
-                Image(systemName: "square.grid.3x3").tag("layout")
+                Image(systemName: "square.grid.3x3")
+                    .font(.system(size: 13, weight: .medium))
+                    .tag("layout")
                     .help("Layout Settings")
-                Image(systemName: "paintbrush").tag("style")
+                Image(systemName: "paintbrush")
+                    .font(.system(size: 13, weight: .medium))
+                    .tag("style")
                     .help("Style Settings")
-                Image(systemName: "clock").tag("frames")
+                Image(systemName: "clock")
+                    .font(.system(size: 13, weight: .medium))
+                    .tag("frames")
                     .help("Frame Settings")
             }
             .pickerStyle(.segmented)
@@ -944,7 +965,7 @@ struct StyleTab: View {
                         state.autoGenerateIfNeeded()
                     }
                 )) {
-                    Text("Monaco (Default)").tag("Monaco")
+                    Text("Hiragino Sans (Default)").tag("Hiragino Sans")
                     Text("Helvetica").tag("Helvetica")
                     Text("Times New Roman").tag("Times")
                     Text("Custom...").tag("Custom")

@@ -4,7 +4,7 @@ This log details the features, design changes, and bug fixes implemented during 
 
 ---
 
-## [1.0.0] - 2026-06-08
+## [0.2.0] - 2026-06-08
 
 ### Added
 - **App Renaming**: Rebranded the app from "MoviePrint SwiftUI Wrapper" to **FrameSheet**.
@@ -22,6 +22,9 @@ This log details the features, design changes, and bug fixes implemented during 
 
 ### Fixed
 - **Japanese Path & Normalization Bug**: Solved an issue where Hiragino Sans would not load due to Unicode NFD/NFC path mismatches in `FileManager.default.fileExists`. The app now normalizes path strings to check both decomposed and precomposed forms.
+- **NFC Path Normalization for Command Invocation**: Standardized all CLI argument paths (vcsi, video file, font, and output) to precomposed Unicode (NFC) form to resolve native NFD path bugs on macOS.
+- **Font Fallback Picker Bug**: Corrected a layout selection bug in `StyleTab` where Monaco remained active instead of Hiragino Sans due to a mismatch between `AppState` properties and `Picker` tag bindings.
 - **Fit Screen Scale Calculation**: Fixed a bug where Retina/High-DPI displays caused `NSImage.size` to return points instead of pixels, throwing off aspect ratios. We now extract raw pixel dimensions using `representations.first` (`NSImage.aspectRatio`) to compute accurate fit dimensions.
-- **Scrollbar Duplication**: Fixed a layout bug where the vertical scrollbar triggered an unnecessary horizontal scrollbar. Increased the width padding to 55px and factored in top card and bottom action bar heights (160px) in `fitToScreen()`.
+- **Scrollbar Duplication & Vertical Offsets**: Fixed a layout bug where the vertical scrollbar triggered an unnecessary horizontal scrollbar. Increased the width padding to 55px and dynamically calculated vertical UI card offsets to eliminate excessive padding.
+- **Segmented Picker Icon Size**: Increased Segmented Picker tab icons to 13pt to improve usability.
 - **Cached Process Overlay**: Added a pre-build `killall` command in `build.sh` to ensure macOS terminates running instances and launches the newly compiled binary.
