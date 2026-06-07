@@ -1,0 +1,80 @@
+#!/bin/bash
+# MoviePrint SwiftUI Wrapper Build Script
+set -e
+
+APP_NAME="FrameSheet"
+SCRATCH_DIR="/Users/kni/.gemini/antigravity/scratch/MoviePrintWrapper"
+BUILD_DIR="$SCRATCH_DIR/build"
+APP_DIR="$BUILD_DIR/$APP_NAME.app"
+
+echo "=== Step 1: Cleaning previous build ==="
+# Kill any running instances to ensure the new binary runs on next launch
+killall "$APP_NAME" 2>/dev/null || true
+rm -rf "$BUILD_DIR"
+mkdir -p "$APP_DIR/Contents/MacOS"
+mkdir -p "$APP_DIR/Contents/Resources"
+
+echo "=== Step 2: Creating app icon from AppIcon.png ==="
+ICON_PNG="$SCRATCH_DIR/AppIcon.png"
+ICONSET_DIR="$BUILD_DIR/icon.iconset"
+
+if [ -f "$ICON_PNG" ]; then
+    mkdir -p "$ICONSET_DIR"
+    
+    # Resize PNG for standard icon sizes
+    sips -s format png -z 16 16     "$ICON_PNG" --out "$ICONSET_DIR/icon_16x16.png"
+    sips -s format png -z 32 32     "$ICON_PNG" --out "$ICONSET_DIR/icon_16x16@2x.png"
+    sips -s format png -z 32 32     "$ICON_PNG" --out "$ICONSET_DIR/icon_32x32.png"
+    sips -s format png -z 64 64     "$ICON_PNG" --out "$ICONSET_DIR/icon_32x32@2x.png"
+    sips -s format png -z 128 128   "$ICON_PNG" --out "$ICONSET_DIR/icon_128x128.png"
+    sips -s format png -z 256 256   "$ICON_PNG" --out "$ICONSET_DIR/icon_128x128@2x.png"
+    sips -s format png -z 256 256   "$ICON_PNG" --out "$ICONSET_DIR/icon_256x256.png"
+    sips -s format png -z 512 512   "$ICON_PNG" --out "$ICONSET_DIR/icon_256x256@2x.png"
+    sips -s format png -z 512 512   "$ICON_PNG" --out "$ICONSET_DIR/icon_512x512.png"
+    sips -s format png -z 1024 1024 "$ICON_PNG" --out "$ICONSET_DIR/icon_512x512@2x.png"
+    
+    # Compile iconset to .icns file
+    iconutil -c icns "$ICONSET_DIR" -o "$APP_DIR/Contents/Resources/$APP_NAME.icns"
+    rm -rf "$ICONSET_DIR"
+    echo "App icon generated successfully."
+else
+    echo "WARNING: AppIcon.png not found. Continuing without icon."
+fi
+
+echo "=== Step 3: Compiling Swift Code ==="
+swiftc -sdk $(xcrun --show-sdk-path) -parse-as-library \
+  "$SCRATCH_DIR/main.swift" \
+  -o "$APP_DIR/Contents/MacOS/$APP_NAME"
+
+echo "=== Step 4: Creating Info.plist ==="
+cat <<EOF > "$APP_DIR/Contents/Info.plist"
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleExecutable</key>
+    <string>$APP_NAME</string>
+    <key>CFBundleIconFile</key>
+    <string>$APP_NAME.icns</string>
+    <key>CFBundleIdentifier</key>
+    <string>com.gemini.$APP_NAME</string>
+    <key>CFBundleName</key>
+    <string>$APP_NAME</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleShortVersionString</key>
+    <string>1.0</string>
+    <key>CFBundleVersion</key>
+    <string>1</string>
+    <key>LSMinimumSystemVersion</key>
+    <string>11.0</string>
+    <key>NSHighResolutionCapable</key>
+    <true/>
+    <key>NSHumanReadableCopyright</key>
+    <string>Copyright © 2026 kni. All rights reserved.</string>
+</dict>
+</plist>
+EOF
+
+echo "=== Build Complete! ==="
+echo "Application packaged at: $APP_DIR"
