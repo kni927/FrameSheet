@@ -4,6 +4,22 @@ This log details the features, design changes, and bug fixes implemented during 
 
 ---
 
+## [0.2.1] - 2026-06-08
+
+### Added
+- **Dakuten Rendering Fix**: Applied an internal patch to the dependency `vcsi.py` to normalize rendered text metadata into NFC format using `unicodedata.normalize('NFC', ...)`. This fixes diacritic separation (e.g. 「が」 rendered as 「か」 + 「゛」) on macOS when video file names contain Japanese characters.
+- **Linked Image Dimension Sliders**: Replaced static height preview with dual-linked `Image Width` and `Image Height` sliders. Changing one slider automatically calculates and updates the other based on the video's aspect ratio.
+- **Smart Toggle Generate Button**: Unified the Generate and Cancel buttons into a single button. The label changes to "Generate" or "Cancel" (in warning red) depending on execution state, resolving label truncating.
+- **Custom Tab Buttons (22pt Icons)**: Bypassed macOS native segmented picker icon restrictions by implementing a custom button-based tab selector. Enlarged the sidebar icons from `13pt` to `22pt` for enhanced visibility and touch presence.
+- **Custom Movie Info Header**: Added `Customize Header Text` options in Style tab. It supports custom templates using Jinja2 variables (e.g. `{{filename}}`, `{{size}}`, `{{duration}}`) that dynamically resolve and generate metadata layout via `vcsi`. It also updates image height prediction dynamically based on custom template line breaks.
+- **Relocated Custom Timestamps**: Moved the manual custom timestamps editor from the Frames tab to the Style tab, nesting it directly under the "Show Timestamp overlays" option as "Customize Timestamps" to group all diacritic/text layouts together.
+
+### Changed
+- **Sleeker Layout Fitting**: Adjusted the auto-zoom algorithm (`fitToScreen`) in `main.swift` by taking the `Image` view's `padding(20)` (adds 40px width & height) and an extra safety margin of 20px into account. This eliminates the slight vertical scrollbar when scaling to fit the screen.
+- **Unified Zoom Control Sizing**: Enlarged `minus`/`plus` button icons and the zoom percent label inside `TopBarView` to visually align with `100%` and `Fit` buttons.
+
+---
+
 ## [0.2.0] - 2026-06-08
 
 ### Added

@@ -19,3 +19,11 @@ Thumbs.db
 *.swp
 *~
 .tmp/
+
+# Test files
+test_video.mp4
+test_output.png
+
+# PyInstaller & Build assets
+build_assets/
+*.spec

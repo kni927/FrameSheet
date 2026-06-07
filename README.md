@@ -1,6 +1,8 @@
 # FrameSheet
 
-FrameSheet is a modern, premium, and lightweight macOS native wrappers for `vcsi`. It allows users to quickly generate highly customizable video contact sheets (MoviePrints) with a beautiful SwiftUI-based graphical interface.
+![FrameSheet UI Preview](docs/preview.png)
+
+FrameSheet is a macOS native wrapper for vcsi. It generates customizable video contact sheets like MoviePrints.
 
 ## Features
 
@@ -13,10 +15,16 @@ FrameSheet is a modern, premium, and lightweight macOS native wrappers for `vcsi
 
 ## Prerequisites
 
-FrameSheet requires `vcsi` and `ffmpeg` to be installed on your system.
-The app automatically checks for these binaries on launch:
-- `vcsi` (via Pip or system packages)
-- `ffmpeg`/`ffprobe`
+FrameSheet bundles its own standalone executable of `vcsi` (compiled statically inside the App Bundle).
+However, it requires **FFmpeg** to be installed on your system.
+The app automatically checks for this binary on launch:
+- `ffmpeg` / `ffprobe` (Must be available in system PATH or standard directories)
+
+### Installing FFmpeg
+You can install FFmpeg easily via [Homebrew](https://brew.sh):
+```bash
+brew install ffmpeg
+```
 
 ## Building
 
@@ -28,7 +36,7 @@ The packaged application will be generated at `./build/FrameSheet.app`.
 
 ## Author
 
-Created and maintained by **kni** (2026).
+Created and maintained by **kni**.
 
 ## License
 

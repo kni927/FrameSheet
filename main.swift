@@ -74,6 +74,13 @@ class AppState: ObservableObject {
     // Style Options
     @Published var showTimestamps: Bool = true
     @Published var showHeader: Bool = true
+    @Published var useCustomHeaderTemplate: Bool = false
+    @Published var customHeaderTemplate: String = """
+{{filename}}
+File size: {{size}}
+Duration: {{duration}}
+Dimensions: {{sample_width}}x{{sample_height}}
+"""
     @Published var backgroundColor: Color = .black
     @Published var textColor: Color = .white
     
@@ -154,6 +161,15 @@ class AppState: ObservableObject {
     }
     
     private func findCommandPath(_ cmd: String) -> String {
+        // For vcsi, check App Bundle resources first to use the bundled standalone version
+        if cmd == "vcsi" {
+            if let bundlePath = Bundle.main.path(forResource: "vcsi", ofType: nil, inDirectory: "bin") {
+                if FileManager.default.isExecutableFile(atPath: bundlePath) {
+                    return bundlePath
+                }
+            }
+        }
+        
         // Search in common PATHs first to override shell environment limits
         let searchPaths = [
             "/Users/kni/miniforge3/bin",
@@ -390,9 +406,25 @@ class AppState: ObservableObject {
             args.append("--metadata-font \"\(nfcFontPath)\"")
         }
         
-        // Metadata header visibility
+        // Metadata header visibility / custom template
+        var tempTemplatePath: String? = nil
         if showHeader {
             args.append("--metadata-position top")
+            
+            if useCustomHeaderTemplate && !customHeaderTemplate.isEmpty {
+                let tempDir = NSTemporaryDirectory()
+                let templateFilename = "header_template_\(Int(Date().timeIntervalSince1970)).txt"
+                let templatePath = (tempDir as NSString).appendingPathComponent(templateFilename)
+                
+                do {
+                    try customHeaderTemplate.write(toFile: templatePath, atomically: true, encoding: .utf8)
+                    tempTemplatePath = templatePath
+                    let nfcTemplatePath = templatePath.precomposedStringWithCanonicalMapping
+                    args.append("--template \"\(nfcTemplatePath)\"")
+                } catch {
+                    self.consoleOutput += "\n>>> Warning: Failed to write custom header template to temp file: \(error.localizedDescription)\n"
+                }
+            }
         } else {
             args.append("--metadata-position hidden")
         }
@@ -429,6 +461,12 @@ class AppState: ObservableObject {
             self.consoleOutput += err
         }, completion: { status in
             self.isGenerating = false
+            
+            // Clean up temp template file if created
+            if let path = tempTemplatePath {
+                try? FileManager.default.removeItem(atPath: path)
+            }
+            
             if status == 0 {
                 self.consoleOutput += "\n>>> Contact sheet generated successfully!\n"
                 
@@ -461,10 +499,13 @@ class AppState: ObservableObject {
     // Fit zoom scale to container size (both width and height) to fit screen
     func fitToScreen() {
         guard let img = previewImage else { return }
-        let containerW = containerWidth - 55 // Margin to avoid scrollbar
+        
+        // Image has padding(20) in CanvasView, which adds 40px to both width and height.
+        // Also add a safety margin of 20px to avoid scrollbars triggering due to rounding or minor layouts.
+        let containerW = containerWidth - 60
         
         // Calculate vertical offset dynamically depending on visible UI elements
-        var offsetH: CGFloat = 30 // Base padding (top/bottom)
+        var offsetH: CGFloat = 30 + 40 + 20 // Base padding + Image padding(40) + Safety margin(20)
         if selectedVideo != nil {
             offsetH += 45 // Video info card height
         }
@@ -575,7 +616,13 @@ class AppState: ObservableObject {
         let savePanel = NSSavePanel()
         savePanel.allowedContentTypes = [.png, .jpeg]
         savePanel.canCreateDirectories = true
-        savePanel.nameFieldStringValue = URL(fileURLWithPath: tempPath).lastPathComponent
+        
+        if let video = selectedVideo {
+            let originalName = video.url.deletingPathExtension().lastPathComponent
+            savePanel.nameFieldStringValue = "\(originalName)_sheet.png"
+        } else {
+            savePanel.nameFieldStringValue = "framesheet.png"
+        }
         
         savePanel.begin { response in
             if response == .OK, let targetURL = savePanel.url {
@@ -589,6 +636,119 @@ class AppState: ObservableObject {
                     self.errorMessage = "Failed to save file: \(error.localizedDescription)"
                 }
             }
+        }
+    }
+    
+    // Calculated height of the generated contact sheet image
+    var estimatedHeight: Int {
+        guard let video = selectedVideo, video.width > 0, video.height > 0 else { return 0 }
+        
+        let colCount = CGFloat(columns)
+        let rowCount = CGFloat(rows)
+        let totalWidth = CGFloat(imageWidth)
+        let spacing = CGFloat(gridSpacing)
+        
+        let desiredFrameWidth = (totalWidth - (colCount - 1) * spacing) / colCount
+        let aspectRatio = CGFloat(video.height) / CGFloat(video.width)
+        let desiredFrameHeight = desiredFrameWidth * aspectRatio
+        
+        let gridHeight = rowCount * (desiredFrameHeight + spacing) - spacing
+        
+        var headerHeight: CGFloat = 0
+        if showHeader {
+            let lineSpacingCoefficient: CGFloat = 1.2
+            let fontSize: CGFloat = 16
+            let margin: CGFloat = 10
+            let headerLineHeight = CGFloat(Int(fontSize * lineSpacingCoefficient))
+            
+            var estimatedLines: CGFloat = 4
+            if useCustomHeaderTemplate && !customHeaderTemplate.isEmpty {
+                let lines = customHeaderTemplate.components(separatedBy: .newlines)
+                estimatedLines = CGFloat(max(1, lines.filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }.count))
+            }
+            
+            headerHeight = 2 * margin + estimatedLines * headerLineHeight
+        }
+        
+        return Int(gridHeight + headerHeight)
+    }
+    
+    // Min and Max height bounds for the height slider
+    var minHeight: Double {
+        calculateHeightForWidth(600)
+    }
+    
+    var maxHeight: Double {
+        calculateHeightForWidth(3200)
+    }
+    
+    private func calculateHeightForWidth(_ w: Int) -> Double {
+        guard let video = selectedVideo, video.width > 0, video.height > 0 else { return 800 }
+        
+        let colCount = CGFloat(columns)
+        let rowCount = CGFloat(rows)
+        let totalWidth = CGFloat(w)
+        let spacing = CGFloat(gridSpacing)
+        
+        let desiredFrameWidth = (totalWidth - (colCount - 1) * spacing) / colCount
+        let aspectRatio = CGFloat(video.height) / CGFloat(video.width)
+        let desiredFrameHeight = desiredFrameWidth * aspectRatio
+        
+        let gridHeight = rowCount * (desiredFrameHeight + spacing) - spacing
+        
+        var headerHeight: CGFloat = 0
+        if showHeader {
+            let lineSpacingCoefficient: CGFloat = 1.2
+            let fontSize: CGFloat = 16
+            let margin: CGFloat = 10
+            let headerLineHeight = CGFloat(Int(fontSize * lineSpacingCoefficient))
+            
+            var estimatedLines: CGFloat = 4
+            if useCustomHeaderTemplate && !customHeaderTemplate.isEmpty {
+                let lines = customHeaderTemplate.components(separatedBy: .newlines)
+                estimatedLines = CGFloat(max(1, lines.filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }.count))
+            }
+            
+            headerHeight = 2 * margin + estimatedLines * headerLineHeight
+        }
+        
+        return Double(gridHeight + headerHeight)
+    }
+    
+    // Reverse calculates and updates imageWidth from a target totalHeight
+    func updateWidthFromHeight(_ targetHeight: Int) {
+        guard let video = selectedVideo, video.width > 0, video.height > 0 else { return }
+        
+        let colCount = CGFloat(columns)
+        let rowCount = CGFloat(rows)
+        let spacing = CGFloat(gridSpacing)
+        let aspectRatio = CGFloat(video.height) / CGFloat(video.width)
+        
+        var headerHeight: CGFloat = 0
+        if showHeader {
+            let lineSpacingCoefficient: CGFloat = 1.2
+            let fontSize: CGFloat = 16
+            let margin: CGFloat = 10
+            let headerLineHeight = CGFloat(Int(fontSize * lineSpacingCoefficient))
+            
+            var estimatedLines: CGFloat = 4
+            if useCustomHeaderTemplate && !customHeaderTemplate.isEmpty {
+                let lines = customHeaderTemplate.components(separatedBy: .newlines)
+                estimatedLines = CGFloat(max(1, lines.filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }.count))
+            }
+            
+            headerHeight = 2 * margin + estimatedLines * headerLineHeight
+        }
+        
+        let targetGridHeight = CGFloat(targetHeight) - headerHeight
+        let h_f = (targetGridHeight + spacing) / rowCount - spacing
+        let w_f = h_f / aspectRatio
+        let targetWidth = colCount * w_f + (colCount - 1) * spacing
+        
+        let finalWidth = max(600, min(3200, Int(round(targetWidth))))
+        
+        if self.imageWidth != finalWidth {
+            self.imageWidth = finalWidth
         }
     }
 }
@@ -691,19 +851,21 @@ struct TopBarView: View {
                 HStack(spacing: 6) {
                     Button(action: { state.zoomScale = max(0.1, state.zoomScale - 0.1) }) {
                         Image(systemName: "minus")
-                            .font(.system(size: 8, weight: .bold))
+                            .font(.system(size: 10, weight: .bold))
+                            .frame(width: 14, height: 14)
                     }
                     .buttonStyle(.bordered)
                     .controlSize(.small)
                     
                     Text("\(Int(state.zoomScale * 100))%")
-                        .font(.system(size: 9, weight: .bold, design: .monospaced))
-                        .frame(width: 38)
+                        .font(.system(size: 11, weight: .bold, design: .monospaced))
+                        .frame(width: 42)
                         .multilineTextAlignment(.center)
                     
                     Button(action: { state.zoomScale = min(3.0, state.zoomScale + 0.1) }) {
                         Image(systemName: "plus")
-                            .font(.system(size: 8, weight: .bold))
+                            .font(.system(size: 10, weight: .bold))
+                            .frame(width: 14, height: 14)
                     }
                     .buttonStyle(.bordered)
                     .controlSize(.small)
@@ -748,23 +910,18 @@ struct SidebarView: View {
     
     var body: some View {
         VStack(spacing: 0) {
-            // Segmented Picker for Tab Selectors
-            Picker("", selection: $state.activeTab) {
-                Image(systemName: "square.grid.3x3")
-                    .font(.system(size: 13, weight: .medium))
-                    .tag("layout")
-                    .help("Layout Settings")
-                Image(systemName: "paintbrush")
-                    .font(.system(size: 13, weight: .medium))
-                    .tag("style")
-                    .help("Style Settings")
-                Image(systemName: "clock")
-                    .font(.system(size: 13, weight: .medium))
-                    .tag("frames")
-                    .help("Frame Settings")
+            // Custom Segmented Picker for Tab Selectors
+            HStack(spacing: 4) {
+                TabButton(iconName: "square.grid.3x3", isSelected: state.activeTab == "layout", helpText: "Layout Settings") {
+                    state.activeTab = "layout"
+                }
+                TabButton(iconName: "paintbrush", isSelected: state.activeTab == "style", helpText: "Style Settings") {
+                    state.activeTab = "style"
+                }
+                TabButton(iconName: "clock", isSelected: state.activeTab == "frames", helpText: "Frame Settings") {
+                    state.activeTab = "frames"
+                }
             }
-            .pickerStyle(.segmented)
-            .labelsHidden()
             .padding(.horizontal, 8)
             .padding(.vertical, 6)
             .background(Color(NSColor.controlBackgroundColor))
@@ -791,31 +948,36 @@ struct SidebarView: View {
             
             // Bottom Action Area in Sidebar
             VStack(spacing: 8) {
-                Button(action: {
-                    state.generateContactSheet()
-                }) {
-                    HStack {
-                        if state.isGenerating {
+                if state.isGenerating {
+                    Button(action: {
+                        state.cancelGeneration()
+                    }) {
+                        HStack {
                             ProgressView()
                                 .controlSize(.small)
                                 .padding(.trailing, 4)
-                        } else {
-                            Image(systemName: "play.fill")
+                            Text("Cancel")
+                                .fontWeight(.semibold)
                         }
-                        Text("Generate Contact Sheet")
-                            .fontWeight(.semibold)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 5)
                     }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 5)
-                }
-                .buttonStyle(.borderedProminent)
-                .disabled(state.selectedVideo == nil || !state.isVcsiInstalled || state.isGenerating)
-                
-                if state.isGenerating {
-                    Button("Cancel", action: { state.cancelGeneration() })
-                        .buttonStyle(.bordered)
-                        .foregroundColor(.red)
-                        .controlSize(.small)
+                    .buttonStyle(.bordered)
+                    .foregroundColor(.red)
+                } else {
+                    Button(action: {
+                        state.generateContactSheet()
+                    }) {
+                        HStack {
+                            Image(systemName: "play.fill")
+                            Text("Generate")
+                                .fontWeight(.semibold)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 5)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(state.selectedVideo == nil || !state.isVcsiInstalled)
                 }
             }
             .padding(10)
@@ -924,6 +1086,18 @@ struct LayoutTab: View {
                     set: { state.imageWidth = Int($0) }
                 ), in: 600...3200, step: 50.0)
                 
+                if state.selectedVideo != nil {
+                    HStack {
+                        Text("Image Height")
+                        Spacer()
+                        Text("\(state.estimatedHeight) px")
+                    }
+                    Slider(value: Binding(
+                        get: { Double(state.estimatedHeight) },
+                        set: { state.updateWidthFromHeight(Int($0)) }
+                    ), in: state.minHeight...state.maxHeight, step: 10.0)
+                }
+                
                 HStack {
                     Text("Grid Spacing")
                     Spacer()
@@ -1031,6 +1205,39 @@ struct StyleTab: View {
             ))
             .toggleStyle(.checkbox)
             
+            if state.showHeader {
+                VStack(alignment: .leading, spacing: 6) {
+                    Toggle("Customize Header Text", isOn: Binding(
+                        get: { state.useCustomHeaderTemplate },
+                        set: {
+                            state.useCustomHeaderTemplate = $0
+                            state.autoGenerateIfNeeded()
+                        }
+                    ))
+                    .toggleStyle(.checkbox)
+                    .font(.caption)
+                    
+                    if state.useCustomHeaderTemplate {
+                        TextEditor(text: Binding(
+                            get: { state.customHeaderTemplate },
+                            set: {
+                                state.customHeaderTemplate = $0
+                            }
+                        ))
+                        .font(.system(size: 9, design: .monospaced))
+                        .frame(height: 70)
+                        .border(Color.gray.opacity(0.3))
+                        .cornerRadius(4)
+                        
+                        Text("Placeholders: {{filename}}, {{size}}, {{duration}}, {{sample_width}}x{{sample_height}}, {{video_codec}}, {{frame_rate}}")
+                            .font(.system(size: 8))
+                            .foregroundColor(.secondary)
+                    }
+                }
+                .padding(.leading, 16)
+                .padding(.bottom, 4)
+            }
+            
             Toggle("Show Timestamp overlays", isOn: Binding(
                 get: { state.showTimestamps },
                 set: {
@@ -1041,24 +1248,55 @@ struct StyleTab: View {
             .toggleStyle(.checkbox)
             
             if state.showTimestamps {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Timestamp Position")
-                        .font(.caption)
-                    Picker("", selection: Binding(
-                        get: { state.timestampPosition },
+                VStack(alignment: .leading, spacing: 6) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Timestamp Position")
+                            .font(.caption)
+                        Picker("", selection: Binding(
+                            get: { state.timestampPosition },
+                            set: {
+                                state.timestampPosition = $0
+                                state.autoGenerateIfNeeded()
+                            }
+                        )) {
+                            Text("Top-Left").tag("top-left")
+                            Text("Top-Right").tag("top-right")
+                            Text("Bottom-Left").tag("bottom-left")
+                            Text("Bottom-Right").tag("bottom-right")
+                        }
+                        .pickerStyle(.menu)
+                        .labelsHidden()
+                    }
+                    .padding(.bottom, 4)
+                    
+                    Toggle("Customize Timestamps", isOn: Binding(
+                        get: { state.useCustomTimestamps },
                         set: {
-                            state.timestampPosition = $0
+                            state.useCustomTimestamps = $0
                             state.autoGenerateIfNeeded()
                         }
-                    )) {
-                        Text("Top-Left").tag("top-left")
-                        Text("Top-Right").tag("top-right")
-                        Text("Bottom-Left").tag("bottom-left")
-                        Text("Bottom-Right").tag("bottom-right")
+                    ))
+                    .toggleStyle(.checkbox)
+                    .font(.caption)
+                    
+                    if state.useCustomTimestamps {
+                        TextEditor(text: Binding(
+                            get: { state.customTimestampsText },
+                            set: {
+                                state.customTimestampsText = $0
+                            }
+                        ))
+                        .font(.system(size: 9, design: .monospaced))
+                        .frame(height: 70)
+                        .border(Color.gray.opacity(0.3))
+                        .cornerRadius(4)
+                        
+                        Text("Enter comma-separated timestamps (format: h:mm:ss.mmmm or mm:ss)\nExample: 0:01:15, 0:03:45.500")
+                            .font(.system(size: 8))
+                            .foregroundColor(.secondary)
                     }
-                    .pickerStyle(.menu)
-                    .labelsHidden()
                 }
+                .padding(.leading, 16)
                 .padding(.top, 4)
             }
         }
@@ -1141,43 +1379,6 @@ struct FramesTab: View {
                 Text("Ignores end credits and black screens.")
                     .font(.caption)
                     .foregroundColor(.gray)
-            }
-            
-            Divider()
-            
-            Toggle("Use Custom Timestamps", isOn: Binding(
-                get: { state.useCustomTimestamps },
-                set: {
-                    state.useCustomTimestamps = $0
-                    state.autoGenerateIfNeeded()
-                }
-            ))
-            .font(.headline)
-            .monoFont(size: 11, weight: .bold)
-            .toggleStyle(.switch)
-            
-            if state.useCustomTimestamps {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Enter comma-separated timestamps (format: h:mm:ss.mmmm or mm:ss):")
-                        .font(.caption)
-                        .foregroundColor(.gray)
-                    
-                    TextEditor(text: Binding(
-                        get: { state.customTimestampsText },
-                        set: {
-                            state.customTimestampsText = $0
-                            // We do not auto generate on every keystroke
-                        }
-                    ))
-                    .font(.system(size: 10, design: .monospaced))
-                    .frame(height: 80)
-                    .border(Color.gray.opacity(0.3))
-                    .cornerRadius(4)
-                    
-                    Text("Example: 0:01:15, 0:03:45.500")
-                        .font(.system(size: 9, design: .monospaced))
-                        .foregroundColor(.secondary)
-                }
             }
         }
         .monoFont()
@@ -1611,5 +1812,28 @@ extension NSImage {
         let pSize = pixelSize
         guard pSize.width > 0 else { return 1.0 }
         return pSize.height / pSize.width
+    }
+}
+
+// MARK: - Custom Tab Button Component
+
+struct TabButton: View {
+    let iconName: String
+    let isSelected: Bool
+    let helpText: String
+    let action: () -> Void
+    
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: iconName)
+                .font(.system(size: 22, weight: .regular)) // Adjusted to 22pt
+                .foregroundColor(isSelected ? .accentColor : .secondary)
+                .frame(maxWidth: .infinity)
+                .frame(height: 34)
+                .background(isSelected ? Color(NSColor.selectedContentBackgroundColor).opacity(0.25) : Color.clear)
+                .cornerRadius(5)
+        }
+        .buttonStyle(.plain)
+        .help(helpText)
     }
 }
