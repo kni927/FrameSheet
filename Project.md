@@ -20,6 +20,17 @@ FrameSheet is a macOS native wrapper for `vcsi` designed to serve as a premium a
 - **Video Editing**: The app focuses purely on contact sheet generation; video cutting, joining, or filter editing are out of scope.
 - **iCloud Synchronization**: State is kept locally; no cloud sync for preferences or generated sheets.
 
+## Constraints
+- **Platform**: macOS only.
+- **Architecture**: Apple Silicon first.
+- **Framework**: SwiftUI preferred over AppKit.
+- **Technology Stack**: No Electron or Tauri framework.
+- **End-User Runtime**: No Python runtime requirement for end-users.
+
+## Target Audience
+- **Current Distribution Target**: Power users and content creators.
+- **Technical Assumption**: Not intended for completely non-technical users (requires FFmpeg setup on system).
+
 ## Current Status (v0.2.1)
 - **Core Features**: Completed (drag and drop, basic customization, layout constraints, custom header template, localized diacritics fixes, standalone vcsi bundling).
 - **In Progress**: UI refinements, micro-interactions, and visual polishing.
