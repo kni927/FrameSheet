@@ -1,4 +1,4 @@
-# FrameSheet
+# <img src="AppIcon.png" width="40" valign="middle"> FrameSheet
 
 ![FrameSheet UI Preview](docs/preview.png)
 
