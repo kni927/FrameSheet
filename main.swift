@@ -96,14 +96,11 @@ Dimensions: {{sample_width}}x{{sample_height}}
     @Published var customTimestampsText: String = ""
     
     // Dependencies Status
-    @Published var pythonPath: String = ""
     @Published var ffmpegPath: String = ""
     @Published var ffprobePath: String = ""
-    @Published var vcsiPath: String = ""
-    @Published var isVcsiInstalled: Bool = false
+    @Published var isFFmpegInstalled: Bool = false
     @Published var dependencyCheckMessage: String = "Initializing..."
     @Published var isCheckingDependencies: Bool = false
-    @Published var isInstallingVcsi: Bool = false
     
     // Application Running States
     @Published var isGenerating: Bool = false
@@ -130,47 +127,28 @@ Dimensions: {{sample_width}}x{{sample_height}}
     func checkDependencies() {
         self.isCheckingDependencies = true
         self.dependencyCheckMessage = "Checking environment..."
-        
+
         DispatchQueue.global(qos: .userInitiated).async {
-            // Find system commands
-            let py = self.findCommandPath("python3")
             let ff = self.findCommandPath("ffmpeg")
             let probe = self.findCommandPath("ffprobe")
-            let vcsi = self.findCommandPath("vcsi")
-            
-            let vcsiOk = !vcsi.isEmpty
-            
+            let ok = !ff.isEmpty && !probe.isEmpty
+
             DispatchQueue.main.async {
-                self.pythonPath = py
                 self.ffmpegPath = ff
                 self.ffprobePath = probe
-                self.vcsiPath = vcsi
-                self.isVcsiInstalled = vcsiOk
+                self.isFFmpegInstalled = ok
                 self.isCheckingDependencies = false
-                
-                if py.isEmpty {
-                    self.dependencyCheckMessage = "Python 3 is not found. Please install Python."
-                } else if ff.isEmpty || probe.isEmpty {
-                    self.dependencyCheckMessage = "FFmpeg/FFprobe not found. Please install via Homebrew: 'brew install ffmpeg'."
-                } else if !vcsiOk {
-                    self.dependencyCheckMessage = "vcsi command line tool is missing. Click 'Install vcsi' below."
+
+                if ff.isEmpty || probe.isEmpty {
+                    self.dependencyCheckMessage = "FFmpeg/FFprobe not found. Install via Homebrew: 'brew install ffmpeg'."
                 } else {
-                    self.dependencyCheckMessage = "All dependencies are satisfied. Ready!"
+                    self.dependencyCheckMessage = "FFmpeg \(ff) — Ready!"
                 }
             }
         }
     }
     
     private func findCommandPath(_ cmd: String) -> String {
-        // For vcsi, check App Bundle resources first to use the bundled standalone version
-        if cmd == "vcsi" {
-            if let bundlePath = Bundle.main.path(forResource: "vcsi", ofType: nil, inDirectory: "bin") {
-                if FileManager.default.isExecutableFile(atPath: bundlePath) {
-                    return bundlePath
-                }
-            }
-        }
-        
         // Search in common PATHs first to override shell environment limits
         let searchPaths = [
             "/Users/kni/miniforge3/bin",
@@ -229,34 +207,6 @@ Dimensions: {{sample_width}}x{{sample_height}}
         } catch {
             return ("", error.localizedDescription, -1)
         }
-    }
-    
-    // Install vcsi automatically via pip
-    func installVcsi() {
-        guard !pythonPath.isEmpty else {
-            self.errorMessage = "Cannot install: Python3 path is empty."
-            return
-        }
-        
-        self.isInstallingVcsi = true
-        self.consoleOutput += "\n>>> Running installation: \(pythonPath) -m pip install vcsi\n"
-        
-        let installCmd = "\(pythonPath) -m pip install vcsi"
-        
-        runCommandStreaming(installCmd, onStdout: { text in
-            self.consoleOutput += text
-        }, onStderr: { err in
-            self.consoleOutput += err
-        }, completion: { status in
-            self.isInstallingVcsi = false
-            if status == 0 {
-                self.consoleOutput += "\n>>> vcsi installed successfully!\n"
-                self.checkDependencies()
-            } else {
-                self.consoleOutput += "\n>>> Failed to install vcsi. Status code: \(status)\n"
-                self.errorMessage = "Failed to install vcsi. Check console logs."
-            }
-        })
     }
     
     // Load Video details via ffprobe
@@ -328,167 +278,300 @@ Dimensions: {{sample_width}}x{{sample_height}}
         }
     }
     
-    // Generate the MoviePrint image
+    // Generate contact sheet — v2 ffmpeg single-pass engine
     func generateContactSheet() {
         guard let video = selectedVideo else {
             self.errorMessage = "Please select a video file first."
             return
         }
-        
-        guard !vcsiPath.isEmpty && isVcsiInstalled else {
-            self.errorMessage = "vcsi dependency is missing. Verify environment."
+        guard isFFmpegInstalled else {
+            self.errorMessage = "FFmpeg not found. Install via Homebrew: 'brew install ffmpeg'."
             return
         }
-        
-        self.isGenerating = true
-        self.errorMessage = nil
-        self.previewImage = nil
-        
-        // Output file in temporary directory
-        let tempDir = NSTemporaryDirectory()
-        let outputFilename = "framesheet_\(Int(Date().timeIntervalSince1970)).png"
-        let outputPath = (tempDir as NSString).appendingPathComponent(outputFilename)
-        self.previewImagePath = outputPath
-        
-        // Map UI timestamp position to vcsi expected direction string
-        var vcsiPosition = "se"
-        switch timestampPosition {
-        case "top-left": vcsiPosition = "nw"
-        case "top-right": vcsiPosition = "ne"
-        case "bottom-left": vcsiPosition = "sw"
-        case "bottom-right": vcsiPosition = "se"
-        default: vcsiPosition = "se"
+
+        isGenerating = true
+        errorMessage = nil
+        previewImage = nil
+
+        // ---- Sampling math ----
+        let cols       = self.columns
+        let rowsCount  = self.rows
+        let thumbCount = cols * rowsCount
+        let totalDuration = max(0.1, video.duration)
+        let startSec   = totalDuration * startDelayPercent / 100.0
+        let endSec     = totalDuration * (1.0 - endDelayPercent / 100.0)
+        let effectiveDur = max(0.5, endSec - startSec)
+        let interval   = effectiveDur / Double(thumbCount)
+
+        // Thumbnail pixel width (even number required by some codecs)
+        let spacing    = self.gridSpacing
+        let totalW     = self.imageWidth
+        let thumbW     = max(10, (totalW - (cols - 1) * spacing) / cols)
+        let thumbWEven = thumbW % 2 == 0 ? thumbW : thumbW - 1
+
+        // Create temp directory
+        let tempBase   = NSTemporaryDirectory()
+        let tempDirName = "framesheet_\(Int(Date().timeIntervalSince1970))"
+        let tempDir    = (tempBase as NSString).appendingPathComponent(tempDirName)
+        do {
+            try FileManager.default.createDirectory(atPath: tempDir, withIntermediateDirectories: true)
+        } catch {
+            isGenerating = false
+            errorMessage = "Failed to create temp dir: \(error.localizedDescription)"
+            return
         }
-        
-        let nfcVcsiPath = vcsiPath.precomposedStringWithCanonicalMapping
-        let nfcVideoPath = video.path.precomposedStringWithCanonicalMapping
-        let nfcOutputPath = outputPath.precomposedStringWithCanonicalMapping
-        
-        // Construct arguments
-        var args = [
-            "\"\(nfcVcsiPath)\"",
-            "\"\(nfcVideoPath)\"",
-            "-o \"\(nfcOutputPath)\"",
-            "-g \(columns)x\(rows)",
-            "-w \(imageWidth)",
-            "--grid-spacing \(gridSpacing)",
-            "--background-color \(backgroundColor.toHex())",
-            "--metadata-font-color \(textColor.toHex())",
-            "--timestamp-font-color \(textColor.toHex())",
-            "--timestamp-position \(vcsiPosition)"
-        ]
-        
-        // Font setup
-        var fontPath = ""
-        switch selectedFont {
-        case "Hiragino Sans":
-            let rawPath = "/System/Library/Fonts/ヒラギノ角ゴシック W3.ttc"
-            let decomposed = rawPath.decomposedStringWithCanonicalMapping
-            let precomposed = rawPath.precomposedStringWithCanonicalMapping
-            if FileManager.default.fileExists(atPath: decomposed) {
-                fontPath = decomposed
-            } else if FileManager.default.fileExists(atPath: precomposed) {
-                fontPath = precomposed
-            } else {
-                fontPath = rawPath
-            }
-        case "Helvetica":
-            fontPath = "/System/Library/Fonts/Helvetica.ttc"
-        case "Times":
-            fontPath = "/System/Library/Fonts/Times.ttc"
-        case "Custom":
-            fontPath = customFontPath
-        default:
-            break
-        }
-        if !fontPath.isEmpty && FileManager.default.fileExists(atPath: fontPath) {
-            let nfcFontPath = fontPath.precomposedStringWithCanonicalMapping
-            args.append("--timestamp-font \"\(nfcFontPath)\"")
-            args.append("--metadata-font \"\(nfcFontPath)\"")
-        }
-        
-        // Metadata header visibility / custom template
-        var tempTemplatePath: String? = nil
-        if showHeader {
-            args.append("--metadata-position top")
-            
-            if useCustomHeaderTemplate && !customHeaderTemplate.isEmpty {
-                let tempDir = NSTemporaryDirectory()
-                let templateFilename = "header_template_\(Int(Date().timeIntervalSince1970)).txt"
-                let templatePath = (tempDir as NSString).appendingPathComponent(templateFilename)
-                
-                do {
-                    try customHeaderTemplate.write(toFile: templatePath, atomically: true, encoding: .utf8)
-                    tempTemplatePath = templatePath
-                    let nfcTemplatePath = templatePath.precomposedStringWithCanonicalMapping
-                    args.append("--template \"\(nfcTemplatePath)\"")
-                } catch {
-                    self.consoleOutput += "\n>>> Warning: Failed to write custom header template to temp file: \(error.localizedDescription)\n"
-                }
-            }
-        } else {
-            args.append("--metadata-position hidden")
-        }
-        
-        // Timestamps visibility / custom timestamps
+
+        let outPattern = (tempDir as NSString).appendingPathComponent("thumb_%04d.png")
+        let nfcVideo   = video.path.precomposedStringWithCanonicalMapping
+        let ff         = ffmpegPath
+
+        // Custom timestamps
+        var customTS: [Double]? = nil
         if useCustomTimestamps && !customTimestampsText.isEmpty {
-            // Clean up custom timestamps text (comma separated)
-            let cleanedTimes = customTimestampsText
-                .components(separatedBy: CharacterSet.newlines.union(CharacterSet(charactersIn: ",")))
-                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-                .filter { !$0.isEmpty }
-                .joined(separator: ",")
-            
-            if !cleanedTimes.isEmpty {
-                args.append("-t \"\(cleanedTimes)\"")
-            } else if showTimestamps {
-                args.append("-t")
-            }
-        } else if showTimestamps {
-            args.append("-t")
+            let parsed = parseTimestamps(customTimestampsText)
+            if !parsed.isEmpty { customTS = parsed }
         }
-        
-        // Delays
-        args.append("--start-delay-percent \(Int(startDelayPercent))")
-        args.append("--end-delay-percent \(Int(endDelayPercent))")
-        
-        // Combined command
-        let fullCmd = args.joined(separator: " ")
-        self.consoleOutput += "\n>>> Running command:\n\(fullCmd)\n"
-        
-        runCommandStreaming(fullCmd, onStdout: { text in
+
+        // ---- ffmpeg command ----
+        // -ss before -i = fast input seek (keyframe-accurate), then fps filter for
+        // sequential decode. Dramatically faster than per-frame random seek (vcsi).
+        let cmd: String
+        if let ts = customTS {
+            let selectParts = ts.map { String(format: "eq(t\\,%.3f)", $0) }.joined(separator: "+")
+            cmd = "\"\(ff)\" -i \"\(nfcVideo)\" -vf \"select='\(selectParts)',setpts=N*AVTB,scale=\(thumbWEven):-2\" -frames:v \(ts.count) -q:v 2 -vsync vfr \"\(outPattern)\" -y"
+        } else {
+            cmd = "\"\(ff)\" -ss \(String(format: "%.3f", startSec)) -to \(String(format: "%.3f", endSec)) -i \"\(nfcVideo)\" -vf \"fps=1/\(String(format: "%.6f", interval)),scale=\(thumbWEven):-2\" -frames:v \(thumbCount) -q:v 2 \"\(outPattern)\" -y"
+        }
+
+        consoleOutput += "\n>>> [v2] Extracting \(thumbCount) thumbnails (single-pass ffmpeg)...\n\(cmd)\n"
+
+        // Capture settings for background thread
+        let cap = GenerationParams(
+            cols: cols, rows: rowsCount, thumbCount: thumbCount,
+            imageWidth: totalW, spacing: spacing,
+            interval: interval, startSec: startSec,
+            customTS: customTS,
+            video: video,
+            showHeader: showHeader, showTimestamps: showTimestamps,
+            useCustomHeader: useCustomHeaderTemplate,
+            customHeaderTemplate: customHeaderTemplate,
+            bgColor: backgroundColor, textColor: textColor,
+            fontName: selectedFont, customFontPath: customFontPath,
+            tsPosition: timestampPosition
+        )
+
+        runCommandStreaming(cmd, onStdout: { text in
             self.consoleOutput += text
         }, onStderr: { err in
             self.consoleOutput += err
-        }, completion: { status in
-            self.isGenerating = false
-            
-            // Clean up temp template file if created
-            if let path = tempTemplatePath {
-                try? FileManager.default.removeItem(atPath: path)
+        }, completion: { [weak self] status in
+            guard let self = self else { return }
+            guard status == 0 else {
+                self.consoleOutput += "\n>>> ffmpeg failed (status \(status))\n"
+                self.errorMessage = "ffmpeg failed. See console log."
+                self.isGenerating = false
+                try? FileManager.default.removeItem(atPath: tempDir)
+                return
             }
-            
-            if status == 0 {
-                self.consoleOutput += "\n>>> Contact sheet generated successfully!\n"
-                
-                // Load preview image
-                if FileManager.default.fileExists(atPath: outputPath) {
-                    if let image = NSImage(contentsOfFile: outputPath) {
-                        self.previewImage = image
-                        self.consoleOutput += "Loaded image preview from temp folder.\n"
+            self.consoleOutput += ">>> Composing contact sheet in Swift...\n"
+
+            DispatchQueue.global(qos: .userInitiated).async {
+                let image = self.renderContactSheet(tempDir: tempDir, params: cap)
+                try? FileManager.default.removeItem(atPath: tempDir)
+
+                DispatchQueue.main.async {
+                    self.isGenerating = false
+                    if let img = image {
+                        let outPath = (NSTemporaryDirectory() as NSString)
+                            .appendingPathComponent("framesheet_\(Int(Date().timeIntervalSince1970)).png")
+                        if let tiff = img.tiffRepresentation,
+                           let rep  = NSBitmapImageRep(data: tiff),
+                           let png  = rep.representation(using: .png, properties: [:]) {
+                            try? png.write(to: URL(fileURLWithPath: outPath))
+                            self.previewImagePath = outPath
+                        }
+                        self.previewImage = img
                         self.fitToScreen()
+                        self.consoleOutput += ">>> Contact sheet generated successfully!\n"
                     } else {
-                        self.errorMessage = "Failed to load generated image."
+                        self.errorMessage = "Failed to compose contact sheet."
+                        self.consoleOutput += ">>> Composition failed.\n"
                     }
-                } else {
-                    self.errorMessage = "Output file not found at: \(outputPath)"
                 }
-            } else {
-                self.consoleOutput += "\n>>> Generation failed with status code: \(status)\n"
-                self.errorMessage = "vcsi failed to generate contact sheet. See console log."
             }
         })
     }
+
+    // Parameter bundle for background renderer
+    private struct GenerationParams {
+        let cols: Int, rows: Int, thumbCount: Int
+        let imageWidth: Int, spacing: Int
+        let interval: Double, startSec: Double
+        let customTS: [Double]?
+        let video: VideoFileInfo
+        let showHeader: Bool, showTimestamps: Bool
+        let useCustomHeader: Bool, customHeaderTemplate: String
+        let bgColor: Color, textColor: Color
+        let fontName: String, customFontPath: String
+        let tsPosition: String
+    }
+
+    // CoreGraphics / AppKit composite renderer
+    private func renderContactSheet(tempDir: String, params p: GenerationParams) -> NSImage? {
+        let cols    = p.cols
+        let rows    = p.rows
+        let spacing = p.spacing
+        let cellW   = max(10, (p.imageWidth - (cols - 1) * spacing) / cols)
+        let ar      = p.video.width > 0 ? Double(p.video.height) / Double(p.video.width) : 9.0 / 16.0
+        let cellH   = max(1, Int(Double(cellW) * ar))
+
+        // Header lines
+        let fontSize: CGFloat   = 14
+        let headerMargin: CGFloat = 10
+        var headerLines: [String] = []
+        if p.showHeader {
+            if p.useCustomHeader && !p.customHeaderTemplate.isEmpty {
+                var t = p.customHeaderTemplate
+                t = t.replacingOccurrences(of: "{{filename}}",     with: p.video.name)
+                t = t.replacingOccurrences(of: "{{size}}",         with: p.video.formattedSize)
+                t = t.replacingOccurrences(of: "{{duration}}",     with: p.video.formattedDuration)
+                t = t.replacingOccurrences(of: "{{sample_width}}", with: "\(p.imageWidth)")
+                t = t.replacingOccurrences(of: "{{sample_height}}",with: "\(rows * cellH + max(0, rows - 1) * spacing)")
+                t = t.replacingOccurrences(of: "{{video_codec}}",  with: p.video.codec)
+                t = t.replacingOccurrences(of: "{{frame_rate}}",   with: p.video.frameRate)
+                headerLines = t.components(separatedBy: .newlines)
+                    .filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
+            } else {
+                headerLines = [
+                    p.video.name,
+                    "File size: \(p.video.formattedSize)",
+                    "Duration: \(p.video.formattedDuration)",
+                    "Dimensions: \(p.video.width)x\(p.video.height)"
+                ]
+            }
+        }
+        let lineH: CGFloat = fontSize * 1.45
+        let headerH = headerLines.isEmpty ? 0 : Int(2 * headerMargin + CGFloat(headerLines.count) * lineH)
+
+        let totalW = p.imageWidth
+        let totalH = headerH + rows * cellH + max(0, rows - 1) * spacing
+        guard totalW > 0 && totalH > 0 else { return nil }
+
+        // Create bitmap CGContext
+        let cs = CGColorSpaceCreateDeviceRGB()
+        guard let ctx = CGContext(
+            data: nil, width: totalW, height: totalH,
+            bitsPerComponent: 8, bytesPerRow: 0, space: cs,
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else { return nil }
+
+        // Wrap in NSGraphicsContext so AppKit drawing works (origin = bottom-left)
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = NSGraphicsContext(cgContext: ctx, flipped: false)
+
+        // Background fill
+        NSColor(p.bgColor).setFill()
+        NSRect(x: 0, y: 0, width: totalW, height: totalH).fill()
+
+        // Resolve font
+        let psName: String
+        switch p.fontName {
+        case "Helvetica": psName = "Helvetica"
+        case "Times":     psName = "TimesNewRomanPSMT"
+        default:          psName = "HiraginoSans-W3"
+        }
+        let nsFont = NSFont(name: psName, size: fontSize) ?? NSFont.systemFont(ofSize: fontSize)
+        let textNS = NSColor(p.textColor)
+
+        // Draw header
+        let headerAttrs: [NSAttributedString.Key: Any] = [.font: nsFont, .foregroundColor: textNS]
+        for (i, line) in headerLines.enumerated() {
+            let y = CGFloat(totalH) - headerMargin - CGFloat(i + 1) * lineH
+            NSAttributedString(string: line, attributes: headerAttrs).draw(at: CGPoint(x: headerMargin, y: y))
+        }
+
+        // Timestamp style
+        let tsFontSize: CGFloat = max(8, CGFloat(cellW) * 0.065)
+        let tsFont = NSFont(name: psName, size: tsFontSize) ?? NSFont.systemFont(ofSize: tsFontSize)
+        let shadow = NSShadow()
+        shadow.shadowColor = NSColor.black.withAlphaComponent(0.75)
+        shadow.shadowBlurRadius = 2
+        shadow.shadowOffset = NSSize(width: 1, height: -1)
+        let tsAttrs: [NSAttributedString.Key: Any] = [.font: tsFont, .foregroundColor: textNS, .shadow: shadow]
+
+        // Draw thumbnails + timestamps
+        for i in 0..<min(p.thumbCount, rows * cols) {
+            let col = i % cols
+            let row = i / cols
+            let x   = col * (cellW + spacing)
+            // Y from bottom-left origin: top row is highest Y
+            let y   = totalH - headerH - (row + 1) * cellH - row * spacing
+            let destRect = NSRect(x: x, y: y, width: cellW, height: cellH)
+
+            let thumbPath = String(format: "\(tempDir)/thumb_%04d.png", i + 1)
+            if let img = NSImage(contentsOfFile: thumbPath) {
+                img.draw(in: destRect, from: .zero, operation: .sourceOver, fraction: 1.0)
+            } else {
+                NSColor(white: 0.12, alpha: 1).setFill()
+                destRect.fill()
+            }
+
+            if p.showTimestamps {
+                let ts: Double = {
+                    if let cTS = p.customTS, i < cTS.count { return cTS[i] }
+                    return p.startSec + Double(i) * p.interval
+                }()
+                let attrTS  = NSAttributedString(string: formatTimestamp(ts), attributes: tsAttrs)
+                let tsSize  = attrTS.size()
+                let pad: CGFloat = 4
+                let tsX: CGFloat
+                let tsY: CGFloat
+                switch p.tsPosition {
+                case "top-left":
+                    tsX = CGFloat(x) + pad;          tsY = CGFloat(y + cellH) - tsSize.height - pad
+                case "top-right":
+                    tsX = CGFloat(x + cellW) - tsSize.width - pad; tsY = CGFloat(y + cellH) - tsSize.height - pad
+                case "bottom-left":
+                    tsX = CGFloat(x) + pad;          tsY = CGFloat(y) + pad
+                default: // bottom-right
+                    tsX = CGFloat(x + cellW) - tsSize.width - pad; tsY = CGFloat(y) + pad
+                }
+                attrTS.draw(at: CGPoint(x: tsX, y: tsY))
+            }
+        }
+
+        NSGraphicsContext.restoreGraphicsState()
+
+        guard let cgImg = ctx.makeImage() else { return nil }
+        return NSImage(cgImage: cgImg, size: NSSize(width: totalW, height: totalH))
+    }
+
+    private func formatTimestamp(_ seconds: Double) -> String {
+        let s   = max(0, seconds)
+        let h   = Int(s) / 3600
+        let m   = (Int(s) % 3600) / 60
+        let sec = Int(s) % 60
+        return h > 0 ? String(format: "%d:%02d:%02d", h, m, sec)
+                     : String(format: "%d:%02d", m, sec)
+    }
+
+    private func parseTimestamps(_ text: String) -> [Double] {
+        text.components(separatedBy: CharacterSet.newlines.union(CharacterSet(charactersIn: ",")))
+            .compactMap { part -> Double? in
+                let s = part.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !s.isEmpty else { return nil }
+                let c = s.components(separatedBy: ":")
+                switch c.count {
+                case 2:
+                    if let min = Double(c[0]), let sec = Double(c[1]) { return min * 60 + sec }
+                case 3:
+                    if let h = Double(c[0]), let min = Double(c[1]), let sec = Double(c[2]) { return h * 3600 + min * 60 + sec }
+                default: break
+                }
+                return Double(s)
+            }
+    }
+
     
     // Auto generate contact sheet on UI updates if already loaded.
     // Debounced so rapid stepper clicks coalesce into a single generation request
@@ -995,7 +1078,7 @@ struct SidebarView: View {
                         .padding(.vertical, 5)
                     }
                     .buttonStyle(.borderedProminent)
-                    .disabled(state.selectedVideo == nil || !state.isVcsiInstalled)
+                    .disabled(state.selectedVideo == nil || !state.isFFmpegInstalled)
                 }
             }
             .padding(10)
@@ -1543,55 +1626,44 @@ struct CanvasView: View {
                     }
                 }
                 
-                // Missing Dependencies Overlay Card
-                if !state.isVcsiInstalled {
+                // FFmpeg missing overlay
+                if !state.isFFmpegInstalled {
                     Color.black.opacity(0.55)
                         .edgesIgnoringSafeArea(.all)
-                    
+
                     VStack(spacing: 16) {
                         Image(systemName: "exclamationmark.triangle.fill")
                             .font(.system(size: 40))
                             .foregroundColor(.orange)
-                        
-                        Text("Dependencies Missing")
+
+                        Text("FFmpeg Not Found")
                             .font(.system(size: 15, weight: .bold, design: .monospaced))
                             .foregroundColor(.white)
-                        
-                        Text("FrameSheet requires the 'vcsi' command-line utility to generate sheets.")
+
+                        Text("FrameSheet v2 requires FFmpeg for frame extraction.\nInstall via Homebrew:")
                             .font(.system(size: 10, design: .monospaced))
                             .foregroundColor(.gray)
                             .multilineTextAlignment(.center)
                             .frame(maxWidth: 320)
-                        
+
+                        Text("brew install ffmpeg")
+                            .font(.system(size: 11, design: .monospaced))
+                            .foregroundColor(.green)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 6)
+                            .background(Color(NSColor.controlBackgroundColor))
+                            .cornerRadius(6)
+
                         VStack(alignment: .leading, spacing: 6) {
-                            DependencyRow(title: "Python 3", path: state.pythonPath)
-                            DependencyRow(title: "FFmpeg/FFprobe", path: state.ffmpegPath.isEmpty ? "Missing" : "Found")
+                            DependencyRow(title: "ffmpeg", path: state.ffmpegPath.isEmpty ? "Missing" : state.ffmpegPath)
+                            DependencyRow(title: "ffprobe", path: state.ffprobePath.isEmpty ? "Missing" : state.ffprobePath)
                         }
                         .frame(width: 320)
-                        
-                        if !state.pythonPath.isEmpty {
-                            Button(action: { state.installVcsi() }) {
-                                HStack {
-                                    if state.isInstallingVcsi {
-                                        ProgressView().controlSize(.small).padding(.trailing, 4)
-                                    }
-                                    Text(state.isInstallingVcsi ? "Installing vcsi..." : "Install vcsi (pip)")
-                                }
-                                .frame(width: 200)
-                            }
-                            .buttonStyle(.borderedProminent)
-                            .controlSize(.small)
-                            .disabled(state.isInstallingVcsi)
-                        } else {
-                            Text("Please install Python 3 or FFmpeg to continue.")
-                                .font(.system(size: 9, design: .monospaced))
-                                .foregroundColor(.red)
-                        }
-                        
+
                         Button(action: { state.checkDependencies() }) {
                             Label("Refresh", systemImage: "arrow.clockwise")
                         }
-                        .buttonStyle(.bordered)
+                        .buttonStyle(.borderedProminent)
                         .controlSize(.small)
                         .disabled(state.isCheckingDependencies)
                     }
@@ -1603,7 +1675,7 @@ struct CanvasView: View {
                             .stroke(Color.orange.opacity(0.3), lineWidth: 1)
                     )
                     .shadow(radius: 12)
-                    .frame(maxWidth: 380)
+                    .frame(maxWidth: 400)
                 }
             }
             .onAppear {
