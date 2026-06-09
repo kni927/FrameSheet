@@ -120,7 +120,8 @@ Dimensions: {{sample_width}}x{{sample_height}}
     @Published var containerHeight: CGFloat = 600.0
     
     private var activeProcess: Process? = nil
-    
+    private var generateDebounceWorkItem: DispatchWorkItem? = nil
+
     init() {
         checkDependencies()
     }
@@ -489,11 +490,28 @@ Dimensions: {{sample_width}}x{{sample_height}}
         })
     }
     
-    // Auto generate contact sheet on UI updates if already loaded
+    // Auto generate contact sheet on UI updates if already loaded.
+    // Debounced so rapid stepper clicks coalesce into a single generation request
+    // instead of repeatedly terminating and restarting the vcsi process.
     func autoGenerateIfNeeded() {
-        if selectedVideo != nil && previewImage != nil && !isGenerating {
-            generateContactSheet()
+        guard selectedVideo != nil && previewImagePath != nil else { return }
+
+        generateDebounceWorkItem?.cancel()
+
+        let workItem = DispatchWorkItem { [weak self] in
+            guard let self = self, self.selectedVideo != nil, self.previewImagePath != nil else { return }
+            if self.isGenerating {
+                // A previous request is still running (e.g. it started before this
+                // batch of changes settled). Re-arm the debounce so the latest
+                // values get rendered once that request completes, instead of
+                // leaving the preview stuck on stale settings.
+                self.autoGenerateIfNeeded()
+            } else {
+                self.generateContactSheet()
+            }
         }
+        generateDebounceWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3, execute: workItem)
     }
     
     // Fit zoom scale to container size (both width and height) to fit screen
