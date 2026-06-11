@@ -398,7 +398,8 @@ Dimensions: {{sample_width}}x{{sample_height}}
                     }
                     self.consoleOutput += ">>> Fast mode: \(jpgCount) keyframes extracted.\n"
                     let requested = cap.cols * cap.rows
-                    let summary = "Fast mode: \(jpgCount) / \(requested) thumbnails"
+                    let used = min(jpgCount, requested)
+                    let summary = "Fast mode: \(used) of \(jpgCount) keyframes"
                     DispatchQueue.main.async {
                         self.fastModeThumbnailSummary = summary
                     }

@@ -4,6 +4,19 @@ This log details the features, design changes, and bug fixes implemented during 
 
 ---
 
+## [2.0.0] - 2026-06-11
+
+### Added
+- **ffmpeg Single-Pass Engine (v2)**: Removed `vcsi` and all Python dependencies. Contact sheets are now generated via a single `ffmpeg` pass (`-ss`/`-to` + `fps=1/interval` filter for sequential decoding) and composited natively in Swift using CoreGraphics/AppKit (`renderContactSheet()`, `formatTimestamp()`, `parseTimestamps()`). Dependency checks now require only `ffmpeg`/`ffprobe`, and the missing-dependency overlay was updated accordingly.
+- **Debounced Grid Stepper Updates**: Rapid clicks on the Grid Dimensions (`+`/`-`) steppers are now coalesced into a single regeneration via a 300ms `DispatchWorkItem` debounce in `autoGenerateIfNeeded()`. If a generation is already in-flight when the timer fires, it is rescheduled so the latest settings are rendered once the current run completes.
+- **Fast Mode (keyframes only)**: New "Fast mode: keyframes only" toggle in the Layout tab. Uses `-hwaccel videotoolbox -skip_frame nokey -vsync vfr` to extract only the video's keyframes, producing near-instant previews even for 4K HEVC. **Enabled by default** so the initial preview after loading a video is fast rather than triggering a full Normal Mode pass. The grid's row count automatically shrinks to fit the actual number of extracted keyframes when fewer than `rows × columns` are available, and timestamps are approximated via interpolation across the sampled range. "Customize Timestamps" is disabled while Fast Mode is active.
+- **Fast Mode Keyframe Count Indicator**: When Fast Mode is active, the toolbar (next to "Show in Finder") displays `Fast mode: X of Y keyframes`, where `X` is the number of keyframes actually used in the contact sheet and `Y` is the total number of keyframes extracted. Hidden in Normal Mode and reset at the start of each generation.
+
+### Changed
+- **VideoToolbox Hardware Decoding & JPEG Temporary Thumbnails**: Both Fast Mode and Normal Mode ffmpeg invocations now use `-hwaccel videotoolbox` and write temporary thumbnails as JPEG (`-q:v 3`, previously PNG) to reduce I/O overhead.
+
+---
+
 ## [0.2.1] - 2026-06-08
 
 ### Added
