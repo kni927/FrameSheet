@@ -95,6 +95,7 @@ Dimensions: {{sample_width}}x{{sample_height}}
     @Published var useCustomTimestamps: Bool = false
     @Published var customTimestampsText: String = ""
     @Published var fastModeKeyframesOnly: Bool = true
+    @Published var fastModeThumbnailSummary: String? = nil
     
     // Dependencies Status
     @Published var ffmpegPath: String = ""
@@ -293,6 +294,7 @@ Dimensions: {{sample_width}}x{{sample_height}}
         isGenerating = true
         errorMessage = nil
         previewImage = nil
+        fastModeThumbnailSummary = nil
 
         // ---- Sampling math ----
         let cols       = self.columns
@@ -395,6 +397,11 @@ Dimensions: {{sample_width}}x{{sample_height}}
                         return
                     }
                     self.consoleOutput += ">>> Fast mode: \(jpgCount) keyframes extracted.\n"
+                    let requested = cap.cols * cap.rows
+                    let summary = "Fast mode: \(jpgCount) / \(requested) thumbnails"
+                    DispatchQueue.main.async {
+                        self.fastModeThumbnailSummary = summary
+                    }
                 }
 
                 let image = self.renderContactSheet(tempDir: tempDir, params: cap)
@@ -1603,7 +1610,14 @@ struct CanvasView: View {
                             }
                             
                             Spacer()
-                            
+
+                            if let summary = state.fastModeThumbnailSummary {
+                                Text(summary)
+                                    .font(.system(size: 9, design: .monospaced))
+                                    .foregroundColor(.secondary)
+                                    .padding(.trailing, 6)
+                            }
+
                             // Reveal file button
                             Button(action: {
                                 NSWorkspace.shared.selectFile(video.path, inFileViewerRootedAtPath: "")
