@@ -94,6 +94,7 @@ Dimensions: {{sample_width}}x{{sample_height}}
     @Published var endDelayPercent: Double = 5
     @Published var useCustomTimestamps: Bool = false
     @Published var customTimestampsText: String = ""
+    @Published var fastModeKeyframesOnly: Bool = true
     
     // Dependencies Status
     @Published var ffmpegPath: String = ""
@@ -321,13 +322,13 @@ Dimensions: {{sample_width}}x{{sample_height}}
             return
         }
 
-        let outPattern = (tempDir as NSString).appendingPathComponent("thumb_%04d.png")
+        let outPattern = (tempDir as NSString).appendingPathComponent("thumb_%04d.jpg")
         let nfcVideo   = video.path.precomposedStringWithCanonicalMapping
         let ff         = ffmpegPath
 
-        // Custom timestamps
+        // Custom timestamps (disabled in Fast mode)
         var customTS: [Double]? = nil
-        if useCustomTimestamps && !customTimestampsText.isEmpty {
+        if !fastModeKeyframesOnly && useCustomTimestamps && !customTimestampsText.isEmpty {
             let parsed = parseTimestamps(customTimestampsText)
             if !parsed.isEmpty { customTS = parsed }
         }
@@ -336,20 +337,24 @@ Dimensions: {{sample_width}}x{{sample_height}}
         // -ss before -i = fast input seek (keyframe-accurate), then fps filter for
         // sequential decode. Dramatically faster than per-frame random seek (vcsi).
         let cmd: String
-        if let ts = customTS {
+        if fastModeKeyframesOnly {
+            // Fast mode: keyframes only, no fps filter, no fixed frame count
+            // (-vsync vfr drops duplicate frames produced by -skip_frame nokey)
+            cmd = "\"\(ff)\" -hwaccel videotoolbox -skip_frame nokey -ss \(String(format: "%.3f", startSec)) -to \(String(format: "%.3f", endSec)) -i \"\(nfcVideo)\" -vf \"scale=\(thumbWEven):-2\" -vsync vfr -q:v 3 \"\(outPattern)\" -y"
+        } else if let ts = customTS {
             let selectParts = ts.map { String(format: "eq(t\\,%.3f)", $0) }.joined(separator: "+")
-            cmd = "\"\(ff)\" -i \"\(nfcVideo)\" -vf \"select='\(selectParts)',setpts=N*AVTB,scale=\(thumbWEven):-2\" -frames:v \(ts.count) -q:v 2 -vsync vfr \"\(outPattern)\" -y"
+            cmd = "\"\(ff)\" -hwaccel videotoolbox -i \"\(nfcVideo)\" -vf \"select='\(selectParts)',setpts=N*AVTB,scale=\(thumbWEven):-2\" -frames:v \(ts.count) -q:v 3 -vsync vfr \"\(outPattern)\" -y"
         } else {
-            cmd = "\"\(ff)\" -ss \(String(format: "%.3f", startSec)) -to \(String(format: "%.3f", endSec)) -i \"\(nfcVideo)\" -vf \"fps=1/\(String(format: "%.6f", interval)),scale=\(thumbWEven):-2\" -frames:v \(thumbCount) -q:v 2 \"\(outPattern)\" -y"
+            cmd = "\"\(ff)\" -hwaccel videotoolbox -ss \(String(format: "%.3f", startSec)) -to \(String(format: "%.3f", endSec)) -i \"\(nfcVideo)\" -vf \"fps=1/\(String(format: "%.6f", interval)),scale=\(thumbWEven):-2\" -frames:v \(thumbCount) -q:v 3 \"\(outPattern)\" -y"
         }
 
-        consoleOutput += "\n>>> [v2] Extracting \(thumbCount) thumbnails (single-pass ffmpeg)...\n\(cmd)\n"
+        consoleOutput += "\n>>> [v2] Extracting \(thumbCount) thumbnails (single-pass ffmpeg, fastMode=\(fastModeKeyframesOnly))...\n\(cmd)\n"
 
         // Capture settings for background thread
         let cap = GenerationParams(
             cols: cols, rows: rowsCount, thumbCount: thumbCount,
             imageWidth: totalW, spacing: spacing,
-            interval: interval, startSec: startSec,
+            interval: interval, startSec: startSec, effectiveDur: effectiveDur,
             customTS: customTS,
             video: video,
             showHeader: showHeader, showTimestamps: showTimestamps,
@@ -357,7 +362,8 @@ Dimensions: {{sample_width}}x{{sample_height}}
             customHeaderTemplate: customHeaderTemplate,
             bgColor: backgroundColor, textColor: textColor,
             fontName: selectedFont, customFontPath: customFontPath,
-            tsPosition: timestampPosition
+            tsPosition: timestampPosition,
+            fastMode: fastModeKeyframesOnly
         )
 
         runCommandStreaming(cmd, onStdout: { text in
@@ -376,6 +382,21 @@ Dimensions: {{sample_width}}x{{sample_height}}
             self.consoleOutput += ">>> Composing contact sheet in Swift...\n"
 
             DispatchQueue.global(qos: .userInitiated).async {
+                if self.fastModeKeyframesOnly {
+                    let files = (try? FileManager.default.contentsOfDirectory(atPath: tempDir)) ?? []
+                    let jpgCount = files.filter { $0.hasSuffix(".jpg") }.count
+                    if jpgCount == 0 {
+                        try? FileManager.default.removeItem(atPath: tempDir)
+                        DispatchQueue.main.async {
+                            self.isGenerating = false
+                            self.errorMessage = "Fast mode found no keyframes in this range. Try Normal Mode."
+                            self.consoleOutput += ">>> Fast mode: 0 keyframes extracted.\n"
+                        }
+                        return
+                    }
+                    self.consoleOutput += ">>> Fast mode: \(jpgCount) keyframes extracted.\n"
+                }
+
                 let image = self.renderContactSheet(tempDir: tempDir, params: cap)
                 try? FileManager.default.removeItem(atPath: tempDir)
 
@@ -406,7 +427,7 @@ Dimensions: {{sample_width}}x{{sample_height}}
     private struct GenerationParams {
         let cols: Int, rows: Int, thumbCount: Int
         let imageWidth: Int, spacing: Int
-        let interval: Double, startSec: Double
+        let interval: Double, startSec: Double, effectiveDur: Double
         let customTS: [Double]?
         let video: VideoFileInfo
         let showHeader: Bool, showTimestamps: Bool
@@ -414,16 +435,42 @@ Dimensions: {{sample_width}}x{{sample_height}}
         let bgColor: Color, textColor: Color
         let fontName: String, customFontPath: String
         let tsPosition: String
+        let fastMode: Bool
     }
 
     // CoreGraphics / AppKit composite renderer
     private func renderContactSheet(tempDir: String, params p: GenerationParams) -> NSImage? {
         let cols    = p.cols
-        let rows    = p.rows
         let spacing = p.spacing
         let cellW   = max(10, (p.imageWidth - (cols - 1) * spacing) / cols)
         let ar      = p.video.width > 0 ? Double(p.video.height) / Double(p.video.width) : 9.0 / 16.0
         let cellH   = max(1, Int(Double(cellW) * ar))
+
+        // Fast mode: discover extracted keyframes, even-sample down to cols*rows
+        // if there are more, otherwise use the actual (smaller) count and shrink
+        // the row count to fit (column count stays as configured).
+        var rows = p.rows
+        var thumbCount = p.thumbCount
+        var fastFramePaths: [String]? = nil
+        if p.fastMode {
+            let fm = FileManager.default
+            let files = (try? fm.contentsOfDirectory(atPath: tempDir)) ?? []
+            let jpgs = files.filter { $0.hasSuffix(".jpg") }.sorted()
+            let requested = p.cols * p.rows
+            let paths: [String]
+            if jpgs.count > requested && requested > 0 {
+                paths = (0..<requested).map { i in
+                    let idx = i * jpgs.count / requested
+                    return (tempDir as NSString).appendingPathComponent(jpgs[idx])
+                }
+            } else {
+                paths = jpgs.map { (tempDir as NSString).appendingPathComponent($0) }
+            }
+            guard !paths.isEmpty else { return nil }
+            fastFramePaths = paths
+            thumbCount = paths.count
+            rows = Int(ceil(Double(thumbCount) / Double(max(1, cols))))
+        }
 
         // Header lines
         let fontSize: CGFloat   = 14
@@ -500,7 +547,7 @@ Dimensions: {{sample_width}}x{{sample_height}}
         let tsAttrs: [NSAttributedString.Key: Any] = [.font: tsFont, .foregroundColor: textNS, .shadow: shadow]
 
         // Draw thumbnails + timestamps
-        for i in 0..<min(p.thumbCount, rows * cols) {
+        for i in 0..<min(thumbCount, rows * cols) {
             let col = i % cols
             let row = i / cols
             let x   = col * (cellW + spacing)
@@ -508,7 +555,12 @@ Dimensions: {{sample_width}}x{{sample_height}}
             let y   = totalH - headerH - (row + 1) * cellH - row * spacing
             let destRect = NSRect(x: x, y: y, width: cellW, height: cellH)
 
-            let thumbPath = String(format: "\(tempDir)/thumb_%04d.png", i + 1)
+            let thumbPath: String
+            if let fp = fastFramePaths {
+                thumbPath = fp[i]
+            } else {
+                thumbPath = String(format: "\(tempDir)/thumb_%04d.jpg", i + 1)
+            }
             if let img = NSImage(contentsOfFile: thumbPath) {
                 img.draw(in: destRect, from: .zero, operation: .sourceOver, fraction: 1.0)
             } else {
@@ -518,6 +570,11 @@ Dimensions: {{sample_width}}x{{sample_height}}
 
             if p.showTimestamps {
                 let ts: Double = {
+                    if p.fastMode {
+                        // Approximate: index-based position across the sampled range
+                        let frac = thumbCount > 1 ? Double(i) / Double(thumbCount - 1) : 0
+                        return p.startSec + frac * p.effectiveDur
+                    }
                     if let cTS = p.customTS, i < cTS.count { return cTS[i] }
                     return p.startSec + Double(i) * p.interval
                 }()
@@ -1209,6 +1266,24 @@ struct LayoutTab: View {
                     set: { state.gridSpacing = Int($0) }
                 ), in: 0...50, step: 1.0)
             }
+
+            Divider()
+
+            Toggle("Fast mode: keyframes only", isOn: Binding(
+                get: { state.fastModeKeyframesOnly },
+                set: {
+                    state.fastModeKeyframesOnly = $0
+                    state.autoGenerateIfNeeded()
+                }
+            ))
+            .toggleStyle(.checkbox)
+            .help("Uses keyframes only, timestamps are approximate. Generation is much faster, but the thumbnail count may be less than rows × columns depending on the video's keyframe interval.")
+
+            if state.fastModeKeyframesOnly {
+                Text("Fast mode: extracts keyframes only. Thumbnail count may be fewer than rows × columns, and timestamps are approximate.")
+                    .font(.system(size: 9))
+                    .foregroundColor(.secondary)
+            }
         }
         .monoFont()
     }
@@ -1379,8 +1454,15 @@ struct StyleTab: View {
                     ))
                     .toggleStyle(.checkbox)
                     .font(.caption)
-                    
-                    if state.useCustomTimestamps {
+                    .disabled(state.fastModeKeyframesOnly)
+
+                    if state.fastModeKeyframesOnly {
+                        Text("Disabled in Fast mode (keyframes only).")
+                            .font(.system(size: 8))
+                            .foregroundColor(.secondary)
+                    }
+
+                    if state.useCustomTimestamps && !state.fastModeKeyframesOnly {
                         TextEditor(text: Binding(
                             get: { state.customTimestampsText },
                             set: {
