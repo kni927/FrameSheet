@@ -24,7 +24,7 @@ bash git switch -c feature/<task-name>
 
 - Preserve the current SwiftUI architecture
 - Do not bundle FFmpeg
-- Keep vcsi bundled
+- `vcsi` has been removed entirely as of v2.0.0; do not reintroduce it or any Python dependency
 - Keep UI text in English
 - Prefer small targeted fixes over large refactors
 - Do not remove historical information from ANTIGRAVITY.md
