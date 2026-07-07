@@ -18,7 +18,7 @@ mkdir -p "$APP_DIR/Contents/MacOS"
 mkdir -p "$APP_DIR/Contents/Resources"
 
 echo "=== Step 2: Creating app icon from AppIcon.png ==="
-ICON_PNG="$SCRATCH_DIR/AppIcon.png"
+ICON_PNG="$SCRATCH_DIR/assets/AppIcon.png"
 ICONSET_DIR="$BUILD_DIR/icon.iconset"
 
 if [ -f "$ICON_PNG" ]; then
