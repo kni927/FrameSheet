@@ -29,7 +29,12 @@ This document lists known limitations, technical restrictions, and potential bug
 * **Description (historical)**: Normal Mode generation used a single-pass `fps=1/interval` filter that sequentially decoded every frame in the sampled range; a 60-min H.264 source took ~220 s even with `-hwaccel videotoolbox`, and high-fps HEVC slow-motion sources took several minutes.
 * **Status (Phase 2, 2026-07-07)**: Normal Mode (and Custom Timestamps) now extract each frame with an input-seeking `ffmpeg -ss <t> -i <file> -frames:v 1` invocation, 5 in parallel. The same 60-min benchmark completes in ~1 s (see docs/dev-log.md). Sources with extremely long keyframe intervals could still slow individual seeks, but this has not been observed in testing.
 
-### 6. Temporary Preview Flicker during Auto-Fit
+### 6. Duration Estimation Can Be Slow on Large Un-Indexed Files (Phase 4)
+* **Description**: For files whose metadata lacks a duration (e.g. WebM without cues), the fallback packet scan must demux the file linearly; on multi-gigabyte un-indexed sources this can take a while (IO-bound, no decoding).
+* **Reason**: Without an index/cues the container cannot be seeked to its end, so every packet header must be read to find the last timestamp.
+* **Workaround**: The "Estimating duration…" state is cancellable. Files with proper duration metadata skip estimation entirely.
+
+### 7. Temporary Preview Flicker during Auto-Fit
 * **Description**: When a new contact sheet is generated, the preview may flicker or show scrollbars for a fraction of a second before scaling down.
 * **Reason**: SwiftUI triggers rendering before the window's updated geometry coordinates propagate to `fitToScreen()`.
 * **Workaround**: This is cosmetic and resolves immediately. Clicking "Fit" manually in the header will force-recalculate if needed.

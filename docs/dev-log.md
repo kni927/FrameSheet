@@ -4,6 +4,17 @@ This log details the features, design changes, and bug fixes implemented during 
 
 ---
 
+## [Unreleased] — Phase 4 - 2026-07-07
+
+### Added
+- **Duration Fallback via Packet Scan** (`estimateDuration`): When ffprobe's format/stream duration is missing, `N/A`, or 0 (e.g. a WebM written to a non-seekable output, which also lacks cues), the app now estimates duration from packet timestamps before generating — attempt 1 seeks to an unreachably late timestamp and reads the trailing packets' `pts_time` (instant on indexed containers; a demux-only linear scan on cues-less WebM); attempt 2 falls back to a full `-show_entries packet=pts_time` scan taking the max. The canvas shows an "Estimating duration…" state with a Cancel button (also wired to the sidebar Cancel), and if estimation still fails the app surfaces a clear error instead of silently producing a sheet of near-identical frames from the first 0.1 s.
+  - Verified: normal .mp4 and a 2h15m VP9 .webm with duration metadata generate immediately (no regression); a synthesized cues-less/duration-less WebM now produces a correct evenly-spaced sheet (estimated 29.967 s) instead of 16 copies of frame 0.
+
+### Repo
+- Archived Phase 2/3 task lists to `docs/tasks/`.
+
+---
+
 ## [Unreleased] — Phase 3 - 2026-07-07
 
 ### Removed
