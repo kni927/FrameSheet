@@ -153,9 +153,30 @@ Dimensions: {{sample_width}}x{{sample_height}}
                 } else {
                     self.dependencyCheckMessage = "FFmpeg \(ff) — Ready!"
                 }
+
+                // A Finder/Dock open may have arrived while the check was
+                // still running (cold start); process it now that the
+                // ffmpeg/ffprobe paths are settled. Flushed even if the
+                // check failed so the user still gets a clear error.
+                if let url = self.pendingOpenURL {
+                    self.pendingOpenURL = nil
+                    self.loadVideo(url: url)
+                }
             }
         }
     }
+
+    // Entry point for Finder/Dock open events. Defers the load while the
+    // async ffmpeg dependency check is still running, so the initial
+    // auto-generation doesn't race a not-yet-set ffmpeg path.
+    func handleOpenURL(_ url: URL) {
+        if isCheckingDependencies {
+            pendingOpenURL = url
+        } else {
+            loadVideo(url: url)
+        }
+    }
+    private var pendingOpenURL: URL? = nil
     
     private func findCommandPath(_ cmd: String) -> String {
         // Search in common PATHs first to override shell environment limits
@@ -2162,7 +2183,7 @@ struct FrameSheetApp: App {
                 .preferredColorScheme(.dark)
                 .onAppear {
                     AppDelegate.openHandler = { url in
-                        appState.loadVideo(url: url)
+                        appState.handleOpenURL(url)
                     }
                 }
         }
