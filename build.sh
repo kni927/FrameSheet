@@ -5,7 +5,8 @@ set -e
 APP_NAME="FrameSheet"
 VERSION="2.0.0"
 BUILD_NUMBER="4"
-SCRATCH_DIR="/Users/kni/.gemini/antigravity/scratch/MoviePrintWrapper"
+# Build from the directory this script lives in (the repo checkout)
+SCRATCH_DIR="$(cd "$(dirname "$0")" && pwd)"
 BUILD_DIR="$SCRATCH_DIR/build"
 APP_DIR="$BUILD_DIR/$APP_NAME.app"
 
