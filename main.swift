@@ -280,6 +280,25 @@ Dimensions: {{sample_width}}x{{sample_height}}
         }
     }
     
+    // Present the system open panel and load the chosen video.
+    // Shared by File > Open (⌘O) and the canvas "Choose Video File" button.
+    // Loading replaces the current video; grid/style settings persist.
+    func openVideoPanel() {
+        let openPanel = NSOpenPanel()
+        openPanel.allowedContentTypes = [.movie]
+        openPanel.allowsMultipleSelection = false
+        openPanel.canChooseDirectories = false
+        openPanel.canChooseFiles = true
+
+        openPanel.begin { response in
+            if response == .OK, let fileURL = openPanel.url {
+                DispatchQueue.main.async {
+                    self.loadVideo(url: fileURL)
+                }
+            }
+        }
+    }
+
     // Generate contact sheet — v2 ffmpeg single-pass engine
     func generateContactSheet() {
         guard let video = selectedVideo else {
@@ -1952,6 +1971,14 @@ struct FrameSheetApp: App {
                 .preferredColorScheme(.dark)
         }
         .windowStyle(.titleBar)
+        .commands {
+            CommandGroup(replacing: .newItem) {
+                Button("Open...") {
+                    appState.openVideoPanel()
+                }
+                .keyboardShortcut("o", modifiers: .command)
+            }
+        }
     }
 }
 
