@@ -120,6 +120,9 @@ Dimensions: {{sample_width}}x{{sample_height}}
     
     private var activeProcess: Process? = nil
     private var generateDebounceWorkItem: DispatchWorkItem? = nil
+    // Incremented per generation; a superseded run (e.g. replaced by a new
+    // video load while extraction was in flight) must not touch shared state.
+    private var generationID = 0
 
     init() {
         checkDependencies()
@@ -211,12 +214,16 @@ Dimensions: {{sample_width}}x{{sample_height}}
         }
     }
     
-    // Load Video details via ffprobe
+    // Load Video details via ffprobe.
+    // Single entry point for every open path (menu, drag & drop, Finder/Dock,
+    // Open Recent): replaces the current video, resets preview state, keeps
+    // grid/style settings, and regenerates the contact sheet.
     func loadVideo(url: URL) {
         self.errorMessage = nil
         self.previewImage = nil
         self.previewImagePath = nil
-        
+        self.fastModeThumbnailSummary = nil
+
         // Verify file exists
         guard FileManager.default.fileExists(atPath: url.path) else {
             self.errorMessage = "File does not exist: \(url.path)"
@@ -315,6 +322,8 @@ Dimensions: {{sample_width}}x{{sample_height}}
         errorMessage = nil
         previewImage = nil
         fastModeThumbnailSummary = nil
+        generationID += 1
+        let runID = generationID
 
         // ---- Sampling math ----
         let cols       = self.columns
@@ -394,6 +403,12 @@ Dimensions: {{sample_width}}x{{sample_height}}
             self.consoleOutput += err
         }, completion: { [weak self] status in
             guard let self = self else { return }
+            guard runID == self.generationID else {
+                // Superseded by a newer generation (e.g. a new video was
+                // loaded); just clean up without touching shared state.
+                try? FileManager.default.removeItem(atPath: tempDir)
+                return
+            }
             guard status == 0 else {
                 self.consoleOutput += "\n>>> ffmpeg failed (status \(status))\n"
                 self.errorMessage = "ffmpeg failed. See console log."
@@ -421,6 +436,7 @@ Dimensions: {{sample_width}}x{{sample_height}}
                     let used = min(jpgCount, requested)
                     let summary = "Fast mode: \(used) of \(jpgCount) keyframes"
                     DispatchQueue.main.async {
+                        guard runID == self.generationID else { return }
                         self.fastModeThumbnailSummary = summary
                     }
                 }
@@ -429,6 +445,7 @@ Dimensions: {{sample_width}}x{{sample_height}}
                 try? FileManager.default.removeItem(atPath: tempDir)
 
                 DispatchQueue.main.async {
+                    guard runID == self.generationID else { return }
                     self.isGenerating = false
                     if let img = image {
                         let outPath = (NSTemporaryDirectory() as NSString)
@@ -760,7 +777,11 @@ Dimensions: {{sample_width}}x{{sample_height}}
             outPipe.fileHandleForReading.readabilityHandler = nil
             errPipe.fileHandleForReading.readabilityHandler = nil
             DispatchQueue.main.async {
-                self.activeProcess = nil
+                // A replacement command may already be running; only clear
+                // the reference if it still points at this task.
+                if self.activeProcess === task {
+                    self.activeProcess = nil
+                }
                 completion(t.terminationStatus)
             }
         }
@@ -1695,7 +1716,7 @@ struct CanvasView: View {
                                     .foregroundColor(.secondary)
                                 
                                 Button("Choose Video File") {
-                                    selectVideoFile()
+                                    state.openVideoPanel()
                                 }
                                 .buttonStyle(.borderedProminent)
                                 .controlSize(.small)
@@ -1814,20 +1835,6 @@ struct CanvasView: View {
             }
             .onChange(of: geometry.size.height) { newHeight in
                 state.containerHeight = newHeight
-            }
-        }
-    }
-    
-    private func selectVideoFile() {
-        let openPanel = NSOpenPanel()
-        openPanel.allowedContentTypes = [.movie, .video, .quickTimeMovie, .mpeg4Movie]
-        openPanel.allowsMultipleSelection = false
-        openPanel.canChooseDirectories = false
-        openPanel.canChooseFiles = true
-        
-        openPanel.begin { response in
-            if response == .OK, let fileURL = openPanel.url {
-                state.loadVideo(url: fileURL)
             }
         }
     }
