@@ -68,7 +68,9 @@ We maintain the frontend codebase inside a single `main.swift` file.
 
 ---
 
-### 4. Fast Mode (keyframes only) is enabled by default (v2.0.0)
+### 4. (Superseded) Fast Mode (keyframes only) was enabled by default (v2.0.0)
+
+> **Superseded in Phase 3 (2026-07-07).** Fast Mode was removed entirely: the Phase 2 per-frame input-seeking engine made the standard path fast enough (60-min H.264 in ~1 s) that a keyframe-only preview no longer paid for its complexity, and its `-skip_frame nokey` single pass hung on WebM sources lacking cues. Retained for historical context per project policy.
 
 #### Context
 Even with the v2.0.0 ffmpeg single-pass engine, Normal Mode's `fps=1/interval` filter requires decoding every frame in the sampled range, which remains slow for long and/or high-fps HEVC sources (~2.5–4 min for a typical 4K clip, several minutes for 240fps slow-motion footage). Loading a video and immediately triggering this full decode made the first preview feel sluggish.

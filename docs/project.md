@@ -5,7 +5,7 @@ FrameSheet is a macOS native app designed to serve as a premium alternative to M
 
 ## Tech Stack
 - **GUI Frontend**: Swift / SwiftUI (Targeting macOS 11.0+)
-- **Processing Engine**: Native `ffmpeg` frame extraction (`fps=1/interval` single-pass for Normal Mode, `-skip_frame nokey` for Fast Mode, both with `-hwaccel videotoolbox`) + Swift/CoreGraphics & AppKit compositing
+- **Processing Engine**: Native `ffmpeg` frame extraction (one input-seeking invocation per frame, `-ss <t> -i <file> -frames:v 1`, 5-way parallel) + Swift/CoreGraphics & AppKit compositing
 - **Media Parser**: FFmpeg / FFprobe (System dependency)
 
 ## Goals
@@ -13,7 +13,7 @@ FrameSheet is a macOS native app designed to serve as a premium alternative to M
 - **Drag & Drop Integration**: Allow users to drag video files directly into the canvas for immediate generation.
 - **Native macOS Workflows**: Support system open panels (`Menu > File > Open...`) and native save sheets.
 - **High-Quality Export**: Support exporting contact sheets in PNG and JPEG formats.
-- **Instant Previews**: Default to a Fast Mode (keyframes only) preview so the initial contact sheet appears in under a second, even for 4K/HEVC sources.
+- **Instant Previews**: Parallel per-frame input seeking keeps generation in the seconds range even for hour-long sources (Fast Mode was removed in Phase 3 once this was achieved).
 - **Portability**: No bundled runtime dependencies; the app is a single lightweight Swift binary that only requires `ffmpeg`/`ffprobe` on the system.
 
 ## Non-Goals
@@ -33,7 +33,7 @@ FrameSheet is a macOS native app designed to serve as a premium alternative to M
 - **Technical Assumption**: Not intended for completely non-technical users (requires FFmpeg setup on system).
 
 ## Current Status (v2.0.0)
-- **Core Features**: Completed (drag and drop, basic customization, layout constraints, custom header template, localized diacritics fixes, native ffmpeg single-pass + CoreGraphics engine, debounced grid steppers, Fast Mode keyframe-only previews enabled by default with keyframe-count indicator).
+- **Core Features**: Completed (drag and drop, basic customization, layout constraints, custom header template, localized diacritics fixes, native ffmpeg parallel per-frame extraction + CoreGraphics engine, debounced grid steppers; the keyframe-only Fast Mode was removed in Phase 3).
 - **In Progress**: UI refinements, micro-interactions, and visual polishing.
 
 ## Important Notes

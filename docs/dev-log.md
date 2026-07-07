@@ -4,6 +4,14 @@ This log details the features, design changes, and bug fixes implemented during 
 
 ---
 
+## [Unreleased] — Phase 3 - 2026-07-07
+
+### Removed
+- **Fast Mode (keyframes only)**: Deleted the fast-mode extraction path (`-skip_frame nokey` single pass), its Layout-tab toggle, the `Fast mode: X of Y keyframes` indicator, and the related state (`fastModeKeyframesOnly`, `fastModeThumbnailSummary`, `GenerationParams.fastMode`/`effectiveDur`, the renderer's keyframe reconciliation, and the now-unused `runCommandStreaming`/`activeProcess` plumbing). The per-frame input-seeking engine (5-way parallel) is now the only generation path, and Custom Timestamps are always available.
+  - **Rationale**: (1) Since Phase 2, the standard path extracts a 4×4 grid from a 60-min H.264 source in ~1 s, so a lossy keyframe-only preview no longer buys anything. (2) Fast mode hung on WebM sources lacking cues: `-skip_frame nokey` with an input seek forced a linear scan through the un-indexed container, appearing as a permanent hang in the UI.
+
+---
+
 ## [Unreleased] — Phase 2 - 2026-07-07
 
 ### Changed

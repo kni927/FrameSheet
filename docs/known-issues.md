@@ -17,15 +17,13 @@ This document lists known limitations, technical restrictions, and potential bug
 * **Reason**: macOS handles system-protected fonts and cloud-synced fonts (e.g., from Adobe Creative Cloud or Typekit) via virtual font descriptors or restricted paths.
 * **Workaround**: If a font returns to the default Hiragino Sans upon selection, it means its local `.ttf`/`.ttc` file was not accessible. Please choose a standard local font or browse a manual font file.
 
-### 3. Fast Mode Timestamps Are Approximate (v2.0.0)
-* **Description**: When "Fast mode: keyframes only" is enabled, the timestamps shown on the contact sheet correspond to the actual keyframe positions extracted by `-skip_frame nokey -vsync vfr`, not to evenly-spaced intervals across the sampling range.
-* **Reason**: Fast Mode skips directly to keyframes rather than decoding at fixed `fps=1/interval` steps, so exact timestamp control is not possible.
-* **Workaround**: Disable Fast Mode for an exact, evenly-spaced grid with precise timestamps. Custom Timestamps are also unavailable while Fast Mode is enabled.
+### 3. Fast Mode Timestamps Are Approximate — Obsolete (Fast Mode removed in Phase 3)
+* **Description (historical)**: When "Fast mode: keyframes only" was enabled, the timestamps shown on the contact sheet corresponded to actual keyframe positions, not evenly-spaced intervals.
+* **Status (Phase 3, 2026-07-07)**: Fast Mode was removed entirely; every generation now extracts exact, evenly-spaced (or custom) timestamps. See docs/dev-log.md.
 
-### 4. Fast Mode Thumbnail Count May Be Less Than Rows × Columns (v2.0.0)
-* **Description**: In Fast Mode, the number of thumbnails placed in the grid can be smaller than `rows × columns` if the video's GOP/keyframe interval produces fewer keyframes than requested within the sampling range.
-* **Reason**: Fast Mode only extracts existing keyframes; it does not decode additional frames to fill the grid. When fewer keyframes are available than requested, the row count is shrunk to fit.
-* **Workaround**: The `Fast mode: X of Y keyframes` indicator reports the actual vs. extracted counts. Disable Fast Mode to get a full `rows × columns` grid via Normal Mode.
+### 4. Fast Mode Thumbnail Count May Be Less Than Rows × Columns — Obsolete (Fast Mode removed in Phase 3)
+* **Description (historical)**: In Fast Mode, the grid could hold fewer thumbnails than `rows × columns` when the video contained fewer keyframes than requested in the sampling range.
+* **Status (Phase 3, 2026-07-07)**: Fast Mode was removed entirely; the grid is always filled with `rows × columns` frames. See docs/dev-log.md.
 
 ### 5. Normal Mode Was Slow for Long / High-FPS Footage — Resolved in Phase 2
 * **Description (historical)**: Normal Mode generation used a single-pass `fps=1/interval` filter that sequentially decoded every frame in the sampled range; a 60-min H.264 source took ~220 s even with `-hwaccel videotoolbox`, and high-fps HEVC slow-motion sources took several minutes.

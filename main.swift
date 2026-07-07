@@ -94,8 +94,6 @@ Dimensions: {{sample_width}}x{{sample_height}}
     @Published var endDelayPercent: Double = 5
     @Published var useCustomTimestamps: Bool = false
     @Published var customTimestampsText: String = ""
-    @Published var fastModeKeyframesOnly: Bool = true
-    @Published var fastModeThumbnailSummary: String? = nil
     
     // Dependencies Status
     @Published var ffmpegPath: String = ""
@@ -118,12 +116,11 @@ Dimensions: {{sample_width}}x{{sample_height}}
     @Published var containerWidth: CGFloat = 800.0
     @Published var containerHeight: CGFloat = 600.0
     
-    private var activeProcess: Process? = nil
     private var generateDebounceWorkItem: DispatchWorkItem? = nil
     // Incremented per generation; a superseded run (e.g. replaced by a new
     // video load while extraction was in flight) must not touch shared state.
     private var generationID = 0
-    // Normal-mode parallel extraction bookkeeping (guarded by processLock)
+    // Parallel extraction bookkeeping (guarded by processLock)
     private let processLock = NSLock()
     private var parallelProcesses: [Process] = []
     private var parallelCancelled = false
@@ -247,7 +244,6 @@ Dimensions: {{sample_width}}x{{sample_height}}
         self.errorMessage = nil
         self.previewImage = nil
         self.previewImagePath = nil
-        self.fastModeThumbnailSummary = nil
 
         // Verify file exists
         guard FileManager.default.fileExists(atPath: url.path) else {
@@ -346,7 +342,6 @@ Dimensions: {{sample_width}}x{{sample_height}}
         isGenerating = true
         errorMessage = nil
         previewImage = nil
-        fastModeThumbnailSummary = nil
         generationID += 1
         let runID = generationID
 
@@ -378,13 +373,11 @@ Dimensions: {{sample_width}}x{{sample_height}}
             return
         }
 
-        let outPattern = (tempDir as NSString).appendingPathComponent("thumb_%04d.jpg")
-        let nfcVideo   = video.path.precomposedStringWithCanonicalMapping
-        let ff         = ffmpegPath
+        let nfcVideo = video.path.precomposedStringWithCanonicalMapping
 
-        // Custom timestamps (disabled in Fast mode)
+        // Custom timestamps
         var customTS: [Double]? = nil
-        if !fastModeKeyframesOnly && useCustomTimestamps && !customTimestampsText.isEmpty {
+        if useCustomTimestamps && !customTimestampsText.isEmpty {
             let parsed = parseTimestamps(customTimestampsText)
             if !parsed.isEmpty { customTS = parsed }
         }
@@ -393,7 +386,7 @@ Dimensions: {{sample_width}}x{{sample_height}}
         let cap = GenerationParams(
             cols: cols, rows: rowsCount, thumbCount: thumbCount,
             imageWidth: totalW, spacing: spacing,
-            interval: interval, startSec: startSec, effectiveDur: effectiveDur,
+            interval: interval, startSec: startSec,
             customTS: customTS,
             video: video,
             showHeader: showHeader, showTimestamps: showTimestamps,
@@ -401,89 +394,45 @@ Dimensions: {{sample_width}}x{{sample_height}}
             customHeaderTemplate: customHeaderTemplate,
             bgColor: backgroundColor, textColor: textColor,
             fontName: selectedFont, customFontPath: customFontPath,
-            tsPosition: timestampPosition,
-            fastMode: fastModeKeyframesOnly
+            tsPosition: timestampPosition
         )
 
-        if fastModeKeyframesOnly {
-            // Fast mode: keyframes only in a single pass, no fps filter
-            // (-vsync vfr drops duplicate frames produced by -skip_frame nokey)
-            let cmd = "\"\(ff)\" -hwaccel videotoolbox -skip_frame nokey -ss \(String(format: "%.3f", startSec)) -to \(String(format: "%.3f", endSec)) -i \"\(nfcVideo)\" -vf \"scale=\(thumbWEven):-2\" -vsync vfr -q:v 3 \"\(outPattern)\" -y"
-            consoleOutput += "\n>>> [v2] Extracting keyframes (single-pass ffmpeg, fast mode)...\n\(cmd)\n"
+        // One input-seeking ffmpeg invocation per frame (-ss before -i only
+        // decodes from the nearest keyframe, frame-accurate in modern
+        // ffmpeg), run in parallel. Software decode: a single GOP per
+        // invocation is cheap, and videotoolbox init overhead would
+        // dominate here.
+        let timestamps = customTS ?? (0..<thumbCount).map { startSec + Double($0) * interval }
+        consoleOutput += "\n>>> [v2] Extracting \(timestamps.count) thumbnails (parallel per-frame input seek)...\n"
 
-            runCommandStreaming(cmd, onStdout: { text in
-                self.consoleOutput += text
-            }, onStderr: { err in
-                self.consoleOutput += err
-            }, completion: { [weak self] status in
-                guard let self = self else { return }
-                guard runID == self.generationID else {
-                    // Superseded by a newer generation (e.g. a new video was
-                    // loaded); just clean up without touching shared state.
-                    try? FileManager.default.removeItem(atPath: tempDir)
-                    return
-                }
-                guard status == 0 else {
-                    self.consoleOutput += "\n>>> ffmpeg failed (status \(status))\n"
-                    self.errorMessage = "ffmpeg failed. See console log."
+        runParallelFrameExtraction(
+            timestamps: timestamps,
+            videoPath: nfcVideo,
+            scaleWidth: thumbWEven,
+            tempDir: tempDir
+        ) { [weak self] extracted, cancelled in
+            guard let self = self else { return }
+            guard runID == self.generationID, !cancelled else {
+                if cancelled && runID == self.generationID {
                     self.isGenerating = false
-                    try? FileManager.default.removeItem(atPath: tempDir)
-                    return
                 }
-                let files = (try? FileManager.default.contentsOfDirectory(atPath: tempDir)) ?? []
-                let jpgCount = files.filter { $0.hasSuffix(".jpg") }.count
-                guard jpgCount > 0 else {
-                    try? FileManager.default.removeItem(atPath: tempDir)
-                    self.isGenerating = false
-                    self.errorMessage = "Fast mode found no keyframes in this range. Try Normal Mode."
-                    self.consoleOutput += ">>> Fast mode: 0 keyframes extracted.\n"
-                    return
-                }
-                self.consoleOutput += ">>> Fast mode: \(jpgCount) keyframes extracted. Composing contact sheet in Swift...\n"
-                let used = min(jpgCount, cap.cols * cap.rows)
-                self.fastModeThumbnailSummary = "Fast mode: \(used) of \(jpgCount) keyframes"
-                self.renderAndPresent(tempDir: tempDir, params: cap, runID: runID)
-            })
-        } else {
-            // Normal mode / custom timestamps: one input-seeking ffmpeg
-            // invocation per frame (-ss before -i only decodes from the
-            // nearest keyframe, frame-accurate in modern ffmpeg), run in
-            // parallel. Replaces the fps=1/interval single pass, which
-            // decoded every frame in the sampled range and took minutes on
-            // long sources. Software decode: a single GOP per invocation is
-            // cheap, and videotoolbox init overhead would dominate here.
-            let timestamps = customTS ?? (0..<thumbCount).map { startSec + Double($0) * interval }
-            consoleOutput += "\n>>> [v2] Extracting \(timestamps.count) thumbnails (parallel per-frame input seek)...\n"
-
-            runParallelFrameExtraction(
-                timestamps: timestamps,
-                videoPath: nfcVideo,
-                scaleWidth: thumbWEven,
-                tempDir: tempDir
-            ) { [weak self] extracted, cancelled in
-                guard let self = self else { return }
-                guard runID == self.generationID, !cancelled else {
-                    if cancelled && runID == self.generationID {
-                        self.isGenerating = false
-                    }
-                    try? FileManager.default.removeItem(atPath: tempDir)
-                    return
-                }
-                guard extracted > 0 else {
-                    self.consoleOutput += "\n>>> ffmpeg extracted no frames.\n"
-                    self.errorMessage = "ffmpeg failed. See console log."
-                    self.isGenerating = false
-                    try? FileManager.default.removeItem(atPath: tempDir)
-                    return
-                }
-                self.consoleOutput += ">>> Extracted \(extracted)/\(timestamps.count) frames. Composing contact sheet in Swift...\n"
-                self.renderAndPresent(tempDir: tempDir, params: cap, runID: runID)
+                try? FileManager.default.removeItem(atPath: tempDir)
+                return
             }
+            guard extracted > 0 else {
+                self.consoleOutput += "\n>>> ffmpeg extracted no frames.\n"
+                self.errorMessage = "ffmpeg failed. See console log."
+                self.isGenerating = false
+                try? FileManager.default.removeItem(atPath: tempDir)
+                return
+            }
+            self.consoleOutput += ">>> Extracted \(extracted)/\(timestamps.count) frames. Composing contact sheet in Swift...\n"
+            self.renderAndPresent(tempDir: tempDir, params: cap, runID: runID)
         }
     }
 
     // Composite the extracted thumbnails on a background queue and publish
-    // the resulting image (shared by the fast-mode and normal-mode paths).
+    // the resulting image.
     private func renderAndPresent(tempDir: String, params cap: GenerationParams, runID: Int) {
         DispatchQueue.global(qos: .userInitiated).async {
             let image = self.renderContactSheet(tempDir: tempDir, params: cap)
@@ -622,7 +571,7 @@ Dimensions: {{sample_width}}x{{sample_height}}
     private struct GenerationParams {
         let cols: Int, rows: Int, thumbCount: Int
         let imageWidth: Int, spacing: Int
-        let interval: Double, startSec: Double, effectiveDur: Double
+        let interval: Double, startSec: Double
         let customTS: [Double]?
         let video: VideoFileInfo
         let showHeader: Bool, showTimestamps: Bool
@@ -630,7 +579,6 @@ Dimensions: {{sample_width}}x{{sample_height}}
         let bgColor: Color, textColor: Color
         let fontName: String, customFontPath: String
         let tsPosition: String
-        let fastMode: Bool
     }
 
     // CoreGraphics / AppKit composite renderer
@@ -641,31 +589,8 @@ Dimensions: {{sample_width}}x{{sample_height}}
         let ar      = p.video.width > 0 ? Double(p.video.height) / Double(p.video.width) : 9.0 / 16.0
         let cellH   = max(1, Int(Double(cellW) * ar))
 
-        // Fast mode: discover extracted keyframes, even-sample down to cols*rows
-        // if there are more, otherwise use the actual (smaller) count and shrink
-        // the row count to fit (column count stays as configured).
-        var rows = p.rows
-        var thumbCount = p.thumbCount
-        var fastFramePaths: [String]? = nil
-        if p.fastMode {
-            let fm = FileManager.default
-            let files = (try? fm.contentsOfDirectory(atPath: tempDir)) ?? []
-            let jpgs = files.filter { $0.hasSuffix(".jpg") }.sorted()
-            let requested = p.cols * p.rows
-            let paths: [String]
-            if jpgs.count > requested && requested > 0 {
-                paths = (0..<requested).map { i in
-                    let idx = i * jpgs.count / requested
-                    return (tempDir as NSString).appendingPathComponent(jpgs[idx])
-                }
-            } else {
-                paths = jpgs.map { (tempDir as NSString).appendingPathComponent($0) }
-            }
-            guard !paths.isEmpty else { return nil }
-            fastFramePaths = paths
-            thumbCount = paths.count
-            rows = Int(ceil(Double(thumbCount) / Double(max(1, cols))))
-        }
+        let rows = p.rows
+        let thumbCount = p.thumbCount
 
         // Header lines
         let fontSize: CGFloat   = 14
@@ -750,12 +675,7 @@ Dimensions: {{sample_width}}x{{sample_height}}
             let y   = totalH - headerH - (row + 1) * cellH - row * spacing
             let destRect = NSRect(x: x, y: y, width: cellW, height: cellH)
 
-            let thumbPath: String
-            if let fp = fastFramePaths {
-                thumbPath = fp[i]
-            } else {
-                thumbPath = String(format: "\(tempDir)/thumb_%04d.jpg", i + 1)
-            }
+            let thumbPath = String(format: "\(tempDir)/thumb_%04d.jpg", i + 1)
             if let img = NSImage(contentsOfFile: thumbPath) {
                 img.draw(in: destRect, from: .zero, operation: .sourceOver, fraction: 1.0)
             } else {
@@ -765,11 +685,6 @@ Dimensions: {{sample_width}}x{{sample_height}}
 
             if p.showTimestamps {
                 let ts: Double = {
-                    if p.fastMode {
-                        // Approximate: index-based position across the sampled range
-                        let frac = thumbCount > 1 ? Double(i) / Double(thumbCount - 1) : 0
-                        return p.startSec + frac * p.effectiveDur
-                    }
                     if let cTS = p.customTS, i < cTS.count { return cTS[i] }
                     return p.startSec + Double(i) * p.interval
                 }()
@@ -876,81 +791,8 @@ Dimensions: {{sample_width}}x{{sample_height}}
         zoomScale = min(1.0, max(0.1, min(scaleW, scaleH)))
     }
     
-    // Run command in background with streaming output
-    private func runCommandStreaming(
-        _ command: String,
-        onStdout: @escaping (String) -> Void,
-        onStderr: @escaping (String) -> Void,
-        completion: @escaping (Int32) -> Void
-    ) {
-        // Kill existing process if any
-        activeProcess?.terminate()
-        
-        let task = Process()
-        task.executableURL = URL(fileURLWithPath: "/bin/bash")
-        task.arguments = ["-c", command]
-        
-        var env = ProcessInfo.processInfo.environment
-        let currentPath = env["PATH"] ?? ""
-        // Force include miniforge and homebrew paths
-        env["PATH"] = "/Users/kni/miniforge3/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:" + currentPath
-        task.environment = env
-        
-        let outPipe = Pipe()
-        let errPipe = Pipe()
-        task.standardOutput = outPipe
-        task.standardError = errPipe
-        
-        self.activeProcess = task
-        
-        outPipe.fileHandleForReading.readabilityHandler = { handle in
-            let data = handle.availableData
-            if data.isEmpty { return }
-            if let str = String(data: data, encoding: .utf8) {
-                DispatchQueue.main.async {
-                    onStdout(str)
-                }
-            }
-        }
-        
-        errPipe.fileHandleForReading.readabilityHandler = { handle in
-            let data = handle.availableData
-            if data.isEmpty { return }
-            if let str = String(data: data, encoding: .utf8) {
-                DispatchQueue.main.async {
-                    onStderr(str)
-                }
-            }
-        }
-        
-        task.terminationHandler = { t in
-            outPipe.fileHandleForReading.readabilityHandler = nil
-            errPipe.fileHandleForReading.readabilityHandler = nil
-            DispatchQueue.main.async {
-                // A replacement command may already be running; only clear
-                // the reference if it still points at this task.
-                if self.activeProcess === task {
-                    self.activeProcess = nil
-                }
-                completion(t.terminationStatus)
-            }
-        }
-        
-        do {
-            try task.run()
-        } catch {
-            outPipe.fileHandleForReading.readabilityHandler = nil
-            errPipe.fileHandleForReading.readabilityHandler = nil
-            DispatchQueue.main.async {
-                self.activeProcess = nil
-                onStderr("Execution Error: \(error.localizedDescription)\n")
-                completion(-1)
-            }
-        }
-    }
-    
     func cancelGeneration() {
-        // Stop the parallel per-frame extraction (normal mode) if running
+        // Stop the parallel per-frame extraction if running
         processLock.lock()
         parallelCancelled = true
         let procs = parallelProcesses
@@ -959,11 +801,6 @@ Dimensions: {{sample_width}}x{{sample_height}}
         var didCancel = false
         for p in procs where p.isRunning {
             p.terminate()
-            didCancel = true
-        }
-        // Stop the single streaming command (fast mode) if running
-        if let process = activeProcess, process.isRunning {
-            process.terminate()
             didCancel = true
         }
         if didCancel {
@@ -1480,24 +1317,6 @@ struct LayoutTab: View {
                     set: { state.gridSpacing = Int($0) }
                 ), in: 0...50, step: 1.0)
             }
-
-            Divider()
-
-            Toggle("Fast mode: keyframes only", isOn: Binding(
-                get: { state.fastModeKeyframesOnly },
-                set: {
-                    state.fastModeKeyframesOnly = $0
-                    state.autoGenerateIfNeeded()
-                }
-            ))
-            .toggleStyle(.checkbox)
-            .help("Uses keyframes only, timestamps are approximate. Generation is much faster, but the thumbnail count may be less than rows × columns depending on the video's keyframe interval.")
-
-            if state.fastModeKeyframesOnly {
-                Text("Fast mode: extracts keyframes only. Thumbnail count may be fewer than rows × columns, and timestamps are approximate.")
-                    .font(.system(size: 9))
-                    .foregroundColor(.secondary)
-            }
         }
         .monoFont()
     }
@@ -1668,15 +1487,8 @@ struct StyleTab: View {
                     ))
                     .toggleStyle(.checkbox)
                     .font(.caption)
-                    .disabled(state.fastModeKeyframesOnly)
 
-                    if state.fastModeKeyframesOnly {
-                        Text("Disabled in Fast mode (keyframes only).")
-                            .font(.system(size: 8))
-                            .foregroundColor(.secondary)
-                    }
-
-                    if state.useCustomTimestamps && !state.fastModeKeyframesOnly {
+                    if state.useCustomTimestamps {
                         TextEditor(text: Binding(
                             get: { state.customTimestampsText },
                             set: {
@@ -1817,13 +1629,6 @@ struct CanvasView: View {
                             }
                             
                             Spacer()
-
-                            if let summary = state.fastModeThumbnailSummary {
-                                Text(summary)
-                                    .font(.system(size: 9, design: .monospaced))
-                                    .foregroundColor(.secondary)
-                                    .padding(.trailing, 6)
-                            }
 
                             // Reveal file button
                             Button(action: {
