@@ -269,6 +269,7 @@ Dimensions: {{sample_width}}x{{sample_height}}
             
             videoInfo.isLoaded = true
             self.selectedVideo = videoInfo
+            NSDocumentController.shared.noteNewRecentDocumentURL(url)
             self.consoleOutput += "Successfully loaded video:\n - Codec: \(videoInfo.codec)\n - Resolution: \(videoInfo.width)x\(videoInfo.height)\n - Duration: \(videoInfo.formattedDuration)\n - Size: \(videoInfo.formattedSize)\n"
             
             // Auto generate initial contact sheet
