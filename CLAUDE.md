@@ -4,11 +4,11 @@
 
 Before making changes, read:
 
-1. PROJECT.md
-2. ARCHITECTURE.md
-3. DECISIONS.md
-4. KNOWN-ISSUES.md
-5. ANTIGRAVITY.md
+1. docs/project.md
+2. docs/architecture.md
+3. docs/decisions.md
+4. docs/known-issues.md
+5. docs/antigravity.md
 
 ## Git Workflow
 
@@ -27,7 +27,7 @@ bash git switch -c feature/<task-name>
 - `vcsi` has been removed entirely as of v2.0.0; do not reintroduce it or any Python dependency
 - Keep UI text in English
 - Prefer small targeted fixes over large refactors
-- Do not remove historical information from ANTIGRAVITY.md
+- Do not remove historical information from docs/antigravity.md
 
 ## Validation
 
