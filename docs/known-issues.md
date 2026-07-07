@@ -27,10 +27,9 @@ This document lists known limitations, technical restrictions, and potential bug
 * **Reason**: Fast Mode only extracts existing keyframes; it does not decode additional frames to fill the grid. When fewer keyframes are available than requested, the row count is shrunk to fit.
 * **Workaround**: The `Fast mode: X of Y keyframes` indicator reports the actual vs. extracted counts. Disable Fast Mode to get a full `rows × columns` grid via Normal Mode.
 
-### 5. Normal Mode Remains Slow for High-FPS HEVC Footage
-* **Description**: Even with `-hwaccel videotoolbox` enabled, Normal Mode generation time for very high frame-rate slow-motion HEVC sources (e.g. 240fps) can take several minutes, much longer than the ~25 second figure typical of 4K60/60s clips.
-* **Reason**: The `fps=1/interval` filter still requires sequentially decoding every frame in the sampled range; hardware decoding reduces but does not eliminate this cost at very high frame rates.
-* **Workaround**: Use Fast Mode for a quick preview of high-fps footage, and expect longer wait times in Normal Mode for such sources.
+### 5. Normal Mode Was Slow for Long / High-FPS Footage — Resolved in Phase 2
+* **Description (historical)**: Normal Mode generation used a single-pass `fps=1/interval` filter that sequentially decoded every frame in the sampled range; a 60-min H.264 source took ~220 s even with `-hwaccel videotoolbox`, and high-fps HEVC slow-motion sources took several minutes.
+* **Status (Phase 2, 2026-07-07)**: Normal Mode (and Custom Timestamps) now extract each frame with an input-seeking `ffmpeg -ss <t> -i <file> -frames:v 1` invocation, 5 in parallel. The same 60-min benchmark completes in ~1 s (see docs/dev-log.md). Sources with extremely long keyframe intervals could still slow individual seeks, but this has not been observed in testing.
 
 ### 6. Temporary Preview Flicker during Auto-Fit
 * **Description**: When a new contact sheet is generated, the preview may flicker or show scrollbars for a fraction of a second before scaling down.

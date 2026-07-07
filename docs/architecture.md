@@ -8,7 +8,7 @@ FrameSheet follows a lightweight, single-binary Swift frontend model coordinatin
 graph TD
     A[SwiftUI Frontend] -->|Config & Actions| B[AppState Coordinator]
     B -->|ffprobe metadata| D[System FFmpeg/FFprobe]
-    B -->|"Fast Mode: -skip_frame nokey<br/>Normal Mode: fps=1/interval<br/>(+ -hwaccel videotoolbox)"| D
+    B -->|"Fast Mode: -skip_frame nokey single pass (videotoolbox)<br/>Normal Mode: per-frame -ss input seek, 5 parallel"| D
     D -->|Extracts| E[Temporary Keyframe/Sampled JPEGs]
     E -->|Input Thumbnails| G[renderContactSheet<br/>CoreGraphics/AppKit Composite]
     G -->|Renders| H[Contact Sheet NSImage]
@@ -31,11 +31,13 @@ FrameSheet
 │   └── ConsoleView (Process Output Stream Panel)
 │
 ├── Services (AppState Coordinator Logic)
-│   ├── FFmpegEngine (`generateContactSheet`): Builds and runs a single ffmpeg
-│   │     invocation — Fast Mode (`-hwaccel videotoolbox -skip_frame nokey
-│   │     -vsync vfr`) or Normal Mode (`-hwaccel videotoolbox -ss/-to
-│   │     -vf fps=1/interval`) — writing temporary JPEG thumbnails
-│   │     (`-q:v 3`), then streams logs to `ConsoleView`.
+│   ├── FFmpegEngine (`generateContactSheet` / `runParallelFrameExtraction`):
+│   │     Fast Mode runs a single ffmpeg pass (`-hwaccel videotoolbox
+│   │     -skip_frame nokey -vsync vfr`); Normal Mode and Custom Timestamps
+│   │     run one input-seeking invocation per frame (`-ss <t> -i <file>
+│   │     -frames:v 1`, software decode) with 5 concurrent processes.
+│   │     Both write temporary JPEG thumbnails (`-q:v 3`) and log to
+│   │     `ConsoleView`.
 │   ├── ContactSheetRenderer (`renderContactSheet`): Composites the extracted
 │   │     JPEG thumbnails into the final image using CoreGraphics/AppKit
 │   │     (`NSAttributedString` for header/timestamp text). In Fast Mode,
@@ -63,7 +65,7 @@ FrameSheet
 - **ConsoleView**: Outputs stdout/stderr streams from the ffmpeg child process to aid user troubleshooting.
 
 #### 2. Services (Logical Architecture inside `AppState`)
-- **FFmpegEngine (`generateContactSheet`)**: Computes sampling parameters (columns, rows, spacing, start/end delay, custom timestamps) and builds one of three ffmpeg command variants — Fast Mode (keyframes only), Custom Timestamps (`select` filter), or Normal Mode (`fps=1/interval`) — all using `-hwaccel videotoolbox` and JPEG (`-q:v 3`) temporary output. Runs the command asynchronously via `Process` and streams logs to `ConsoleView`.
+- **FFmpegEngine (`generateContactSheet` / `runParallelFrameExtraction`)**: Computes sampling parameters (columns, rows, spacing, start/end delay, custom timestamps) and picks one of two extraction strategies. Fast Mode: a single streaming ffmpeg pass with `-hwaccel videotoolbox -skip_frame nokey -vsync vfr`. Normal Mode / Custom Timestamps: one input-seeking invocation per frame (`ffmpeg -ss <t> -i <file> -frames:v 1`, software decode — GOP-sized work where hwaccel init would dominate), run 5-concurrent with cancellation support. Both write JPEG (`-q:v 3`) temporaries and log to `ConsoleView`. (Phase 2 replaced the previous `fps=1/interval` full-range decode: 60-min H.264 benchmark ~220 s → ~1 s.)
 - **ContactSheetRenderer (`renderContactSheet`)**: Composites the extracted JPEG thumbnails and overlays (header, timestamps) into the final `NSImage` using CoreGraphics bitmap contexts and `NSAttributedString`. In Fast Mode, reconciles the actual extracted keyframe count (`jpgCount`) against the requested `rows × columns`: even-samples down if more keyframes were extracted than requested, or shrinks the row count to fit if fewer were extracted.
 - **FFmpegService (`loadVideoMetadata`)**: Uses `ffprobe -v error -show_entries ... -of json` to extract stream duration, dimensions, and format details to generate accurate scale previews.
 - **ExportService (`savePreviewImage`)**: Handles UI file export workflows using `NSSavePanel`, resolving dynamic naming patterns like `[filename]_sheet.png` and managing destination writes.

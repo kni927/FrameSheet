@@ -123,6 +123,10 @@ Dimensions: {{sample_width}}x{{sample_height}}
     // Incremented per generation; a superseded run (e.g. replaced by a new
     // video load while extraction was in flight) must not touch shared state.
     private var generationID = 0
+    // Normal-mode parallel extraction bookkeeping (guarded by processLock)
+    private let processLock = NSLock()
+    private var parallelProcesses: [Process] = []
+    private var parallelCancelled = false
 
     init() {
         checkDependencies()
@@ -364,23 +368,6 @@ Dimensions: {{sample_width}}x{{sample_height}}
             if !parsed.isEmpty { customTS = parsed }
         }
 
-        // ---- ffmpeg command ----
-        // -ss before -i = fast input seek (keyframe-accurate), then fps filter for
-        // sequential decode. Dramatically faster than per-frame random seek (vcsi).
-        let cmd: String
-        if fastModeKeyframesOnly {
-            // Fast mode: keyframes only, no fps filter, no fixed frame count
-            // (-vsync vfr drops duplicate frames produced by -skip_frame nokey)
-            cmd = "\"\(ff)\" -hwaccel videotoolbox -skip_frame nokey -ss \(String(format: "%.3f", startSec)) -to \(String(format: "%.3f", endSec)) -i \"\(nfcVideo)\" -vf \"scale=\(thumbWEven):-2\" -vsync vfr -q:v 3 \"\(outPattern)\" -y"
-        } else if let ts = customTS {
-            let selectParts = ts.map { String(format: "eq(t\\,%.3f)", $0) }.joined(separator: "+")
-            cmd = "\"\(ff)\" -hwaccel videotoolbox -i \"\(nfcVideo)\" -vf \"select='\(selectParts)',setpts=N*AVTB,scale=\(thumbWEven):-2\" -frames:v \(ts.count) -q:v 3 -vsync vfr \"\(outPattern)\" -y"
-        } else {
-            cmd = "\"\(ff)\" -hwaccel videotoolbox -ss \(String(format: "%.3f", startSec)) -to \(String(format: "%.3f", endSec)) -i \"\(nfcVideo)\" -vf \"fps=1/\(String(format: "%.6f", interval)),scale=\(thumbWEven):-2\" -frames:v \(thumbCount) -q:v 3 \"\(outPattern)\" -y"
-        }
-
-        consoleOutput += "\n>>> [v2] Extracting \(thumbCount) thumbnails (single-pass ffmpeg, fastMode=\(fastModeKeyframesOnly))...\n\(cmd)\n"
-
         // Capture settings for background thread
         let cap = GenerationParams(
             cols: cols, rows: rowsCount, thumbCount: thumbCount,
@@ -397,75 +384,217 @@ Dimensions: {{sample_width}}x{{sample_height}}
             fastMode: fastModeKeyframesOnly
         )
 
-        runCommandStreaming(cmd, onStdout: { text in
-            self.consoleOutput += text
-        }, onStderr: { err in
-            self.consoleOutput += err
-        }, completion: { [weak self] status in
-            guard let self = self else { return }
-            guard runID == self.generationID else {
-                // Superseded by a newer generation (e.g. a new video was
-                // loaded); just clean up without touching shared state.
-                try? FileManager.default.removeItem(atPath: tempDir)
-                return
-            }
-            guard status == 0 else {
-                self.consoleOutput += "\n>>> ffmpeg failed (status \(status))\n"
-                self.errorMessage = "ffmpeg failed. See console log."
-                self.isGenerating = false
-                try? FileManager.default.removeItem(atPath: tempDir)
-                return
-            }
-            self.consoleOutput += ">>> Composing contact sheet in Swift...\n"
+        if fastModeKeyframesOnly {
+            // Fast mode: keyframes only in a single pass, no fps filter
+            // (-vsync vfr drops duplicate frames produced by -skip_frame nokey)
+            let cmd = "\"\(ff)\" -hwaccel videotoolbox -skip_frame nokey -ss \(String(format: "%.3f", startSec)) -to \(String(format: "%.3f", endSec)) -i \"\(nfcVideo)\" -vf \"scale=\(thumbWEven):-2\" -vsync vfr -q:v 3 \"\(outPattern)\" -y"
+            consoleOutput += "\n>>> [v2] Extracting keyframes (single-pass ffmpeg, fast mode)...\n\(cmd)\n"
 
-            DispatchQueue.global(qos: .userInitiated).async {
-                if self.fastModeKeyframesOnly {
-                    let files = (try? FileManager.default.contentsOfDirectory(atPath: tempDir)) ?? []
-                    let jpgCount = files.filter { $0.hasSuffix(".jpg") }.count
-                    if jpgCount == 0 {
-                        try? FileManager.default.removeItem(atPath: tempDir)
-                        DispatchQueue.main.async {
-                            self.isGenerating = false
-                            self.errorMessage = "Fast mode found no keyframes in this range. Try Normal Mode."
-                            self.consoleOutput += ">>> Fast mode: 0 keyframes extracted.\n"
-                        }
+            runCommandStreaming(cmd, onStdout: { text in
+                self.consoleOutput += text
+            }, onStderr: { err in
+                self.consoleOutput += err
+            }, completion: { [weak self] status in
+                guard let self = self else { return }
+                guard runID == self.generationID else {
+                    // Superseded by a newer generation (e.g. a new video was
+                    // loaded); just clean up without touching shared state.
+                    try? FileManager.default.removeItem(atPath: tempDir)
+                    return
+                }
+                guard status == 0 else {
+                    self.consoleOutput += "\n>>> ffmpeg failed (status \(status))\n"
+                    self.errorMessage = "ffmpeg failed. See console log."
+                    self.isGenerating = false
+                    try? FileManager.default.removeItem(atPath: tempDir)
+                    return
+                }
+                let files = (try? FileManager.default.contentsOfDirectory(atPath: tempDir)) ?? []
+                let jpgCount = files.filter { $0.hasSuffix(".jpg") }.count
+                guard jpgCount > 0 else {
+                    try? FileManager.default.removeItem(atPath: tempDir)
+                    self.isGenerating = false
+                    self.errorMessage = "Fast mode found no keyframes in this range. Try Normal Mode."
+                    self.consoleOutput += ">>> Fast mode: 0 keyframes extracted.\n"
+                    return
+                }
+                self.consoleOutput += ">>> Fast mode: \(jpgCount) keyframes extracted. Composing contact sheet in Swift...\n"
+                let used = min(jpgCount, cap.cols * cap.rows)
+                self.fastModeThumbnailSummary = "Fast mode: \(used) of \(jpgCount) keyframes"
+                self.renderAndPresent(tempDir: tempDir, params: cap, runID: runID)
+            })
+        } else {
+            // Normal mode / custom timestamps: one input-seeking ffmpeg
+            // invocation per frame (-ss before -i only decodes from the
+            // nearest keyframe, frame-accurate in modern ffmpeg), run in
+            // parallel. Replaces the fps=1/interval single pass, which
+            // decoded every frame in the sampled range and took minutes on
+            // long sources. Software decode: a single GOP per invocation is
+            // cheap, and videotoolbox init overhead would dominate here.
+            let timestamps = customTS ?? (0..<thumbCount).map { startSec + Double($0) * interval }
+            consoleOutput += "\n>>> [v2] Extracting \(timestamps.count) thumbnails (parallel per-frame input seek)...\n"
+
+            runParallelFrameExtraction(
+                timestamps: timestamps,
+                videoPath: nfcVideo,
+                scaleWidth: thumbWEven,
+                tempDir: tempDir
+            ) { [weak self] extracted, cancelled in
+                guard let self = self else { return }
+                guard runID == self.generationID, !cancelled else {
+                    if cancelled && runID == self.generationID {
+                        self.isGenerating = false
+                    }
+                    try? FileManager.default.removeItem(atPath: tempDir)
+                    return
+                }
+                guard extracted > 0 else {
+                    self.consoleOutput += "\n>>> ffmpeg extracted no frames.\n"
+                    self.errorMessage = "ffmpeg failed. See console log."
+                    self.isGenerating = false
+                    try? FileManager.default.removeItem(atPath: tempDir)
+                    return
+                }
+                self.consoleOutput += ">>> Extracted \(extracted)/\(timestamps.count) frames. Composing contact sheet in Swift...\n"
+                self.renderAndPresent(tempDir: tempDir, params: cap, runID: runID)
+            }
+        }
+    }
+
+    // Composite the extracted thumbnails on a background queue and publish
+    // the resulting image (shared by the fast-mode and normal-mode paths).
+    private func renderAndPresent(tempDir: String, params cap: GenerationParams, runID: Int) {
+        DispatchQueue.global(qos: .userInitiated).async {
+            let image = self.renderContactSheet(tempDir: tempDir, params: cap)
+            try? FileManager.default.removeItem(atPath: tempDir)
+
+            DispatchQueue.main.async {
+                guard runID == self.generationID else { return }
+                self.isGenerating = false
+                if let img = image {
+                    let outPath = (NSTemporaryDirectory() as NSString)
+                        .appendingPathComponent("framesheet_\(Int(Date().timeIntervalSince1970)).png")
+                    if let tiff = img.tiffRepresentation,
+                       let rep  = NSBitmapImageRep(data: tiff),
+                       let png  = rep.representation(using: .png, properties: [:]) {
+                        try? png.write(to: URL(fileURLWithPath: outPath))
+                        self.previewImagePath = outPath
+                    }
+                    self.previewImage = img
+                    self.fitToScreen()
+                    self.consoleOutput += ">>> Contact sheet generated successfully!\n"
+                } else {
+                    self.errorMessage = "Failed to compose contact sheet."
+                    self.consoleOutput += ">>> Composition failed.\n"
+                }
+            }
+        }
+    }
+
+    // Extract one frame per timestamp with parallel ffmpeg input seeks
+    // (5 concurrent). completion(extractedCount, wasCancelled) is called on
+    // the main queue after all invocations finish.
+    private func runParallelFrameExtraction(
+        timestamps: [Double],
+        videoPath: String,
+        scaleWidth: Int,
+        tempDir: String,
+        completion: @escaping (Int, Bool) -> Void
+    ) {
+        let ff = ffmpegPath
+        processLock.lock()
+        parallelCancelled = false
+        parallelProcesses.removeAll()
+        processLock.unlock()
+
+        DispatchQueue.global(qos: .userInitiated).async {
+            let semaphore = DispatchSemaphore(value: 5)
+            let group = DispatchGroup()
+            let countLock = NSLock()
+            var extracted = 0
+
+            for (i, t) in timestamps.enumerated() {
+                semaphore.wait()
+                self.processLock.lock()
+                let cancelled = self.parallelCancelled
+                self.processLock.unlock()
+                if cancelled {
+                    semaphore.signal()
+                    break
+                }
+                group.enter()
+                DispatchQueue.global(qos: .userInitiated).async {
+                    defer {
+                        semaphore.signal()
+                        group.leave()
+                    }
+                    let outPath = String(format: "%@/thumb_%04d.jpg", tempDir, i + 1)
+                    let task = Process()
+                    task.executableURL = URL(fileURLWithPath: ff)
+                    task.arguments = [
+                        "-hide_banner", "-loglevel", "error",
+                        "-ss", String(format: "%.3f", t),
+                        "-i", videoPath,
+                        "-frames:v", "1",
+                        "-vf", "scale=\(scaleWidth):-2",
+                        "-q:v", "3",
+                        "-y", outPath
+                    ]
+                    task.standardOutput = FileHandle.nullDevice
+                    let errPipe = Pipe()
+                    task.standardError = errPipe
+
+                    self.processLock.lock()
+                    if self.parallelCancelled {
+                        self.processLock.unlock()
                         return
                     }
-                    self.consoleOutput += ">>> Fast mode: \(jpgCount) keyframes extracted.\n"
-                    let requested = cap.cols * cap.rows
-                    let used = min(jpgCount, requested)
-                    let summary = "Fast mode: \(used) of \(jpgCount) keyframes"
-                    DispatchQueue.main.async {
-                        guard runID == self.generationID else { return }
-                        self.fastModeThumbnailSummary = summary
-                    }
-                }
+                    self.parallelProcesses.append(task)
+                    self.processLock.unlock()
 
-                let image = self.renderContactSheet(tempDir: tempDir, params: cap)
-                try? FileManager.default.removeItem(atPath: tempDir)
-
-                DispatchQueue.main.async {
-                    guard runID == self.generationID else { return }
-                    self.isGenerating = false
-                    if let img = image {
-                        let outPath = (NSTemporaryDirectory() as NSString)
-                            .appendingPathComponent("framesheet_\(Int(Date().timeIntervalSince1970)).png")
-                        if let tiff = img.tiffRepresentation,
-                           let rep  = NSBitmapImageRep(data: tiff),
-                           let png  = rep.representation(using: .png, properties: [:]) {
-                            try? png.write(to: URL(fileURLWithPath: outPath))
-                            self.previewImagePath = outPath
+                    var launched = false
+                    do {
+                        try task.run()
+                        launched = true
+                        task.waitUntilExit()
+                    } catch {
+                        DispatchQueue.main.async {
+                            self.consoleOutput += "Frame \(i + 1): failed to launch ffmpeg: \(error.localizedDescription)\n"
                         }
-                        self.previewImage = img
-                        self.fitToScreen()
-                        self.consoleOutput += ">>> Contact sheet generated successfully!\n"
-                    } else {
-                        self.errorMessage = "Failed to compose contact sheet."
-                        self.consoleOutput += ">>> Composition failed.\n"
+                    }
+
+                    self.processLock.lock()
+                    if let idx = self.parallelProcesses.firstIndex(where: { $0 === task }) {
+                        self.parallelProcesses.remove(at: idx)
+                    }
+                    self.processLock.unlock()
+
+                    // Drain stderr even on success so the pipe can't fill up
+                    let errData = errPipe.fileHandleForReading.readDataToEndOfFile()
+                    if launched && task.terminationStatus == 0
+                        && FileManager.default.fileExists(atPath: outPath) {
+                        countLock.lock()
+                        extracted += 1
+                        countLock.unlock()
+                    } else if let err = String(data: errData, encoding: .utf8), !err.isEmpty {
+                        DispatchQueue.main.async {
+                            self.consoleOutput += "Frame \(i + 1) (t=\(String(format: "%.1f", t))s): \(err)"
+                        }
                     }
                 }
             }
-        })
+
+            group.wait()
+            self.processLock.lock()
+            let wasCancelled = self.parallelCancelled
+            self.processLock.unlock()
+            countLock.lock()
+            let total = extracted
+            countLock.unlock()
+            DispatchQueue.main.async {
+                completion(total, wasCancelled)
+            }
+        }
     }
 
     // Parameter bundle for background renderer
@@ -800,8 +929,23 @@ Dimensions: {{sample_width}}x{{sample_height}}
     }
     
     func cancelGeneration() {
+        // Stop the parallel per-frame extraction (normal mode) if running
+        processLock.lock()
+        parallelCancelled = true
+        let procs = parallelProcesses
+        processLock.unlock()
+
+        var didCancel = false
+        for p in procs where p.isRunning {
+            p.terminate()
+            didCancel = true
+        }
+        // Stop the single streaming command (fast mode) if running
         if let process = activeProcess, process.isRunning {
             process.terminate()
+            didCancel = true
+        }
+        if didCancel {
             self.consoleOutput += "\n>>> Command execution cancelled by user.\n"
             self.isGenerating = false
         }

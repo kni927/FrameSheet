@@ -4,6 +4,23 @@ This log details the features, design changes, and bug fixes implemented during 
 
 ---
 
+## [Unreleased] — Phase 2 - 2026-07-07
+
+### Changed
+- **Normal Mode: Parallel Per-Frame Input Seeking**: Replaced the Normal Mode single-pass `fps=1/interval` filter (which sequentially decoded every frame in the sampled range) with one input-seeking invocation per frame (`ffmpeg -ss <t> -i <file> -frames:v 1`, frame-accurate in modern ffmpeg), run 5-concurrent via `runParallelFrameExtraction()`. Custom Timestamps use the same path (previously a full-decode `select` filter with no seeking at all). Hardware decoding (`-hwaccel videotoolbox`) was intentionally dropped for these single-frame invocations: decoding one GOP in software is cheap and decoder init overhead would dominate. Fast Mode is unchanged (single-pass `-skip_frame nokey`).
+  - **Benchmark** (60-min 1280x720 30fps H.264 synthetic source, 4×4 grid, width 1200, 5%/95% range, Apple Silicon):
+    - Before (single-pass `fps=1/interval` + videotoolbox): **220 s** for 16 frames
+    - After (per-frame input seek × 5 parallel, software decode): **1 s** for 16 frames (~220×)
+- **Cancel Support for Parallel Extraction**: `cancelGeneration()` now terminates all in-flight per-frame ffmpeg processes and stops the dispatch loop from launching new ones.
+
+### Fixed
+- **App Icon**: `docs/AppIcon.png` was JPEG data with a `.png` extension. Converted to a real PNG and moved to `assets/AppIcon.png`; `build.sh` now generates the iconset/icns from it.
+
+### Repo
+- Docs reorganized under `docs/` (lowercase names); completed task lists are archived under `docs/tasks/`.
+
+---
+
 ## [2.0.0] - 2026-06-11
 
 ### Added
