@@ -1,16 +1,23 @@
-# FrameSheet — Phase 3
+# FrameSheet — Phase 4
 
 ## Tasks
 
-1. Remove fast mode
-   - Delete fast-mode extraction path, its UI toggle, and the
-     keyframe-summary state cleared in loadVideo.
-   - Normal mode (per-frame input seek, 5-way parallel) becomes
-     the only generation path.
-   - Update docs/architecture.md and known-issues.md; note the
-     rationale (normal mode now runs in seconds; fast mode hung
-     on WebM sources lacking cues) in docs/dev-log.md.
+0. Housekeeping
+   - Archive Phase 2/3 task lists to docs/tasks/.
+
+1. Duration fallback for files lacking metadata
+   - If ffprobe format/stream duration is missing, N/A, or 0,
+     estimate duration by demux-only packet scan (e.g. read
+     last packet pts via ffprobe; if the container cannot seek
+     to the end, fall back to a full -show_packets scan of
+     pts_time and take the max).
+   - Show a brief "estimating duration…" state in the UI while
+     scanning, and make it cancellable.
+   - Guard: if estimation still fails, surface a clear error
+     instead of silently producing a sheet of identical frames.
 
 ## Verification
 - Build, smoke test, commit.
-- Generate once each from an .mp4 and the problematic .webm.
+- Test with: normal .mp4, the ~2h15m a.webm (duration present,
+  must not regress), and a synthesized cues-less/duration-less
+  WebM (Claude Code already knows how to generate one via pipe).
