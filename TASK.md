@@ -1,34 +1,38 @@
-# FrameSheet UI Improvements — Phase 1 (single-file, replace-on-open)
-
-Policy: The app always holds at most one video. Loading a new file
-discards the previous one. Grid/style settings persist across loads;
-only the preview is regenerated.
+# FrameSheet — Phase 2
 
 ## Tasks
 
-1. File > Open menu (⌘O)
-   - Add `.commands { CommandGroup(replacing: .newItem) }` with an
-     Open command calling NSOpenPanel (allowed types: public.movie).
-   - Loading replaces current video and regenerates the sheet.
+1. Repo structure cleanup
+   - Adopt: README.md and CLAUDE.md at root; all other docs
+     under docs/ (dev-log.md, known-issues.md, archive of
+     completed task lists as docs/tasks/YYYY-MM-*.md).
+   - Move stray files accordingly; update any paths referenced
+     in build.sh / CLAUDE.md.
 
-2. Drag & drop replace
-   - Keep `onDrop` active even when a video is already loaded.
-   - Dropping a new file replaces the current one (same path as Open).
+2. App icon
+   - docs/AppIcon.png exists but is actually JPEG data.
+     Convert to real PNG (sips -s format png), decide final
+     location per task 1 (suggest assets/AppIcon.png),
+     point build.sh at it, verify iconset/icns generation.
 
-3. Open via Finder / Dock
-   - Register CFBundleDocumentTypes (public.movie) in Info.plist.
-   - Handle `onOpenURL` (or NSApplicationDelegate open) to route
-     into the same load function.
+3. Normal-mode generation speed (main task)
+   - Investigate current ffmpeg invocation for non-fast mode.
+     If it uses output seeking or a full-decode select filter,
+     switch to input seeking: `ffmpeg -ss <t> -i <file> -frames:v 1`
+     per frame (frame-accurate in modern ffmpeg).
+   - Parallelize per-frame extraction (4–6 concurrent).
+   - Target: 60-min H.264 source in seconds, not minutes.
+   - Only if still insufficient: -hwaccel videotoolbox.
 
-4. Open Recent
-   - Call `NSDocumentController.shared.noteNewRecentDocumentURL(url)`
-     on every successful load.
+4. Cold-start race
+   - Delay processing of a stashed Finder-open URL until the
+     async ffmpeg dependency check completes.
 
-5. Unify load path
-   - All entry points (1–4) must call a single `loadVideo(url:)`
-     that resets preview state, keeps settings, and regenerates.
+## Deferred (do not implement)
+- File > Open Recent submenu via AppKit hack — revisit only if
+  Dock/Apple-menu recents prove insufficient in daily use.
 
 ## Verification
-- Build with xcodebuild after each task; commit per task.
-- Manual check: open → open again (replace), drop onto loaded state,
-  double-click .mp4 in Finder, Open Recent menu populated.
+- Build after each task, commit per task.
+- Task 3: time normal-mode generation on a ~60-min video
+  before/after and record numbers in dev-log.md.
