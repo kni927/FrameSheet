@@ -1702,17 +1702,6 @@ struct CanvasView: View {
                             }
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
                             .contentShape(Rectangle())
-                            .onDrop(of: [UTType.fileURL], isTargeted: $isTargeted) { providers in
-                                guard let provider = providers.first else { return false }
-                                _ = provider.loadObject(ofClass: URL.self) { url, error in
-                                    if let url = url {
-                                        DispatchQueue.main.async {
-                                            state.loadVideo(url: url)
-                                        }
-                                    }
-                                }
-                                return true
-                            }
                         }
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -1793,6 +1782,27 @@ struct CanvasView: View {
                     .shadow(radius: 12)
                     .frame(maxWidth: 400)
                 }
+
+                // Drop-target highlight when dragging over a loaded video
+                if isTargeted && state.selectedVideo != nil {
+                    RoundedRectangle(cornerRadius: 8)
+                        .stroke(Color.accentColor, lineWidth: 3)
+                        .padding(4)
+                        .allowsHitTesting(false)
+                }
+            }
+            // Accept drops in every state: dropping a new file replaces the
+            // currently loaded video (same path as File > Open).
+            .onDrop(of: [UTType.fileURL], isTargeted: $isTargeted) { providers in
+                guard let provider = providers.first else { return false }
+                _ = provider.loadObject(ofClass: URL.self) { url, error in
+                    if let url = url {
+                        DispatchQueue.main.async {
+                            state.loadVideo(url: url)
+                        }
+                    }
+                }
+                return true
             }
             .onAppear {
                 state.containerWidth = geometry.size.width
