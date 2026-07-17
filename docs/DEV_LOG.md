@@ -4,6 +4,14 @@ This log details the features, design changes, and bug fixes implemented during 
 
 ---
 
+## [Unreleased] — Phase 1 (Structural Refactor) - 2026-07-18
+
+### Repo
+- **Stage A — main.swift split**: Mechanically split the single 2208-line `main.swift` into per-concern files per `docs/UI_AUDIT.md` §4: `Models.swift`, `AppState.swift` + `AppState+Dependencies/Loading/Generation/Sizing.swift` extensions, `Views/` (+ `Tabs/` and `Components/` subdirectories), `AppDelegate.swift`, `FrameSheetApp.swift`, `FontPanelBridge.swift`, `Extensions.swift`. `build.sh` now compiles the full source tree instead of one entrypoint. Also extracted the CoreGraphics compositor into a standalone `ContactSheetRenderer` (no `AppState`/View dependency) and introduced a `Thumbnail` model (id, timestamp, imagePath) that `generateContactSheet()` populates; the renderer flattens from that array into the existing single `previewImage` — display path unchanged. Verified zero behavior change with a byte-for-byte diff harness (fixed thumbnails + fixed params run against the pre- and post-refactor renderer) for both the standard case and the custom-timestamps-shorter-than-grid edge case.
+- **Stage B — sidebar flattened**: Removed the Layout/Style/Frames tab switcher (`TabButton`, `AppState.activeTab`) per the sidebar decision recorded in `docs/DECISIONS.md`; `SidebarView` is now a single scrolling column — Grid Dimensions → Output Options → Font → Colors → Visual Elements → Auto Sampling Range — with the Generate/Cancel action pinned outside the scroll. Sidebar width grew from 180px (160–220 range) to 240px (200–280 range). Re-ran the render diff harness (unaffected, as expected — no rendering code touched) and verified interactively: every control reachable while scrolling, and a real video loads, generates, and auto-regenerates on a settings change end to end.
+
+---
+
 ## [Unreleased] — UI Audit - 2026-07-18
 
 ### Docs
