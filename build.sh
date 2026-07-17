@@ -45,8 +45,11 @@ else
 fi
 
 echo "=== Step 3: Compiling Swift Code ==="
+# Source lives in multiple files under the repo root and Views/ (see
+# docs/UI_AUDIT.md §4); collect them all rather than naming one entrypoint.
+SWIFT_SOURCES=$(find "$SCRATCH_DIR" -maxdepth 3 -name "*.swift" -not -path "$BUILD_DIR/*" | sort)
 swiftc -sdk $(xcrun --show-sdk-path) -parse-as-library \
-  "$SCRATCH_DIR/main.swift" \
+  $SWIFT_SOURCES \
   -o "$APP_DIR/Contents/MacOS/$APP_NAME"
 
 echo "=== Step 4: Creating Info.plist ==="
