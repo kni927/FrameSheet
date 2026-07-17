@@ -13,6 +13,7 @@ struct GenerationParams {
     let bgColor: Color, textColor: Color
     let fontName: String, customFontPath: String
     let tsPosition: String
+    var cornerRadius: Int = 0
 }
 
 // CoreGraphics / AppKit composite renderer. Standalone — no dependency on
@@ -112,12 +113,19 @@ enum ContactSheetRenderer {
             let destRect = NSRect(x: x, y: y, width: cellW, height: cellH)
 
             let thumb = thumbnails[i]
+            NSGraphicsContext.current?.saveGraphicsState()
+            if p.cornerRadius > 0 {
+                NSBezierPath(roundedRect: destRect,
+                             xRadius: CGFloat(p.cornerRadius),
+                             yRadius: CGFloat(p.cornerRadius)).addClip()
+            }
             if let img = NSImage(contentsOfFile: thumb.imagePath) {
                 img.draw(in: destRect, from: .zero, operation: .sourceOver, fraction: 1.0)
             } else {
                 NSColor(white: 0.12, alpha: 1).setFill()
                 destRect.fill()
             }
+            NSGraphicsContext.current?.restoreGraphicsState()
 
             if p.showTimestamps {
                 let attrTS  = NSAttributedString(string: formatTimestamp(thumb.timestamp), attributes: tsAttrs)

@@ -59,21 +59,46 @@ struct StyleTab: View {
                 .font(.headline)
                 .monoFont(size: 11, weight: .bold)
 
-            ColorPresetSelector(title: "Background Color", selectedColor: Binding(
-                get: { state.backgroundColor },
-                set: {
-                    state.backgroundColor = $0
-                    state.autoGenerateIfNeeded()
-                }
-            ), presets: bgPresets)
+            HStack(alignment: .bottom, spacing: 8) {
+                ColorPresetSelector(title: "Background Color", selectedColor: Binding(
+                    get: { state.backgroundColor },
+                    set: {
+                        state.backgroundColor = $0
+                        state.autoGenerateIfNeeded()
+                    }
+                ), presets: bgPresets)
 
-            ColorPresetSelector(title: "Text/Font Color", selectedColor: Binding(
-                get: { state.textColor },
-                set: {
-                    state.textColor = $0
-                    state.autoGenerateIfNeeded()
-                }
-            ), presets: fgPresets)
+                // Arbitrary color incl. opacity; presets stay as shortcuts
+                ColorPicker("", selection: Binding(
+                    get: { state.backgroundColor },
+                    set: {
+                        state.backgroundColor = $0
+                        state.autoGenerateIfNeeded()
+                    }
+                ), supportsOpacity: true)
+                .labelsHidden()
+                .help("Pick any background color (opacity supported)")
+            }
+
+            HStack(alignment: .bottom, spacing: 8) {
+                ColorPresetSelector(title: "Text/Font Color", selectedColor: Binding(
+                    get: { state.textColor },
+                    set: {
+                        state.textColor = $0
+                        state.autoGenerateIfNeeded()
+                    }
+                ), presets: fgPresets)
+
+                ColorPicker("", selection: Binding(
+                    get: { state.textColor },
+                    set: {
+                        state.textColor = $0
+                        state.autoGenerateIfNeeded()
+                    }
+                ), supportsOpacity: false)
+                .labelsHidden()
+                .help("Pick any text color")
+            }
 
             Divider()
 
@@ -81,6 +106,22 @@ struct StyleTab: View {
             Text("Visual Elements")
                 .font(.headline)
                 .monoFont(size: 11, weight: .bold)
+
+            VStack(alignment: .leading, spacing: 6) {
+                HStack {
+                    Text("Corner Radius")
+                    Spacer()
+                    Text("\(state.cornerRadius) px")
+                }
+                Slider(value: Binding(
+                    get: { Double(state.cornerRadius) },
+                    set: {
+                        state.cornerRadius = Int($0)
+                        state.autoGenerateIfNeeded()
+                    }
+                ), in: 0...30, step: 1.0)
+            }
+            .padding(.bottom, 4)
 
             Toggle("Show Movie Info Header", isOn: Binding(
                 get: { state.showHeader },
