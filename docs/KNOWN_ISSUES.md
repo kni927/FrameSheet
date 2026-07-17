@@ -19,15 +19,15 @@ This document lists known limitations, technical restrictions, and potential bug
 
 ### 3. Fast Mode Timestamps Are Approximate — Obsolete (Fast Mode removed in Phase 3)
 * **Description (historical)**: When "Fast mode: keyframes only" was enabled, the timestamps shown on the contact sheet corresponded to actual keyframe positions, not evenly-spaced intervals.
-* **Status (Phase 3, 2026-07-07)**: Fast Mode was removed entirely; every generation now extracts exact, evenly-spaced (or custom) timestamps. See docs/dev-log.md.
+* **Status (Phase 3, 2026-07-07)**: Fast Mode was removed entirely; every generation now extracts exact, evenly-spaced (or custom) timestamps. See docs/DEV_LOG.md.
 
 ### 4. Fast Mode Thumbnail Count May Be Less Than Rows × Columns — Obsolete (Fast Mode removed in Phase 3)
 * **Description (historical)**: In Fast Mode, the grid could hold fewer thumbnails than `rows × columns` when the video contained fewer keyframes than requested in the sampling range.
-* **Status (Phase 3, 2026-07-07)**: Fast Mode was removed entirely; the grid is always filled with `rows × columns` frames. See docs/dev-log.md.
+* **Status (Phase 3, 2026-07-07)**: Fast Mode was removed entirely; the grid is always filled with `rows × columns` frames. See docs/DEV_LOG.md.
 
 ### 5. Normal Mode Was Slow for Long / High-FPS Footage — Resolved in Phase 2
 * **Description (historical)**: Normal Mode generation used a single-pass `fps=1/interval` filter that sequentially decoded every frame in the sampled range; a 60-min H.264 source took ~220 s even with `-hwaccel videotoolbox`, and high-fps HEVC slow-motion sources took several minutes.
-* **Status (Phase 2, 2026-07-07)**: Normal Mode (and Custom Timestamps) now extract each frame with an input-seeking `ffmpeg -ss <t> -i <file> -frames:v 1` invocation, 5 in parallel. The same 60-min benchmark completes in ~1 s (see docs/dev-log.md). Sources with extremely long keyframe intervals could still slow individual seeks, but this has not been observed in testing.
+* **Status (Phase 2, 2026-07-07)**: Normal Mode (and Custom Timestamps) now extract each frame with an input-seeking `ffmpeg -ss <t> -i <file> -frames:v 1` invocation, 5 in parallel. The same 60-min benchmark completes in ~1 s (see docs/DEV_LOG.md). Sources with extremely long keyframe intervals could still slow individual seeks, but this has not been observed in testing.
 
 ### 6. Duration Estimation Can Be Slow on Large Un-Indexed Files (Phase 4)
 * **Description**: For files whose metadata lacks a duration (e.g. WebM without cues), the fallback packet scan must demux the file linearly; on multi-gigabyte un-indexed sources this can take a while (IO-bound, no decoding).
