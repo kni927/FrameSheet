@@ -24,6 +24,7 @@ Thumbs.db
 test_video.mp4
 test_output.png
 test_assets/
+docs/reference/
 
 # PyInstaller & Build assets
 build_assets/

@@ -4,6 +4,13 @@ This log details the features, design changes, and bug fixes implemented during 
 
 ---
 
+## [Unreleased] — Housekeeping - 2026-07-18
+
+### Repo
+- **Migrated to repo-template conventions**: Added `AGENTS.md` as the generic, tool-agnostic ruleset (copied from `kni927/repo-template`); `CLAUDE.md` now imports it via `@AGENTS.md` and keeps only FrameSheet-specific guidance (build command, ffmpeg invocation conventions). Renamed the docs previously moved under `docs/` in Phase 2 from lowercase-hyphen to the template's uppercase-underscore convention (`docs/DEV_LOG.md`, `docs/KNOWN_ISSUES.md`, `docs/DECISIONS.md`, `docs/ARCHITECTURE.md`, `docs/PROJECT.md`, `docs/ANTIGRAVITY.md`) via `git mv`, preserving history. Added `docs/task-workflow.md` (task completion/archiving procedure) and adopted its `docs/tasks/YYYY-MM-DD-NN-description.md` archive naming going forward; the existing `docs/tasks/2026-07-phase-*.md` archives predate this convention and were left as historical records. Archived the completed Phase 4 task to `docs/tasks/2026-07-07-01-duration-fallback.md`. Updated remaining cross-references (`docs/KNOWN_ISSUES.md`) to the renamed paths. No application code changed.
+
+---
+
 ## [Unreleased] — Phase 4 - 2026-07-07
 
 ### Added
