@@ -4,6 +4,13 @@ This log details the features, design changes, and bug fixes implemented during 
 
 ---
 
+## [Unreleased] — UI Audit - 2026-07-18
+
+### Docs
+- **MoviePrint gap analysis** (`docs/UI_AUDIT.md`): Audit-only comparison of FrameSheet's current SwiftUI UI against MoviePrint (`fakob/MoviePrint_v004`), the visual reference this app should converge toward. Covers a full FrameSheet view/settings/state inventory, a MoviePrint inventory from reference screenshots and its README, a 6-area gap table with effort estimates, a refactoring-readiness assessment (main.swift split plan, renderer separability, the state-model change needed for per-thumbnail live preview), and a phased Phase 1/2/3 recommendation. No UI or application code changed.
+
+---
+
 ## [Unreleased] — Housekeeping - 2026-07-18
 
 ### Repo
