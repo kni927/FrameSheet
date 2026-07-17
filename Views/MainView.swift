@@ -12,10 +12,11 @@ struct MainView: View {
 
             // Middle Content Split View
             HSplitView {
-                // Sidebar controls (Thinned to 180)
+                // Sidebar controls — widened from 180 to fit the flattened
+                // single-scroll-column settings layout (Phase 1, Stage B)
                 SidebarView()
-                    .frame(width: 180)
-                    .frame(minWidth: 160, maxWidth: 220)
+                    .frame(width: 240)
+                    .frame(minWidth: 200, maxWidth: 280)
                     .background(Color(NSColor.windowBackgroundColor).opacity(0.85))
 
                 // Canvas preview

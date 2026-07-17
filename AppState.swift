@@ -59,7 +59,6 @@ Dimensions: {{sample_width}}x{{sample_height}}
     @Published var thumbnails: [Thumbnail] = []
 
     // UI Helpers
-    @Published var activeTab: String = "layout" // layout, style, frames
     @Published var showConsole: Bool = false // Default OFF
     @Published var zoomScale: CGFloat = 1.0
     @Published var containerWidth: CGFloat = 800.0
