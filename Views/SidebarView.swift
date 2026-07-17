@@ -5,34 +5,17 @@ struct SidebarView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // Custom Segmented Picker for Tab Selectors
-            HStack(spacing: 4) {
-                TabButton(iconName: "square.grid.3x3", isSelected: state.activeTab == "layout", helpText: "Layout Settings") {
-                    state.activeTab = "layout"
-                }
-                TabButton(iconName: "paintbrush", isSelected: state.activeTab == "style", helpText: "Style Settings") {
-                    state.activeTab = "style"
-                }
-                TabButton(iconName: "clock", isSelected: state.activeTab == "frames", helpText: "Frame Settings") {
-                    state.activeTab = "frames"
-                }
-            }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 6)
-            .background(Color(NSColor.controlBackgroundColor))
-
-            Divider()
-
-            // Tab Contents
+            // Single scrolling settings column (MoviePrint-style), flattened
+            // from the former Layout/Style/Frames tabs. Order: Grid
+            // Dimensions -> Output Options -> Font -> Colors -> Visual
+            // Elements -> Auto Sampling Range.
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
-                    if state.activeTab == "layout" {
-                        LayoutTab()
-                    } else if state.activeTab == "style" {
-                        StyleTab()
-                    } else if state.activeTab == "frames" {
-                        FramesTab()
-                    }
+                    LayoutTab()
+                    Divider()
+                    StyleTab()
+                    Divider()
+                    FramesTab()
                 }
                 .padding(12)
             }
