@@ -4,6 +4,13 @@ This log details the features, design changes, and bug fixes implemented during 
 
 ---
 
+## [2.1.0] — Housekeeping: src/ layout - 2026-07-18
+
+### Repo
+- **Moved all sources under `src/`**: the 14 root-level `.swift` files, `Views/`, and `assets/` now live in `src/` (`git mv`, history preserved), leaving the repo root with only docs/config (`README.md`, `LICENSE`, `build.sh`, `AGENTS.md`, `CLAUDE.md`, `.gitignore`, `docs/`). `assets/AppIcon.png` was classified as a build resource (consumed by `build.sh` for icns generation) and moved to `src/assets/` accordingly; the README icon reference was updated. `build.sh` now collects sources via `find src -name "*.swift"`. No behavior change — verified by the Phase 2 harness (default-settings render still byte-identical) and a clean build. Tagged `v2.1.0` (release content: Phase 1 structural refactor + single-column sidebar, Phase 2 settings parity).
+
+---
+
 ## [Unreleased] — Phase 2 (Settings-Panel Parity) - 2026-07-18
 
 ### Added
