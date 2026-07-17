@@ -4,6 +4,26 @@ This log details the features, design changes, and bug fixes implemented during 
 
 ---
 
+## [Unreleased] — Phase 2 (Settings-Panel Parity) - 2026-07-18
+
+### Added
+- **Rounded corners**: Corner Radius slider (0–30px, Visual Elements) applied as a per-cell clip path in `ContactSheetRenderer`.
+- **Arbitrary colors + alpha**: Native `ColorPicker` next to each preset row; the background picker supports opacity. The preview renders over a checkerboard when background alpha < 1, and the PNG export path preserves alpha.
+- **Output section** (new, after Auto Sampling Range): format dropdown (PNG/JPEG), JPEG quality slider (50–100, shown only for JPEG), filename-template field with live preview, "Overwrite existing" toggle, "Include individual frames" toggle. The former "Output Options" section was renamed "Size & Spacing" and gained a size-preset dropdown (1200/1600/2048/3200/Custom) driving the width slider.
+- **Filename templating**: `{{filename}}`, `{{width}}`, `{{height}}`, `{{columns}}`, `{{rows}}`, `{{date}}` tokens (`resolveFilenameTemplate`); "Save Image As" pre-fills from the template.
+- **Quick Save**: "Save to Movie Folder" button saves next to the source video with no dialog; with "Overwrite existing" off, collisions auto-suffix `_2`, `_3`, ….
+- **Individual frames export**: both save paths can also write each thumbnail (from the retained Phase 1 `Thumbnail` frames) into a `<name>_frames/` subfolder, zero-padded, honoring the format setting.
+- **Settings persistence**: all generation/output settings survive relaunch via `UserDefaults` (`AppState+Persistence.swift`); transient state (zoom, console) intentionally unpersisted.
+
+### Changed
+- **JPEG + alpha policy**: JPEG cannot carry alpha — when the background is translucent and JPEG is selected, an inline warning shows in the Output section and the export composites over the opaque background color (see `docs/DECISIONS.md`).
+- Frame temp files are now retained after render (replaced on the next generation) so individual-frame export can read them.
+
+### Verified
+- 24-check CLI harness (all pass): default-settings render byte-identical to the Phase 1 baseline; corner clip flips a corner pixel to background; PNG alpha ≈ 0.5 at a background pixel; JPEG q50 < q100 size; JPEG+alpha composites over the background color (opaque, no black fringe); template tokens/path-separator stripping; `_2`/`_3` suffixing; quick save + 8/8 frames with zero-padded names; settings round-trip. GUI: all new controls render, corner radius live-regenerates, quick save ×2 produced `_sheet.png` and `_sheet_2.png`, and Corner Radius survived an app relaunch.
+
+---
+
 ## [Unreleased] — Phase 1 (Structural Refactor) - 2026-07-18
 
 ### Repo

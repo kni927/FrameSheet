@@ -7,8 +7,8 @@ struct SidebarView: View {
         VStack(spacing: 0) {
             // Single scrolling settings column (MoviePrint-style), flattened
             // from the former Layout/Style/Frames tabs. Order: Grid
-            // Dimensions -> Output Options -> Font -> Colors -> Visual
-            // Elements -> Auto Sampling Range.
+            // Dimensions -> Size & Spacing -> Font -> Colors -> Visual
+            // Elements -> Auto Sampling Range -> Output.
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
                     LayoutTab()
@@ -16,6 +16,8 @@ struct SidebarView: View {
                     StyleTab()
                     Divider()
                     FramesTab()
+                    Divider()
+                    OutputSection()
                 }
                 .padding(12)
             }

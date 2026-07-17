@@ -5,6 +5,8 @@ import SwiftUI
 struct LayoutTab: View {
     @EnvironmentObject var state: AppState
 
+    static let widthPresets = [1200, 1600, 2048, 3200]
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Grid Dimensions")
@@ -85,11 +87,36 @@ struct LayoutTab: View {
 
             Divider()
 
-            Text("Output Options")
+            Text("Size & Spacing")
                 .font(.headline)
                 .monoFont(size: 11, weight: .bold)
 
             VStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Size Preset")
+                        .font(.caption)
+                    Picker("", selection: Binding(
+                        get: {
+                            LayoutTab.widthPresets.contains(state.imageWidth) ? "\(state.imageWidth)" : "custom"
+                        },
+                        set: { newValue in
+                            if let w = Int(newValue) {
+                                state.imageWidth = w
+                                state.autoGenerateIfNeeded()
+                            }
+                            // "custom" is display-only: it appears when the
+                            // width slider leaves the preset values
+                        }
+                    )) {
+                        ForEach(LayoutTab.widthPresets, id: \.self) { w in
+                            Text("\(w) px").tag("\(w)")
+                        }
+                        Text("Custom").tag("custom")
+                    }
+                    .pickerStyle(.menu)
+                    .labelsHidden()
+                }
+
                 HStack {
                     Text("Image Width")
                     Spacer()

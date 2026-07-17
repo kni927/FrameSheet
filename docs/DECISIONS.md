@@ -114,3 +114,21 @@ Adopted MoviePrint's single-scroll-column layout. Removed the tab switcher (`Tab
 - **Matches the convergence target**: Keeps the settings panel structurally aligned with MoviePrint ahead of Phase 2's planned Output/Naming/Experimental additions, which would have needed a 4th tab or this same flattening later anyway.
 - **No content reordering**: Preserves the exact Layout → Style → Frames content order, minimizing the chance of behavior or muscle-memory regressions for existing users.
 - **No rendering impact**: Confirmed via the same byte-for-byte diff harness from Decision 5 (unaffected, as expected — no rendering code was touched) plus interactive verification of every control.
+
+---
+
+### 7. Output section, filename templating, and the JPEG-alpha policy (Phase 2 — 2026-07-18)
+
+#### Context
+Phase 2 (`docs/UI_AUDIT.md` §5) adds MoviePrint-parity output controls: format choice, size presets, filename templating, quick save, and individual-frame export. Two of these needed explicit policy decisions rather than mechanical implementation.
+
+#### Decision
+- **Output is its own sidebar section**, appended after Auto Sampling Range; the pre-existing width/height/spacing group was renamed "Size & Spacing" so "Output" unambiguously means file-writing concerns (format, naming, save behavior). Renderer/param names were left unchanged.
+- **Filename templating reuses the `{{placeholder}}` syntax** already used by the header renderer, with a deliberately small token set: `{{filename}}`, `{{width}}`, `{{height}}`, `{{columns}}`, `{{rows}}`, `{{date}}` (YYYY-MM-DD). Path separators are stripped from the resolved name so a template cannot escape the target folder. The extension always comes from the format setting, never the template.
+- **JPEG + alpha**: JPEG cannot encode an alpha channel. When the format is JPEG and the background has alpha < 1, the app shows a persistent inline warning in the Output section and exports by compositing over the *opaque version of the chosen background color* (not black). Alpha is never silently dropped without the warning, and the format choice is never overridden behind the user's back.
+- **Overwrite policy**: "Overwrite existing" defaults to **off**; collisions auto-suffix `_2`, `_3`, … instead of failing or replacing. The save-panel path is exempt (the panel has its own replace confirmation).
+
+#### Rationale
+- **One templating syntax**: A second placeholder dialect for filenames would double the user-facing docs and the implementation surface for marginal benefit.
+- **Warn + degrade beats block or silently drop**: Blocking JPEG export for translucent backgrounds would make the two settings feel coupled and mysterious; silently dropping alpha would violate user intent. Compositing over the chosen background color is the closest visual match to what the preview shows.
+- **Suffix-by-default is the safe default** for a one-click "Save to Movie Folder" that writes next to the user's source files with no dialog.

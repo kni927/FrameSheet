@@ -90,6 +90,13 @@ struct CanvasView: View {
                                         width: CGFloat(state.imageWidth) * state.zoomScale,
                                         height: CGFloat(state.imageWidth) * image.aspectRatio * state.zoomScale
                                     )
+                                    // Checkerboard behind the sheet so a
+                                    // transparent background is visible
+                                    .background(
+                                        state.backgroundAlpha < 1.0
+                                            ? AnyView(CheckerboardBackground())
+                                            : AnyView(Color.clear)
+                                    )
                                     .padding(20)
                             }
                         } else {
@@ -132,6 +139,14 @@ struct CanvasView: View {
                             .buttonStyle(.bordered)
                             .controlSize(.small)
                             .keyboardShortcut("c", modifiers: .command)
+
+                            Button(action: { state.quickSaveToMovieFolder() }) {
+                                Label("Save to Movie Folder", systemImage: "folder.badge.plus")
+                                    .frame(maxWidth: .infinity)
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+                            .help("Save directly next to the source video using the filename template")
 
                             Button(action: { state.saveImageAs() }) {
                                 Label("Save Image As...", systemImage: "square.and.arrow.up")

@@ -68,7 +68,8 @@ extension AppState {
             customHeaderTemplate: customHeaderTemplate,
             bgColor: backgroundColor, textColor: textColor,
             fontName: selectedFont, customFontPath: customFontPath,
-            tsPosition: timestampPosition
+            tsPosition: timestampPosition,
+            cornerRadius: cornerRadius
         )
 
         // One input-seeking ffmpeg invocation per frame (-ss before -i only
@@ -119,14 +120,22 @@ extension AppState {
     }
 
     // Composite the extracted thumbnails on a background queue and publish
-    // the resulting image.
+    // the resulting image. The frame temp dir is retained (not deleted) so
+    // individual-frame export can read from the `thumbnails` array's paths;
+    // it is replaced on the next generation.
     func renderAndPresent(tempDir: String, thumbnails: [Thumbnail], params cap: GenerationParams, runID: Int) {
         DispatchQueue.global(qos: .userInitiated).async {
             let image = ContactSheetRenderer.render(thumbnails: thumbnails, params: cap)
-            try? FileManager.default.removeItem(atPath: tempDir)
 
             DispatchQueue.main.async {
-                guard runID == self.generationID else { return }
+                guard runID == self.generationID else {
+                    try? FileManager.default.removeItem(atPath: tempDir)
+                    return
+                }
+                if let old = self.currentFramesDir, old != tempDir {
+                    try? FileManager.default.removeItem(atPath: old)
+                }
+                self.currentFramesDir = tempDir
                 self.isGenerating = false
                 if let img = image {
                     let outPath = (NSTemporaryDirectory() as NSString)
@@ -312,33 +321,4 @@ extension AppState {
         self.consoleOutput += "Copied preview image to clipboard.\n"
     }
 
-    // Save generated image to custom location
-    func saveImageAs() {
-        guard let tempPath = previewImagePath, FileManager.default.fileExists(atPath: tempPath) else { return }
-
-        let savePanel = NSSavePanel()
-        savePanel.allowedContentTypes = [.png, .jpeg]
-        savePanel.canCreateDirectories = true
-
-        if let video = selectedVideo {
-            let originalName = video.url.deletingPathExtension().lastPathComponent
-            savePanel.nameFieldStringValue = "\(originalName)_sheet.png"
-        } else {
-            savePanel.nameFieldStringValue = "framesheet.png"
-        }
-
-        savePanel.begin { response in
-            if response == .OK, let targetURL = savePanel.url {
-                do {
-                    if FileManager.default.fileExists(atPath: targetURL.path) {
-                        try FileManager.default.removeItem(at: targetURL)
-                    }
-                    try FileManager.default.copyItem(at: URL(fileURLWithPath: tempPath), to: targetURL)
-                    self.consoleOutput += "Saved image to: \(targetURL.path)\n"
-                } catch {
-                    self.errorMessage = "Failed to save file: \(error.localizedDescription)"
-                }
-            }
-        }
-    }
 }
