@@ -54,7 +54,9 @@ We compile the `vcsi` Python CLI into a standalone, single-executable binary usi
 
 ---
 
-### 3. Monolithic SwiftUI Layout (`main.swift`)
+### 3. (Superseded) Monolithic SwiftUI Layout (`main.swift`)
+
+> **Superseded in Phase 1, Stage A (2026-07-18).** The single file grew to 2208 lines and became a bottleneck for the MoviePrint-convergence work in `docs/UI_AUDIT.md`; see Decision 5 below. Retained for historical context per project policy.
 
 #### Context
 Modular Swift projects usually separate views, models, and utility files.
@@ -82,3 +84,33 @@ Even with the v2.0.0 ffmpeg single-pass engine, Normal Mode's `fps=1/interval` f
 - **Instant First Impression**: A 4K60 60s clip produces a Fast Mode preview in well under a second, versus ~25 seconds in Normal Mode.
 - **Opt-in Precision**: Users who need exact, evenly-spaced timestamps or custom timestamps (disabled in Fast Mode) can explicitly switch to Normal Mode.
 - **Transparent Trade-offs**: The keyframe-count indicator and UI copy make it clear when the thumbnail count or timestamps are approximate, avoiding silent surprises.
+
+---
+
+### 5. Multi-file SwiftUI layout, split by concern (Phase 1, Stage A — 2026-07-18)
+
+#### Context
+`docs/UI_AUDIT.md` identified the single `main.swift` (2208 lines) as the main obstacle to absorbing a MoviePrint-style layout: no per-thumbnail interactivity is feasible while the render pipeline, all app state, and every view live in one file with no separable renderer.
+
+#### Decision
+Split into `Models.swift`; `AppState.swift` plus `AppState+Dependencies/Loading/Generation/Sizing.swift` extensions; `Views/` (+ `Tabs/` and `Components/` subdirectories); `AppDelegate.swift`, `FrameSheetApp.swift`, `FontPanelBridge.swift`; `Extensions.swift`; and a standalone `ContactSheetRenderer.swift` with no dependency on `AppState` or any View type. `build.sh` now compiles the full source tree (`find … -name "*.swift"`) instead of naming one entrypoint. This supersedes Decision 3 above.
+
+#### Rationale
+- **Unblocks Phase 2/3**: A separable renderer and a per-thumbnail `Thumbnail` model (also introduced in this stage) are prerequisites for any per-thumbnail interactivity or settings growth planned in `docs/UI_AUDIT.md`.
+- **No behavior change, provably**: Verified with a byte-for-byte diff harness (fixed thumbnails + fixed params, run against the pre- and post-split renderer) rather than relying on visual inspection alone.
+- **Keeps the `swiftc`-only build**: `build.sh` still does a single `swiftc` invocation over multiple files — no Xcode project wrapper introduced, preserving Decision 3's original build-simplicity rationale even though the single-file layout itself is gone.
+
+---
+
+### 6. Sidebar settings panel: single-scroll column instead of tabs (Phase 1, Stage B — 2026-07-18)
+
+#### Context
+`docs/UI_AUDIT.md` flagged the Layout/Style/Frames tab switcher as a layout decision that would need to be made before growing the settings panel toward MoviePrint parity (Output/Naming/Experimental sections): MoviePrint's own settings panel is one continuously scrolling column with section dividers, not tabs.
+
+#### Decision
+Adopted MoviePrint's single-scroll-column layout. Removed the tab switcher (`TabButton`, `AppState.activeTab`) and concatenated the three former tabs' content directly, in the same order they previously appeared: Grid Dimensions → Output Options → Font → Colors → Visual Elements → Auto Sampling Range, with dividers between each. The Generate/Cancel action area stays pinned outside the `ScrollView`. Sidebar width grew from 180px (160–220 range) to 240px (200–280 range) to fit the denser column.
+
+#### Rationale
+- **Matches the convergence target**: Keeps the settings panel structurally aligned with MoviePrint ahead of Phase 2's planned Output/Naming/Experimental additions, which would have needed a 4th tab or this same flattening later anyway.
+- **No content reordering**: Preserves the exact Layout → Style → Frames content order, minimizing the chance of behavior or muscle-memory regressions for existing users.
+- **No rendering impact**: Confirmed via the same byte-for-byte diff harness from Decision 5 (unaffected, as expected — no rendering code was touched) plus interactive verification of every control.
