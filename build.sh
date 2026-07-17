@@ -18,7 +18,7 @@ mkdir -p "$APP_DIR/Contents/MacOS"
 mkdir -p "$APP_DIR/Contents/Resources"
 
 echo "=== Step 2: Creating app icon from AppIcon.png ==="
-ICON_PNG="$SCRATCH_DIR/assets/AppIcon.png"
+ICON_PNG="$SCRATCH_DIR/src/assets/AppIcon.png"
 ICONSET_DIR="$BUILD_DIR/icon.iconset"
 
 if [ -f "$ICON_PNG" ]; then
@@ -45,9 +45,9 @@ else
 fi
 
 echo "=== Step 3: Compiling Swift Code ==="
-# Source lives in multiple files under the repo root and Views/ (see
-# docs/UI_AUDIT.md §4); collect them all rather than naming one entrypoint.
-SWIFT_SOURCES=$(find "$SCRATCH_DIR" -maxdepth 3 -name "*.swift" -not -path "$BUILD_DIR/*" | sort)
+# Source lives in multiple files under src/ (see docs/UI_AUDIT.md §4);
+# collect them all rather than naming one entrypoint.
+SWIFT_SOURCES=$(find "$SCRATCH_DIR/src" -name "*.swift" | sort)
 swiftc -sdk $(xcrun --show-sdk-path) -parse-as-library \
   $SWIFT_SOURCES \
   -o "$APP_DIR/Contents/MacOS/$APP_NAME"

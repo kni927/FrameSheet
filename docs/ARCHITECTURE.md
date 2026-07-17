@@ -20,7 +20,7 @@ graph TD
 
 ```
 FrameSheet
-├── SwiftUI Frontend (main.swift)
+├── SwiftUI Frontend (src/ — per-concern files, see docs/UI_AUDIT.md §4)
 │   ├── MainView (App Container & Drag-and-Drop)
 │   ├── SidebarView (Control Panel)
 │   │   ├── LayoutTab (Columns, Rows, Grid Spacing)
