@@ -132,3 +132,18 @@ Phase 2 (`docs/UI_AUDIT.md` §5) adds MoviePrint-parity output controls: format 
 - **One templating syntax**: A second placeholder dialect for filenames would double the user-facing docs and the implementation surface for marginal benefit.
 - **Warn + degrade beats block or silently drop**: Blocking JPEG export for translucent backgrounds would make the two settings feel coupled and mysterious; silently dropping alpha would violate user intent. Compositing over the chosen background color is the closest visual match to what the preview shows.
 - **Suffix-by-default is the safe default** for a one-click "Save to Movie Folder" that writes next to the user's source files with no dialog.
+
+---
+
+### 8. Hidden-thumbnail re-flow and hidden-state lifetime (Phase 3a — 2026-07-18)
+
+#### Context
+Phase 3a made grid cells individually hideable. Two product questions had to be settled explicitly (flagged to the project owner rather than chosen silently, per the task's constraint): how the exported sheet re-flows around hidden cells, and whether hidden state survives regeneration.
+
+#### Decision
+- **Re-flow: raster-order skip with row shrink.** Visible cells compact forward in raster order (left→right, top→bottom). The `columns` setting keeps its configured value and the exported row count shrinks to `ceil(visibleCount / columns)` (`ContactSheetRenderer.reflowParams`); the last row may be partially filled. The on-screen grid keeps showing hidden cells dimmed in place so they can be un-hidden.
+- **Hidden state resets on regeneration.** Regenerating (sampling/grid/settings changes, new video) rebuilds the `Thumbnail` array with all cells visible. Hidden state is deliberately transient.
+
+#### Rationale
+- **Consistency with existing parameters**: `columns` everywhere else is an exact user-set value while row count already derives from content; shrinking rows preserves that meaning. A fixed-dimensions alternative (leaving background holes in the export) was rejected by the project owner.
+- **Predictability over cleverness**: carrying hidden state across regeneration by timestamp matching becomes ambiguous the moment sampling settings change (every timestamp shifts). A fresh grid after regeneration is the least surprising behavior; timestamp-keyed persistence remains a possible future decision if a concrete need appears.

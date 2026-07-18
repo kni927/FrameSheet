@@ -4,6 +4,16 @@ This log details the features, design changes, and bug fixes implemented during 
 
 ---
 
+## [Unreleased] — Phase 3a (Per-Thumbnail Interactivity) - 2026-07-18
+
+### Added
+- **Addressable grid (Stage A)**: The preview is no longer one flattened bitmap — it is a `LazyVGrid` of per-thumbnail cells laid out with the exported sheet's exact geometry. Cell drawing (rounded-corner clip, image, timestamp) was extracted into a shared `drawCell` used by both the sheet composite and the per-cell display renderer, so display and export cannot drift. Export is unchanged (default-settings render stayed byte-identical to the Phase 1 baseline).
+- **Hover overlay + hide (Stage B)**: Hovering a cell shows a scrim with its timestamp, an eye toggle, and nudge buttons. Hidden cells dim in place and are excluded from the exported sheet and individual-frame export; an "Unhide All (N)" button appears in the canvas toolbar. Re-flow and hidden-state lifetime follow the decisions in `docs/DECISIONS.md`.
+- **Drag-reorder (Stage C)**: Cells reorder via drag & drop (onDrag/onDrop — deployment target is macOS 11, so the macOS 13+ `.draggable` API is not used); the export follows the new order, and hidden state rides along.
+- **Per-cell time nudge (Stage D)**: `< >` buttons on the hover overlay shift one thumbnail's timestamp by a configurable step (Nudge Step, default 1s, persisted) and re-extract only that frame with a single ffmpeg invocation — near-instant, no full regeneration. Verified per-cell: export region-compare showed exactly one cell changed.
+
+---
+
 ## [2.1.0] — Housekeeping: src/ layout - 2026-07-18
 
 ### Repo

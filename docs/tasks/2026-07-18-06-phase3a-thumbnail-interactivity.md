@@ -123,3 +123,79 @@ export image the same way it's composed today (via
 - If any stage surfaces a product decision not covered here (e.g. the
   re-flow rule, hidden-state persistence), stop and flag it rather than
   choosing silently — same pattern as the sidebar decision in Phase 1.
+
+## Implementation Result
+
+**Status:**
+- Completed
+
+### Changes
+
+Four stages, one commit each, on `feature/phase3a-thumbnail-interactivity`:
+
+- **Stage A (`a901115`)**: Preview replaced by a `LazyVGrid` of
+  `ThumbnailCellView` (new `src/Views/ThumbnailGridView.swift`,
+  `ThumbnailCellView.swift`), laid out from
+  `ContactSheetRenderer.metrics`. Per-cell drawing extracted into a
+  shared `drawCell` (one source of truth); new `renderCellImage` /
+  `renderHeaderImage` produce the display images alongside the export
+  composite. Grid lays out from a params snapshot (`displayParams`)
+  captured at render time. Export path untouched.
+- **Stage B (`0a12ce6`)**: Hover scrim with timestamp + eye toggle
+  (`src/AppState+Grid.swift`: `toggleHidden`/`resetHidden`/
+  `recomposeSheet`); hidden cells dim in place, excluded from sheet
+  and individual-frame export via approved raster-order re-flow
+  (`reflowParams`: columns fixed, rows = ceil(visible/cols));
+  "Unhide All (N)" in the canvas toolbar; hidden resets on regen
+  (approved decision).
+- **Stage C (`01155e5`)**: Drag-reorder via onDrag/onDrop +
+  `DropDelegate` live-move (deployment target macOS 11 ruled out
+  `.draggable`); drop recomposes the sheet so export follows.
+- **Stage D (`99e9843`)**: `< >` nudge buttons on the hover overlay;
+  configurable Nudge Step (0.1–10s, default 1s, persisted) in Auto
+  Sampling Range; single ffmpeg re-extract per nudge into the
+  retained frames dir; clamped to [0, duration]; per-cell spinner;
+  superseded-generation guard. `Thumbnail.timestamp`/`imagePath` are
+  now mutable.
+
+### Verification
+
+- Build: passed after every stage; only pre-existing `onChange`
+  deprecation warnings. Installed to `~/Applications` and exercised
+  live per stage.
+- Automated verification: harness grew to 30 checks, all pass —
+  including T1 (default-settings export still byte-identical to the
+  Phase 1 baseline after the Stage A renderer restructuring) and
+  T10a–f (re-flow math + reflowed sheet exactly one row shorter).
+- Manual verification (computer-use GUI, with export region-compare
+  scripts for ground truth):
+  - Stage A: on-screen grid at 100% zoom visually identical to the
+    flattened preview (header strip, spacing, timestamps).
+  - Stage B: hide 2 of 20 → export contains 18 cells, last row 3
+    cells + background (pixel-checked); Unhide All restores; hides
+    reset after regeneration.
+  - Stage C: exported sheets before/after a drag region-compare as
+    exactly the permutation [1,2,0,3,…] with all other cells
+    byte-stable; a further reorder preserved an existing hidden cell.
+  - Stage D: nudging one cell (+1s) changed exactly that cell in the
+    export (19 others byte-stable), timestamps updated in overlay and
+    burned-in label, near-instant (single ffmpeg invocation);
+    dragging the nudged cell carried frame + timestamp along.
+- Automation note: the computer-use drag gesture only initiates
+  SwiftUI drag sessions reliably with a slow press-hold-move pattern;
+  two GUI drag attempts were no-ops (exports byte-identical, caught
+  by the region compare) and were retried. App-side behavior was
+  correct in every successful session.
+
+### Remaining Issues
+
+- None
+
+### Follow-up Suggestions
+
+- `docs/ARCHITECTURE.md` refresh (outstanding since the src/ move,
+  noted again here): should now also describe the grid/cell display
+  model (`displayParams` snapshot, cellImages cache, recompose path).
+- Optional: a keyboard affordance for hide/nudge on a focused cell —
+  TASK's "keyboard" mention was scoped out of Stage A and never
+  required later; worth a small follow-up task if wanted.
