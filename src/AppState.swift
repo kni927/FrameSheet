@@ -95,13 +95,9 @@ Dimensions: {{sample_width}}x{{sample_height}}
     // generation. Lives under NSTemporaryDirectory, so the OS reclaims it
     // eventually regardless.
     var currentFramesDir: String? = nil
-    // Parallel extraction bookkeeping (guarded by processLock)
-    let processLock = NSLock()
-    var parallelProcesses: [Process] = []
-    var parallelCancelled = false
-    // Duration-estimation bookkeeping (guarded by processLock)
-    var estimationProcess: Process? = nil
-    var estimationCancelled = false
+    // Decode backend for the currently loaded video (selected per-load by
+    // routing in AppState+Loading); all probing/extraction goes through it.
+    var activeBackend: DecodeBackend? = nil
     // Entry point for Finder/Dock open events. Defers the load while the
     // async ffmpeg dependency check is still running, so the initial
     // auto-generation doesn't race a not-yet-set ffmpeg path.

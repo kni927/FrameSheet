@@ -102,14 +102,16 @@ extension AppState {
     }
 
     // Nudge one thumbnail's source timestamp by ±nudgeStepSeconds and
-    // re-extract ONLY that frame with a single ffmpeg invocation — no full
-    // regeneration (Phase 3a Stage D). The cell image and the export
-    // composite are refreshed from the updated Thumbnail.
+    // re-extract ONLY that frame through the active backend — no full
+    // regeneration (Phase 3a Stage D). On the AVFoundation path this hits
+    // the resident asset with no process spawn. The cell image and the
+    // export composite are refreshed from the updated Thumbnail.
     func nudgeThumbnail(_ id: UUID, forward: Bool) {
         guard let idx = thumbnails.firstIndex(where: { $0.id == id }),
               let video = selectedVideo,
               let params = displayParams,
               let framesDir = currentFramesDir,
+              let backend = activeBackend,
               !nudgingIDs.contains(id)
         else { return }
 
@@ -124,59 +126,37 @@ extension AppState {
 
         let outPath = (framesDir as NSString).appendingPathComponent(
             "nudge_\(id.uuidString.prefix(8))_\(Int(newTS * 1000)).jpg")
-        let nfcVideo = video.path.precomposedStringWithCanonicalMapping
-        let ff = ffmpegPath
         let runID = generationID
 
         nudgingIDs.insert(id)
-        consoleOutput += ">>> Nudging frame to \(String(format: "%.3f", newTS))s (single re-extract)...\n"
+        consoleOutput += ">>> Nudging frame to \(String(format: "%.3f", newTS))s (single re-extract via \(backend.name))...\n"
 
-        DispatchQueue.global(qos: .userInitiated).async {
-            let task = Process()
-            task.executableURL = URL(fileURLWithPath: ff)
-            task.arguments = [
-                "-hide_banner", "-loglevel", "error",
-                "-ss", String(format: "%.3f", newTS),
-                "-i", nfcVideo,
-                "-frames:v", "1",
-                "-vf", "scale=\(scaleWidth):-2",
-                "-q:v", "3",
-                "-y", outPath
-            ]
-            task.standardOutput = FileHandle.nullDevice
-            let errPipe = Pipe()
-            task.standardError = errPipe
-            var launched = false
-            do {
-                try task.run()
-                launched = true
-                task.waitUntilExit()
-            } catch {}
-            let errData = errPipe.fileHandleForReading.readDataToEndOfFile()
-            let ok = launched && task.terminationStatus == 0
-                && FileManager.default.fileExists(atPath: outPath)
-
-            DispatchQueue.main.async {
-                self.nudgingIDs.remove(id)
-                // A full regeneration superseded this nudge; drop the result.
-                guard runID == self.generationID,
-                      let curIdx = self.thumbnails.firstIndex(where: { $0.id == id })
-                else { return }
-                guard ok else {
-                    if let err = String(data: errData, encoding: .utf8), !err.isEmpty {
-                        self.consoleOutput += "Nudge failed: \(err)"
-                    } else {
-                        self.consoleOutput += ">>> Nudge failed (no frame extracted).\n"
-                    }
-                    return
+        backend.extractSingleFrame(
+            url: video.url,
+            timestamp: newTS,
+            scaleWidth: scaleWidth,
+            outPath: outPath
+        ) { [weak self] ok, errText in
+            guard let self = self else { return }
+            self.nudgingIDs.remove(id)
+            // A full regeneration superseded this nudge; drop the result.
+            guard runID == self.generationID,
+                  let curIdx = self.thumbnails.firstIndex(where: { $0.id == id })
+            else { return }
+            guard ok else {
+                if let err = errText, !err.isEmpty {
+                    self.consoleOutput += "Nudge failed: \(err)"
+                } else {
+                    self.consoleOutput += ">>> Nudge failed (no frame extracted).\n"
                 }
-                self.thumbnails[curIdx].timestamp = newTS
-                self.thumbnails[curIdx].imagePath = outPath
-                if let cell = ContactSheetRenderer.renderCellImage(self.thumbnails[curIdx], params: params) {
-                    self.cellImages[id] = cell
-                }
-                self.recomposeSheet()
+                return
             }
+            self.thumbnails[curIdx].timestamp = newTS
+            self.thumbnails[curIdx].imagePath = outPath
+            if let cell = ContactSheetRenderer.renderCellImage(self.thumbnails[curIdx], params: params) {
+                self.cellImages[id] = cell
+            }
+            self.recomposeSheet()
         }
     }
 
