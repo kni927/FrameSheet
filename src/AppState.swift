@@ -50,6 +50,8 @@ Dimensions: {{sample_width}}x{{sample_height}}
     @Published var nudgeStepSeconds: Double = 1.0 { didSet { persistSettings() } }
     // Cells with a single-frame re-extraction in flight
     @Published var nudgingIDs: Set<UUID> = []
+    // Keyboard selection (Phase 3a wrap-up) — transient, cleared on regen
+    @Published var selectedThumbnailID: UUID? = nil
 
     // Dependencies Status
     @Published var ffmpegPath: String = ""
@@ -107,6 +109,9 @@ Dimensions: {{sample_width}}x{{sample_height}}
     // Suppresses persistSettings() while init loads stored values, so the
     // load itself doesn't write defaults back.
     var isLoadingSettings = false
+    // NSEvent local monitor for grid keyboard shortcuts (installed once
+    // from MainView.onAppear; lives for the app's lifetime)
+    var keyMonitor: Any? = nil
 
     // Alpha component of the contact-sheet background (1.0 = opaque)
     var backgroundAlpha: CGFloat {
