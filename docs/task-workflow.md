@@ -82,3 +82,19 @@ Clearly distinguish:
 
 Do not rely on `docs/DEV_LOG.md` or the archived task as the only completion report.
 Keep the report self-contained and concise.
+## Release
+
+- Releases are cut by tagging the merge commit on `main`
+  (`git tag -a vX.Y.Z -m "..."`; semantic versioning per AGENTS.md).
+- `build.sh` derives the app version automatically — no manual edit per
+  release:
+  - `CFBundleShortVersionString` = latest tag via
+    `git describe --tags --abbrev=0` (leading `v` stripped).
+  - `CFBundleVersion` = monotonic commit count via
+    `git rev-list --count HEAD`.
+  - Tag **before** building a release artifact so the bundle reports
+    the new version.
+- Debug and release builds sign with the same Developer ID Application
+  identity (override with `FRAMESHEET_SIGN_IDENTITY`; ad-hoc fallback
+  with a warning when no identity is available). Notarization/stapling
+  is a release-only, currently manual step.
