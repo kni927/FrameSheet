@@ -3,10 +3,17 @@
 set -e
 
 APP_NAME="FrameSheet"
-VERSION="2.0.0"
-BUILD_NUMBER="4"
 # Build from the directory this script lives in (the repo checkout)
 SCRATCH_DIR="$(cd "$(dirname "$0")" && pwd)"
+
+# Version comes from the latest git tag (vX.Y.Z -> X.Y.Z) so releases
+# only need a tag, never a script edit. Build number is the monotonic
+# commit count (started at 55 = the v2.3.1 housekeeping commit range).
+# Fallbacks cover non-git contexts (e.g. building from a tarball).
+VERSION="$(git -C "$SCRATCH_DIR" describe --tags --abbrev=0 2>/dev/null | sed 's/^v//')"
+VERSION="${VERSION:-2.3.0}"
+BUILD_NUMBER="$(git -C "$SCRATCH_DIR" rev-list --count HEAD 2>/dev/null)"
+BUILD_NUMBER="${BUILD_NUMBER:-0}"
 BUILD_DIR="$SCRATCH_DIR/build"
 APP_DIR="$BUILD_DIR/$APP_NAME.app"
 
