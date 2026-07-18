@@ -205,3 +205,20 @@ Backend changes legitimately change pixels (different scaler/color pipeline than
 #### Decision
 - **ffmpeg path**: the Phase-1 render baseline stays authoritative; the renderer harness must remain byte-identical, and the WebM smoke tests (hang-regression timeout, duration-less packet scan) must pass unchanged through the fallback route.
 - **AVFoundation path**: default-settings outputs for the local sample videos are committed under `tests/baselines/` and byte-compared by the smoke suite, which also asserts deterministic reruns and that every cell is backed by a real frame file. Baselines are machine-anchored (hardware decoders can differ across chips); regeneration requires a DEV_LOG entry.
+
+---
+
+### 13. Debug builds sign with Developer ID; version derives from git tags (v2.3.1 — 2026-07-18)
+
+#### Context
+Debug builds were ad-hoc signed, and every rebuild produced a different code signature. macOS TCC ties permission grants to bundle ID + code signature (designated requirement), so grants like Files-and-Folders folder access would be invalidated on each rebuild — the same class of issue as Accessibility-API tools hit. Separately, `CFBundleShortVersionString` was a hardcoded script variable stuck at 2.0.0 while v2.1.0–v2.3.0 shipped, and the bundle identifier still carried the Antigravity-era `com.gemini.` prefix.
+
+#### Decision
+- **Bundle identifier** is `com.kni.FrameSheet` (old preferences domain orphaned intentionally; no migration).
+- **Version from tags**: `build.sh` derives `CFBundleShortVersionString` from `git describe --tags --abbrev=0` and `CFBundleVersion` from `git rev-list --count HEAD` (release procedure in `docs/task-workflow.md`: tag first, then build).
+- **One signing identity for all builds**: debug and release builds sign with the Developer ID Application certificate with hardened runtime (`--options runtime`); `FRAMESHEET_SIGN_IDENTITY` overrides auto-detection, and machines without the identity fall back to ad-hoc with an explicit warning. **Notarization/stapling stays release-only** (currently manual; credentials not yet registered). The `~/Applications` debug-install rule is orthogonal and unchanged.
+
+#### Rationale
+- **Stable TCC grants**: an identical certificate + bundle ID yields a stable designated requirement, so permission grants survive rebuilds — relevant to FrameSheet mainly for folder-scoped file access.
+- **Tags as the single source of version truth** removes a manual per-release edit that had already drifted three releases.
+- **Fallback over failure**: contributors without the certificate still get working (ad-hoc) builds, with the trade-off surfaced in the build log.
