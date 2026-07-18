@@ -4,6 +4,21 @@ This log details the features, design changes, and bug fixes implemented during 
 
 ---
 
+## [2.3.0] — AVFoundation Primary Decode Backend - 2026-07-18
+
+### Added
+- **DecodeBackend abstraction**: probing, duration estimation, batch extraction, single-frame extraction, cancellation, and teardown now go through a protocol; the original ffmpeg spawn path moved unchanged into `FFmpegBackend` (verified byte-identical + full smoke suite before any AVFoundation work landed).
+- **AVFoundationBackend (primary)**: in-process `AVAssetImageGenerator` with VideoToolbox hardware decode against a resident `AVAsset` (released on video close/replace). Zero time tolerance first; individual exact-time decode failures retry once with a bounded ±0.5s tolerance and the actual decoded time flows back into the `Thumbnail`, keeping burned-in timestamps truthful (see `docs/DECISIONS.md` #11 — some real-world H.264 streams hard-fail zero-tolerance generation; the ToS sample retries ~9 of 20 frames).
+- **Routing**: AVFoundation is probed first; ffmpeg is a fallback for assets with no decodable video track (WebM/MKV — and AV1 on pre-M3 hardware). ffmpeg is no longer a hard dependency: the launch overlay became a dismissible notice, and a fallback-needed-but-missing load fails with a message naming the format and the `brew install ffmpeg` hint. The active backend is logged per load.
+- **Per-backend baselines** (`tests/baselines/`, new): default-settings outputs pinned for the AVF mov path and the ffmpeg-routed AV1 mp4; the smoke suite byte-compares against them and asserts deterministic reruns. A new all-frame-files-present check catches per-frame decode failures (it caught the zero-tolerance issue during Stage B verification).
+
+### Measured (Stage C — ToS-4k-1920.mov, M1, medians)
+- Full 16-frame batch extraction: **0.74s (ffmpeg) → 0.26s (AVFoundation), ~2.8×**.
+- Single-cell nudge extraction: **131ms (ffmpeg) → 65ms (AVFoundation), ~2.0×** — no process spawn; hits the resident asset.
+- WebM fallback unchanged: Sintel 888s source generates in ~1.5s via ffmpeg; duration-less WebM packet-scan fallback intact.
+
+---
+
 ## [Unreleased] — Phase 3a Wrap-up - 2026-07-18
 
 ### Added
