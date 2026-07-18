@@ -38,6 +38,16 @@ struct CanvasView: View {
 
                             Spacer()
 
+                            // Unhide-all action (Phase 3a Stage B)
+                            if state.hiddenCount > 0 {
+                                Button(action: { state.resetHidden() }) {
+                                    Label("Unhide All (\(state.hiddenCount))", systemImage: "eye")
+                                }
+                                .buttonStyle(.bordered)
+                                .controlSize(.small)
+                                .help("Reset all hidden thumbnails")
+                            }
+
                             // Reveal file button
                             Button(action: {
                                 NSWorkspace.shared.selectFile(video.path, inFileViewerRootedAtPath: "")
