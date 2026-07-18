@@ -147,3 +147,20 @@ Phase 3a made grid cells individually hideable. Two product questions had to be 
 #### Rationale
 - **Consistency with existing parameters**: `columns` everywhere else is an exact user-set value while row count already derives from content; shrinking rows preserves that meaning. A fixed-dimensions alternative (leaving background holes in the export) was rejected by the project owner.
 - **Predictability over cleverness**: carrying hidden state across regeneration by timestamp matching becomes ambiguous the moment sampling settings change (every timestamp shifts). A fresh grid after regeneration is the least surprising behavior; timestamp-keyed persistence remains a possible future decision if a concrete need appears.
+
+---
+
+### 9. Grid keyboard model: navigate all cells, `,`/`.` nudge keys (Phase 3a wrap-up — 2026-07-18)
+
+#### Context
+The Phase 3a wrap-up added keyboard support to the thumbnail grid. Two choices needed recording: how arrow navigation treats hidden cells, and which keys drive the per-cell nudge.
+
+#### Decision
+- **Arrow navigation traverses ALL displayed cells**, including dimmed hidden ones (owner-approved). The task draft said "hidden cells are skipped, matching the visual layout," but per decision #8 the grid *shows* hidden cells in place — skipping them would contradict the actual visual layout and make keyboard-only unhide impossible.
+- **Nudge keys are `,` and `.`** (over the `[`/`]` alternative): they are the unshifted forms of `<`/`>`, mirroring the on-screen chevron buttons, and collide with no existing shortcuts (⌘O/⌘C/⌘S are all command-modified). They are matched by *character* rather than key code so they work across keyboard layouts.
+- **Key capture is an `NSEvent` local monitor** (deployment target macOS 11 predates SwiftUI `.onKeyPress`, same availability discipline as the Stage C drag API choice). The monitor passes events through while any text field is being edited (first responder is an `NSTextView` field editor) or command/control/option is held.
+
+#### Rationale
+- Reachability beats literalism: a keyboard model where hidden cells can be selected keeps hide/unhide symmetric with the mouse path.
+- One mental model for nudge: `,`/`.` ↔ `<`/`>` chevrons.
+- A deliberate consequence of the text-field guard: clicking a cell while a sidebar field is focused selects the cell but keys stay with the field until focus leaves it — typing into settings can never trigger grid actions.

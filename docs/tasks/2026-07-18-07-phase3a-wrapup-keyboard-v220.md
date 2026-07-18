@@ -88,3 +88,70 @@ After Parts 1–3 are merged to `main`:
 - Follow `AGENTS.md` / `CLAUDE.md`. Branch off current `main`.
 - Parts may share one branch/PR but keep feature (Part 1), harness
   (Part 2), and docs (Part 3) as separate commits.
+
+## Implementation Result
+
+**Status:**
+- Completed
+
+### Changes
+
+One branch (`feature/phase3a-wrapup`), separate commits per part:
+
+- **Part 1 (keyboard)**: click-to-select with accent focus ring;
+  arrow navigation; Space/Delete hide; `,`/`.` nudge (chosen over
+  `[`/`]` — unshifted `<`/`>` mirrors the on-screen chevrons, no
+  collisions; matched by character for layout independence); Esc
+  clears. `NSEvent` local monitor (macOS 11 target rules out
+  `.onKeyPress`), with a text-field/modifier pass-through guard.
+  **Flagged before implementing**: the draft said arrows skip hidden
+  cells "matching the visual layout," but the Stage B grid shows
+  hidden cells dimmed in place — skipping would contradict the actual
+  layout and make keyboard-only unhide impossible. Owner approved
+  navigating ALL displayed cells; recorded as decision #9.
+- **Part 2 (harness)**: real-video smoke section driving the actual
+  `loadVideo` → auto-generate pipeline. Note: the task's folder path
+  `docs/references/…` is a typo — the real (git-ignored) folder is
+  `docs/reference/Royalty Free Videos/`; the harness targets the real
+  path and skips cleanly when absent. A synthesized cues-less WebM
+  (muxed to a pipe) deterministically exercises the duration
+  fallback.
+- **Part 3 (docs)**: `docs/ARCHITECTURE.md` rewritten to the current
+  `src/` layout, AppState-split, shared-`drawCell` renderer,
+  Phase 3a grid/cell + selection model; superseded designs kept as a
+  marked historical section.
+- **Part 4 (release)**: `v2.2.0` tagged on the merge commit (Phase 3a
+  interactivity + keyboard support as release content).
+- Also: this TASK.md was found at `docs/TASK.md` and moved to the
+  repo root per the AGENTS.md convention before starting.
+
+### Verification
+
+- Build: passed (only pre-existing `onChange` deprecation warnings);
+  installed to `~/Applications` and exercised live.
+- Automated verification: 30-check render harness still all-pass;
+  new smoke section 25/25 pass — Big Buck Bunny mp4 (2.2s), Sintel
+  VP9 WebM (1.7s, named regression target, 120s timeout), ToS 4K mov
+  (0.8s), synthesized duration-less WebM (fallback estimated 7.9s of
+  true 8s; 16/16 cells and sane durations everywhere).
+- Manual verification (GUI): arrows move the ring (incl. column
+  stride); keyboard hide and keyboard nudge produce **byte-identical
+  exports** to the same operations via mouse; typing `,`/`.`/arrows
+  in the filename-template field edits the field without any grid
+  action; Esc clears selection (Space-after-Esc no-op probe + fresh-
+  launch no-ring comparison).
+- Not verified: keyboard behavior on a JIS physical keyboard
+  (character-matching makes layout dependence unlikely; automated
+  input used synthesized events).
+
+### Remaining Issues
+
+- None
+
+### Follow-up Suggestions
+
+- Scroll-selected-cell-into-view when arrowing beyond the visible
+  viewport (selection can move offscreen at high zoom).
+- A subtle UX consequence of the focus guard, recorded in decision
+  #9: clicking a cell while a sidebar text field is focused selects
+  the cell but keys stay with the field until focus leaves it.
