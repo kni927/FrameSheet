@@ -33,6 +33,18 @@ struct FramesTab: View {
                     .font(.caption)
                     .foregroundColor(.gray)
             }
+
+            VStack(alignment: .leading, spacing: 6) {
+                HStack {
+                    Text("Nudge Step")
+                    Spacer()
+                    Text(String(format: "%g s", state.nudgeStepSeconds))
+                }
+                Slider(value: $state.nudgeStepSeconds, in: 0.1...10, step: 0.1)
+                Text("Per-thumbnail < > time shift on hover.")
+                    .font(.caption)
+                    .foregroundColor(.gray)
+            }
         }
         .monoFont()
     }

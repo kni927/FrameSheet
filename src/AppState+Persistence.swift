@@ -31,6 +31,7 @@ extension AppState {
             "filenameTemplate": filenameTemplate,
             "overwriteExisting": overwriteExisting,
             "includeIndividualFrames": includeIndividualFrames,
+            "nudgeStepSeconds": nudgeStepSeconds,
         ]
         dict["backgroundColor"] = Self.encodeColor(backgroundColor)
         dict["textColor"] = Self.encodeColor(textColor)
@@ -63,6 +64,7 @@ extension AppState {
         if let v = dict["filenameTemplate"] as? String { filenameTemplate = v }
         if let v = dict["overwriteExisting"] as? Bool { overwriteExisting = v }
         if let v = dict["includeIndividualFrames"] as? Bool { includeIndividualFrames = v }
+        if let v = dict["nudgeStepSeconds"] as? Double { nudgeStepSeconds = v }
         if let v = dict["backgroundColor"] as? [Double] { backgroundColor = Self.decodeColor(v) ?? backgroundColor }
         if let v = dict["textColor"] as? [Double] { textColor = Self.decodeColor(v) ?? textColor }
     }
