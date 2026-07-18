@@ -103,3 +103,83 @@ path (different scaler/color pipeline than ffmpeg). Baseline policy:
 - No behavior change for ffmpeg-routed formats.
 - Follow `AGENTS.md` / `CLAUDE.md`. Branch off current `main`
   (`v2.2.0`).
+
+## Implementation Result
+
+**Status:**
+- Completed
+
+### Changes
+
+Branch `feature/avf-decode-backend`, one commit per stage:
+
+- **Stage A (`c95de75`)**: `DecodeBackend` protocol (probe, duration
+  estimation, batch extraction, single-frame extraction, cancel,
+  close) + `FFmpegBackend` wrapping the entire existing ffmpeg spawn
+  path unchanged. AppState (Loading/Generation/Grid) talks only to
+  the protocol; console diagnostics via a main-queue `logSink`.
+- **Stage B (`ba656af`)**: `AVFoundationBackend` — resident
+  `AVURLAsset` per loaded video, completion-handler loading APIs
+  (macOS 11 target), `AVAssetImageGenerator` batch + single-frame,
+  `appliesPreferredTrackTransform`, VideoToolbox decode. Routing:
+  AVF-first, ffmpeg fallback only when no decodable video track;
+  fallback-needed-but-missing produces the format-naming
+  `brew install ffmpeg` error (verified via CLI check). Launch
+  overlay demoted to a dismissible notice; active backend logged.
+  Baselines committed under `tests/baselines/` (owner-approved
+  location) with a README documenting machine anchoring.
+- **Stage C (`29fef3a`)**: nudge verified on the resident asset
+  (no spawn) and measurements recorded in DEV_LOG.
+- **Flagged mid-task (owner decisions)**: zero-tolerance
+  `AVAssetImageGenerator` hard-fails scattered frames on some real
+  H.264 streams ("Cannot Decode"; ToS sample: 9/20 frames, its
+  stream triggers ffmpeg's `mmco: unref short failure` too). Owner
+  approved exact-first + bounded ±0.5s per-frame retry with actual
+  decode times propagated into `Thumbnail` (labels stay truthful);
+  whole-file ffmpeg fallback rejected. Recorded as decision #11.
+  The `DecodeBackend` completions were extended to carry per-frame
+  actual timestamps for this.
+- Notable finding: the "mp4" sample (Big Buck Bunny) is AV1, which
+  AVFoundation only decodes on M3+; on this M1 it correctly falls
+  back to ffmpeg — evidence the track-decodability probe routes by
+  capability, not extension.
+
+### Verification
+
+- Build: passed at each stage (`./build.sh`; new AVF deprecation
+  warnings are the deliberate macOS 11-compatible API choices, same
+  discipline as prior stages).
+- Automated: render harness 30/30 with the ffmpeg-path default render
+  still byte-identical to the Phase 1 baseline (Stage A and B);
+  smoke suite grown to 36 checks, all pass — AVF routing for the
+  H.264 mov, ffmpeg fallback for WebM ×2 (hang-regression timeout and
+  packet-scan duration fallback intact, outputs unchanged) and the
+  AV1 mp4, per-file all-frame-files-present (catches per-frame decode
+  failures — it caught the zero-tolerance issue), deterministic
+  byte-identical reruns, and byte-match against the committed
+  `tests/baselines/` references. ffmpeg-missing fallback message
+  check passes.
+- Manual (GUI): backend line in console; ToS mov generates a full
+  20-cell grid via AVFoundation with retry lines logged; hide/unhide/
+  keyboard/Esc functional on the AVF path; nudge console shows the
+  single re-extract via AVFoundation with a truthful snapped
+  timestamp (38.000s requested → t=37.750s decoded → "0:37" label).
+- Measurements (ToS-4k-1920.mov, M1, medians): batch 16 frames
+  0.74s → 0.26s (~2.8×); single-frame nudge 131ms → 65ms (~2.0×).
+- Baseline sanity before adoption: cell count, snapped timestamps in
+  labels, orientation, and a cross-backend frame-content comparison
+  (ffmpeg extraction of the same timestamp matches the AVF cell).
+
+### Remaining Issues
+
+- None
+
+### Follow-up Suggestions
+
+- The committed baselines are machine-anchored (M1 VideoToolbox);
+  regenerating on different hardware will produce different bytes —
+  the README documents the policy, but CI on other machines would
+  need its own baseline set.
+- In-process decode residency now makes a Phase 3b scrub UI cheap if
+  ever approved (coarse-tolerance preview generator on the resident
+  asset).
