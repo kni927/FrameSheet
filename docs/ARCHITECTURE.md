@@ -2,14 +2,16 @@
 
 ## System Overview
 
-FrameSheet is a single-binary Swift/SwiftUI app coordinating the system's `ffmpeg`/`ffprobe` with a native CoreGraphics compositor. There are no bundled binaries or Python dependencies (since v2.0.0), and no Xcode project — `build.sh` compiles everything under `src/` with `swiftc -parse-as-library`.
+FrameSheet is a single-binary Swift/SwiftUI app pairing an in-process AVFoundation/VideoToolbox decode backend (with a system-`ffmpeg` fallback for WebM/MKV) with a native CoreGraphics compositor. There are no bundled binaries or Python dependencies (since v2.0.0), and no Xcode project — `build.sh` compiles everything under `src/` with `swiftc -parse-as-library`.
 
 ```mermaid
 graph TD
     A[SwiftUI Views] -->|Config & Actions| B[AppState Coordinator]
-    B -->|ffprobe metadata / packet-scan fallback| D[System FFmpeg/FFprobe]
-    B -->|"per-frame -ss input seek, 5 parallel"| D
-    D -->|Extracts| E[Temp JPEG frames  retained for the session]
+    B -->|probe / extract via protocol| P[DecodeBackend]
+    P -->|primary: resident AVAsset, VideoToolbox| AV[AVFoundationBackend]
+    P -->|fallback: WebM/MKV etc.| FF[FFmpegBackend → system ffmpeg/ffprobe]
+    AV -->|Extracts| E[Temp JPEG frames  retained for the session]
+    FF -->|Extracts| E
     E -->|Thumbnail array| G[ContactSheetRenderer<br/>shared drawCell]
     G -->|per-cell images| H[LazyVGrid display]
     G -->|flattened composite| I[Export previewImage]
@@ -24,10 +26,17 @@ src/
 ├── AppDelegate.swift          Finder/Dock open-event routing
 ├── Models.swift               VideoFileInfo, FFProbeResult
 ├── Thumbnail.swift            One grid cell: id, timestamp, imagePath, hidden
+├── DecodeBackend.swift        Protocol: probe, duration estimation,
+│                              batch/single-frame extraction, cancel
+├── AVFoundationBackend.swift  Primary: resident AVAsset + VideoToolbox,
+│                              zero-tolerance + bounded ±0.5s retry
+├── FFmpegBackend.swift        Fallback: ffmpeg/ffprobe process spawn
+│                              (WebM/MKV etc.; packet-scan duration)
 ├── AppState.swift             ObservableObject: all @Published state
 ├── AppState+Dependencies.swift  ffmpeg/ffprobe discovery & launch check
-├── AppState+Loading.swift     loadVideo (ffprobe JSON), duration estimation
-├── AppState+Generation.swift  sampling math, 5-way parallel extraction,
+├── AppState+Loading.swift     loadVideo + backend routing (AVF-first),
+│                              duration-estimation flow
+├── AppState+Generation.swift  sampling math, backend.extractFrames,
 │                              renderAndPresent (sheet + cell images)
 ├── AppState+Grid.swift        Phase 3a: hide/unhide, re-flow recompose,
 │                              per-cell nudge, keyboard selection & shortcuts
@@ -62,12 +71,16 @@ src/
 
 All app state lives in a single `ObservableObject` (`AppState`), shared by every window. Its behavior is split across extension files by concern (see layout above) rather than separate service classes — the Phase 1 refactor (see `docs/DECISIONS.md` #5) chose per-concern extensions over introducing an abstraction layer. Generation settings persist via `UserDefaults` (`AppState+Persistence.swift`); transient state (zoom, console, selection, hidden flags) does not.
 
+### Decode backends (v2.3.0)
+
+Frame decoding sits behind the `DecodeBackend` protocol; `AppState` never talks to a decoder directly. Routing per load: probe with **AVFoundation** first (resident `AVAsset`, `AVAssetImageGenerator`, VideoToolbox hardware decode); fall back to **ffmpeg** only when the asset has no decodable video track (WebM/MKV, or codec/hardware gaps like AV1 before M3). ffmpeg is optional — required only for fallback formats, with a clear error naming the format when missing (decisions #10–#12: routing, exact-tolerance-with-bounded-retry, per-backend baselines in `tests/baselines/`).
+
 ### Generation pipeline
 
-1. `loadVideo(url:)` probes metadata with `ffprobe` (JSON). If duration is missing/`N/A`/0, `estimateDuration` falls back to a demux-only packet-timestamp scan (two attempts; cancellable) before generating.
-2. `generateContactSheet()` computes sampling timestamps (grid size × start/end delay, or custom timestamps), then `runParallelFrameExtraction()` runs **one input-seeking ffmpeg invocation per frame** (`-ss <t> -i <file> -frames:v 1`, software decode, JPEG `-q:v 3`), 5 concurrent, into a per-generation temp dir.
+1. `loadVideo(url:)` routes to a backend (above) and probes metadata through it. If duration is missing/`N/A`/0, the backend's `estimateDuration` runs (ffmpeg: demux-only packet-timestamp scan, two attempts, cancellable) before generating.
+2. `generateContactSheet()` computes sampling timestamps (grid size × start/end delay, or custom timestamps), then `backend.extractFrames` produces one JPEG per timestamp — AVFoundation: batched `generateCGImagesAsynchronously` with zero tolerance plus per-frame bounded retry; ffmpeg: **one input-seeking invocation per frame** (`-ss <t> -i <file> -frames:v 1`, software decode, JPEG `-q:v 3`), 5 concurrent.
 3. The temp frames dir is **retained** for the session (replaced on the next generation) so per-thumbnail features can re-read and re-extract individual frames.
-4. `renderAndPresent` composites the export image and renders the per-cell display images in the same pass, then publishes atomically with a `generationID` guard against superseded runs.
+4. `renderAndPresent` composites the export image and renders the per-cell display images in the same pass, then publishes atomically with a `generationID` guard against superseded runs. Per-frame actual decode times reported by the backend are applied to the `Thumbnail` array first, keeping burned-in timestamps truthful.
 
 ### Display vs. export (Phase 3a)
 
@@ -82,7 +95,7 @@ The preview is an addressable grid, not a flattened bitmap:
 
 - **Hide**: toggles `Thumbnail.hidden`; the grid dims the cell in place, while the export recomposes with visible cells compacted in raster order and rows re-flowed to `ceil(visible/cols)` (`reflowParams`; decision #8). Hidden state resets on regeneration.
 - **Reorder**: drag & drop (`onDrag`/`onDrop` + `DropDelegate`; deployment target macOS 11 predates `.draggable`) live-moves elements of `thumbnails`; the sheet recomposes on drop.
-- **Nudge**: shifts one cell's timestamp by the configured step and re-extracts *only that frame* with a single ffmpeg invocation into the retained frames dir, then re-renders that cell and recomposes.
+- **Nudge**: shifts one cell's timestamp by the configured step and re-extracts *only that frame* through the active backend into the retained frames dir (AVFoundation: resident asset, no process spawn; ~65ms vs ~131ms via ffmpeg on the 4K sample), then re-renders that cell and recomposes.
 - **Keyboard**: an `NSEvent` local monitor (macOS 11-compatible) provides click-to-select with a focus ring, arrow navigation over all displayed cells (including dimmed hidden ones — decision #9), Space/Delete hide, `,`/`.` nudge, and Esc to clear. Events pass through while a text field is being edited or command/control/option is held.
 
 ### Export (`AppState+Export.swift`)

@@ -164,3 +164,44 @@ The Phase 3a wrap-up added keyboard support to the thumbnail grid. Two choices n
 - Reachability beats literalism: a keyboard model where hidden cells can be selected keeps hide/unhide symmetric with the mouse path.
 - One mental model for nudge: `,`/`.` ↔ `<`/`>` chevrons.
 - A deliberate consequence of the text-field guard: clicking a cell while a sidebar field is focused selects the cell but keys stay with the field until focus leaves it — typing into settings can never trigger grid actions.
+
+---
+
+### 10. Decode-backend routing: AVFoundation primary, ffmpeg fallback (v2.3.0 — 2026-07-18)
+
+#### Context
+Through v2.2.0 every frame came from spawned ffmpeg processes, making ffmpeg a hard dependency even for formats macOS decodes natively.
+
+#### Decision
+All probing/extraction goes through a `DecodeBackend` protocol. On load, AVFoundation is probed first; the file routes to `FFmpegBackend` only when the asset has no decodable video track (WebM/MKV — and codec/hardware gaps such as AV1 before M3). When the fallback is needed but ffmpeg is missing, the load fails with a message naming the format and suggesting `brew install ffmpeg`. The launch "FFmpeg not found" overlay became a dismissible informational notice; the active backend is logged to the console per load.
+
+#### Rationale
+- **ffmpeg becomes optional** for mp4/mov/m4v, unblocking future standalone distribution without bundling ffmpeg (and its GPL/LGPL considerations — see decision #1).
+- **Hardware decode**: VideoToolbox roughly halves extraction times (see DEV_LOG measurements) and keeps a resident decoder for per-cell work.
+- **Capability-probing beats extension lists**: routing on "does AVFoundation report a decodable track" automatically handles codec-inside-container surprises (an `.mp4` carrying AV1 correctly falls back on M1/M2 and will route natively on M3+).
+
+---
+
+### 11. Exact-time tolerance with bounded per-frame retry (v2.3.0 — 2026-07-18)
+
+#### Context
+`AVAssetImageGenerator` was configured with zero time tolerance (exports must be timestamp-accurate; coarse tolerance is a Phase 3b scrub concern). Real-world testing surfaced H.264 streams (ToS sample; ffmpeg logs `mmco: unref short failure` for it) where scattered exact-time requests hard-fail with "Cannot Decode" — 9 of 20 frames on the sample — which the renderer would silently paint as dark filler cells.
+
+#### Decision
+Zero tolerance remains the first attempt for both batch and nudge extraction. A frame that fails exactly is retried once with a bounded ±0.5s tolerance; the actual decoded time is propagated into the `Thumbnail`, so on-image timestamps and the nudge state reflect the frame really shown. Every retry is logged to the console. Whole-file fallback to ffmpeg on a single frame failure was rejected (owner decision): it would discard the hardware-decode win and reintroduce the ffmpeg dependency for slightly non-conformant but otherwise fine native files.
+
+#### Rationale
+- **Zero missing cells** while staying exact wherever the stream allows it.
+- **Truthful labels over pretty labels**: a snapped frame shows its real time (observed drift ≤0.3s on the sample).
+- The failure is deterministic per stream+time, so retried outputs remain byte-stable for the baseline policy.
+
+---
+
+### 12. Per-backend verification baselines in tests/baselines/ (v2.3.0 — 2026-07-18)
+
+#### Context
+Backend changes legitimately change pixels (different scaler/color pipeline than ffmpeg), so the single Phase-1 byte-baseline could no longer cover both paths. The owner approved a root-level `tests/` directory (updating the src-layout root inventory from decision-era 2026-07-18-05).
+
+#### Decision
+- **ffmpeg path**: the Phase-1 render baseline stays authoritative; the renderer harness must remain byte-identical, and the WebM smoke tests (hang-regression timeout, duration-less packet scan) must pass unchanged through the fallback route.
+- **AVFoundation path**: default-settings outputs for the local sample videos are committed under `tests/baselines/` and byte-compared by the smoke suite, which also asserts deterministic reruns and that every cell is backed by a real frame file. Baselines are machine-anchored (hardware decoders can differ across chips); regeneration requires a DEV_LOG entry.
