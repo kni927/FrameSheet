@@ -7,6 +7,84 @@ import AppKit
 // Decisions — hidden-by-timestamp persistence was explicitly not adopted).
 extension AppState {
 
+    // MARK: Keyboard selection + shortcuts (Phase 3a wrap-up)
+    //
+    // Selection navigates ALL displayed cells in raster order, including
+    // dimmed hidden ones (per Decisions — the grid shows hidden cells in
+    // place, and skipping them would make keyboard-only unhide impossible).
+    // Key capture uses an NSEvent local monitor because the deployment
+    // target is macOS 11 (SwiftUI .onKeyPress is macOS 14+). Events are
+    // passed through untouched while a text field is being edited or any
+    // command/control/option modifier is down.
+
+    func installKeyMonitor() {
+        guard keyMonitor == nil else { return }
+        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard let self = self else { return event }
+            return self.handleGridKeyEvent(event) ? nil : event
+        }
+    }
+
+    private func handleGridKeyEvent(_ event: NSEvent) -> Bool {
+        guard displayParams != nil, !thumbnails.isEmpty else { return false }
+        if !event.modifierFlags.intersection([.command, .control, .option]).isEmpty {
+            return false
+        }
+        // Don't steal keys from the sidebar's text inputs (TextField /
+        // TextEditor edit via an NSTextView field editor).
+        if let responder = NSApp.keyWindow?.firstResponder, responder is NSTextView {
+            return false
+        }
+
+        switch event.keyCode {
+        case 123: return moveSelection(by: -1)                       // ←
+        case 124: return moveSelection(by: 1)                        // →
+        case 126: return moveSelection(by: -(displayParams?.cols ?? columns)) // ↑
+        case 125: return moveSelection(by: (displayParams?.cols ?? columns))  // ↓
+        case 53:                                                     // Esc
+            guard selectedThumbnailID != nil else { return false }
+            selectedThumbnailID = nil
+            return true
+        case 49, 51, 117:                                            // Space, Delete, Fwd-Delete
+            guard let id = selectedThumbnailID else { return false }
+            toggleHidden(id)
+            return true
+        default:
+            break
+        }
+
+        // Nudge keys matched by character rather than key code so they work
+        // across keyboard layouts (and synthesized input).
+        switch event.charactersIgnoringModifiers {
+        case ",":
+            guard let id = selectedThumbnailID else { return false }
+            nudgeThumbnail(id, forward: false)
+            return true
+        case ".":
+            guard let id = selectedThumbnailID else { return false }
+            nudgeThumbnail(id, forward: true)
+            return true
+        default:
+            return false
+        }
+    }
+
+    // Move selection by a raster-order offset (±1 = left/right, ±cols =
+    // up/down), clamped to the grid. An arrow with no selection selects
+    // the first cell.
+    private func moveSelection(by offset: Int) -> Bool {
+        guard let current = selectedThumbnailID,
+              let idx = thumbnails.firstIndex(where: { $0.id == current })
+        else {
+            selectedThumbnailID = thumbnails.first?.id
+            return true
+        }
+        let target = idx + offset
+        guard target >= 0 && target < thumbnails.count else { return true }
+        selectedThumbnailID = thumbnails[target].id
+        return true
+    }
+
     var hiddenCount: Int { thumbnails.filter { $0.hidden }.count }
 
     var visibleThumbnails: [Thumbnail] { thumbnails.filter { !$0.hidden } }

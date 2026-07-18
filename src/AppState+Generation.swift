@@ -21,6 +21,7 @@ extension AppState {
         cellImages = [:]
         headerImage = nil
         displayParams = nil
+        selectedThumbnailID = nil
         generationID += 1
         let runID = generationID
 

@@ -33,6 +33,9 @@ struct MainView: View {
             }
         }
         .monoFont() // Set SF Mono globally
+        .onAppear {
+            state.installKeyMonitor()
+        }
         .alert(item: Binding<AlertError?>(
             get: { state.errorMessage.map { AlertError(message: $0) } },
             set: { _ in state.errorMessage = nil }

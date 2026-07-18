@@ -89,6 +89,16 @@ struct ThumbnailCellView: View {
         }
         .frame(width: width, height: height)
         .contentShape(Rectangle())
+        // Keyboard-selection focus ring (click to select; Esc clears)
+        .overlay(
+            state.selectedThumbnailID == thumbnail.id
+                ? RoundedRectangle(cornerRadius: 2)
+                    .stroke(Color.accentColor, lineWidth: 3)
+                : nil
+        )
+        .onTapGesture {
+            state.selectedThumbnailID = thumbnail.id
+        }
         .onHover { hovering in
             isHovering = hovering
         }
