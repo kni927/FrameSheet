@@ -81,7 +81,23 @@ struct CanvasView: View {
                                     .foregroundColor(.gray)
                             }
                             .monoFont()
+                        } else if let dp = state.displayParams, !state.thumbnails.isEmpty {
+                            // Addressable grid (Phase 3a): one view per
+                            // thumbnail, same geometry as the exported sheet
+                            ScrollView([.horizontal, .vertical]) {
+                                ThumbnailGridView(params: dp)
+                                    // Checkerboard behind the sheet so a
+                                    // transparent background is visible
+                                    .background(
+                                        state.backgroundAlpha < 1.0
+                                            ? AnyView(CheckerboardBackground())
+                                            : AnyView(Color.clear)
+                                    )
+                                    .padding(20)
+                            }
                         } else if let image = state.previewImage {
+                            // Fallback: flattened composite (e.g. cell images
+                            // unavailable)
                             ScrollView([.horizontal, .vertical]) {
                                 Image(nsImage: image)
                                     .resizable()
@@ -90,8 +106,6 @@ struct CanvasView: View {
                                         width: CGFloat(state.imageWidth) * state.zoomScale,
                                         height: CGFloat(state.imageWidth) * image.aspectRatio * state.zoomScale
                                     )
-                                    // Checkerboard behind the sheet so a
-                                    // transparent background is visible
                                     .background(
                                         state.backgroundAlpha < 1.0
                                             ? AnyView(CheckerboardBackground())

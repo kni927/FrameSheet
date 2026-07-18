@@ -18,6 +18,9 @@ extension AppState {
         isGenerating = true
         errorMessage = nil
         previewImage = nil
+        cellImages = [:]
+        headerImage = nil
+        displayParams = nil
         generationID += 1
         let runID = generationID
 
@@ -127,6 +130,16 @@ extension AppState {
         DispatchQueue.global(qos: .userInitiated).async {
             let image = ContactSheetRenderer.render(thumbnails: thumbnails, params: cap)
 
+            // Per-cell display images + header strip for the addressable
+            // grid, rendered from the same drawCell path as the sheet.
+            var newCellImages: [UUID: NSImage] = [:]
+            for thumb in thumbnails {
+                if let cell = ContactSheetRenderer.renderCellImage(thumb, params: cap) {
+                    newCellImages[thumb.id] = cell
+                }
+            }
+            let newHeader = ContactSheetRenderer.renderHeaderImage(params: cap)
+
             DispatchQueue.main.async {
                 guard runID == self.generationID else {
                     try? FileManager.default.removeItem(atPath: tempDir)
@@ -147,6 +160,9 @@ extension AppState {
                         self.previewImagePath = outPath
                     }
                     self.previewImage = img
+                    self.cellImages = newCellImages
+                    self.headerImage = newHeader
+                    self.displayParams = cap
                     self.fitToScreen()
                     self.consoleOutput += ">>> Contact sheet generated successfully!\n"
                 } else {

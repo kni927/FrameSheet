@@ -11,6 +11,10 @@ extension AppState {
         self.errorMessage = nil
         self.previewImage = nil
         self.previewImagePath = nil
+        self.thumbnails = []
+        self.cellImages = [:]
+        self.headerImage = nil
+        self.displayParams = nil
 
         // Verify file exists
         guard FileManager.default.fileExists(atPath: url.path) else {

@@ -61,10 +61,17 @@ Dimensions: {{sample_width}}x{{sample_height}}
     @Published var consoleOutput: String = ""
     @Published var errorMessage: String? = nil
     // Backing data for the currently-displayed grid. `generateContactSheet()`
-    // populates this and the renderer flattens from it; the display path is
-    // still a single composited `previewImage` for now (Phase 3a wires up
-    // per-thumbnail UI against this array).
+    // populates this; the canvas shows one addressable cell per element
+    // (Phase 3a) and the renderer flattens the same array for export.
     @Published var thumbnails: [Thumbnail] = []
+    // Per-cell display images + header strip, rendered alongside the export
+    // composite from the same drawCell code path. Keyed by Thumbnail.id.
+    @Published var cellImages: [UUID: NSImage] = [:]
+    @Published var headerImage: NSImage? = nil
+    // Params snapshot the current cellImages were rendered with — the grid
+    // lays out from this, not live settings, so an in-flight settings change
+    // can't shear the display before regeneration completes.
+    @Published var displayParams: GenerationParams? = nil
 
     // UI Helpers (transient — not persisted)
     @Published var showConsole: Bool = false // Default OFF

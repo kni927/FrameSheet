@@ -16,20 +16,27 @@ struct GenerationParams {
     var cornerRadius: Int = 0
 }
 
+// Geometry + header text shared by the full-sheet composite (export) and
+// the per-cell display images (Phase 3a grid). One source of truth so the
+// on-screen grid and the exported sheet cannot drift apart.
+struct SheetMetrics {
+    let cellW: Int
+    let cellH: Int
+    let headerLines: [String]
+    let headerH: Int
+}
+
 // CoreGraphics / AppKit composite renderer. Standalone — no dependency on
 // AppState or any View type; AppState calls into this.
 enum ContactSheetRenderer {
 
-    static func render(thumbnails: [Thumbnail], params p: GenerationParams) -> NSImage? {
+    static func metrics(for p: GenerationParams) -> SheetMetrics {
         let cols    = p.cols
         let spacing = p.spacing
         let cellW   = max(10, (p.imageWidth - (cols - 1) * spacing) / cols)
         let ar      = p.video.width > 0 ? Double(p.video.height) / Double(p.video.width) : 9.0 / 16.0
         let cellH   = max(1, Int(Double(cellW) * ar))
 
-        let rows = p.rows
-
-        // Header lines
         let fontSize: CGFloat   = 14
         let headerMargin: CGFloat = 10
         var headerLines: [String] = []
@@ -40,7 +47,7 @@ enum ContactSheetRenderer {
                 t = t.replacingOccurrences(of: "{{size}}",         with: p.video.formattedSize)
                 t = t.replacingOccurrences(of: "{{duration}}",     with: p.video.formattedDuration)
                 t = t.replacingOccurrences(of: "{{sample_width}}", with: "\(p.imageWidth)")
-                t = t.replacingOccurrences(of: "{{sample_height}}",with: "\(rows * cellH + max(0, rows - 1) * spacing)")
+                t = t.replacingOccurrences(of: "{{sample_height}}",with: "\(p.rows * cellH + max(0, p.rows - 1) * spacing)")
                 t = t.replacingOccurrences(of: "{{video_codec}}",  with: p.video.codec)
                 t = t.replacingOccurrences(of: "{{frame_rate}}",   with: p.video.frameRate)
                 headerLines = t.components(separatedBy: .newlines)
@@ -56,6 +63,86 @@ enum ContactSheetRenderer {
         }
         let lineH: CGFloat = fontSize * 1.45
         let headerH = headerLines.isEmpty ? 0 : Int(2 * headerMargin + CGFloat(headerLines.count) * lineH)
+
+        return SheetMetrics(cellW: cellW, cellH: cellH, headerLines: headerLines, headerH: headerH)
+    }
+
+    private static func resolveFontName(_ fontName: String) -> String {
+        switch fontName {
+        case "Helvetica": return "Helvetica"
+        case "Times":     return "TimesNewRomanPSMT"
+        default:          return "HiraginoSans-W3"
+        }
+    }
+
+    private static func timestampAttributes(params p: GenerationParams, cellW: Int) -> [NSAttributedString.Key: Any] {
+        let psName = resolveFontName(p.fontName)
+        let tsFontSize: CGFloat = max(8, CGFloat(cellW) * 0.065)
+        let tsFont = NSFont(name: psName, size: tsFontSize) ?? NSFont.systemFont(ofSize: tsFontSize)
+        let shadow = NSShadow()
+        shadow.shadowColor = NSColor.black.withAlphaComponent(0.75)
+        shadow.shadowBlurRadius = 2
+        shadow.shadowOffset = NSSize(width: 1, height: -1)
+        return [.font: tsFont, .foregroundColor: NSColor(p.textColor), .shadow: shadow]
+    }
+
+    // Draw one cell (image with optional rounded-corner clip, plus timestamp
+    // overlay) into the CURRENT NSGraphicsContext at destRect. Shared by the
+    // full-sheet composite and the per-cell display renderer — the single
+    // source of truth for cell appearance.
+    private static func drawCell(
+        _ thumb: Thumbnail,
+        in destRect: NSRect,
+        params p: GenerationParams,
+        tsAttrs: [NSAttributedString.Key: Any]
+    ) {
+        NSGraphicsContext.current?.saveGraphicsState()
+        if p.cornerRadius > 0 {
+            NSBezierPath(roundedRect: destRect,
+                         xRadius: CGFloat(p.cornerRadius),
+                         yRadius: CGFloat(p.cornerRadius)).addClip()
+        }
+        if let img = NSImage(contentsOfFile: thumb.imagePath) {
+            img.draw(in: destRect, from: .zero, operation: .sourceOver, fraction: 1.0)
+        } else {
+            NSColor(white: 0.12, alpha: 1).setFill()
+            destRect.fill()
+        }
+        NSGraphicsContext.current?.restoreGraphicsState()
+
+        if p.showTimestamps {
+            let attrTS  = NSAttributedString(string: formatTimestamp(thumb.timestamp), attributes: tsAttrs)
+            let tsSize  = attrTS.size()
+            let pad: CGFloat = 4
+            let x = destRect.origin.x, y = destRect.origin.y
+            let cellW = destRect.width, cellH = destRect.height
+            let tsX: CGFloat
+            let tsY: CGFloat
+            switch p.tsPosition {
+            case "top-left":
+                tsX = x + pad;                       tsY = y + cellH - tsSize.height - pad
+            case "top-right":
+                tsX = x + cellW - tsSize.width - pad; tsY = y + cellH - tsSize.height - pad
+            case "bottom-left":
+                tsX = x + pad;                       tsY = y + pad
+            default: // bottom-right
+                tsX = x + cellW - tsSize.width - pad; tsY = y + pad
+            }
+            attrTS.draw(at: CGPoint(x: tsX, y: tsY))
+        }
+    }
+
+    static func render(thumbnails: [Thumbnail], params p: GenerationParams) -> NSImage? {
+        let m = metrics(for: p)
+        let cols    = p.cols
+        let spacing = p.spacing
+        let cellW   = m.cellW
+        let cellH   = m.cellH
+        let rows    = p.rows
+        let headerH = m.headerH
+        let fontSize: CGFloat = 14
+        let headerMargin: CGFloat = 10
+        let lineH: CGFloat = fontSize * 1.45
 
         let totalW = p.imageWidth
         let totalH = headerH + rows * cellH + max(0, rows - 1) * spacing
@@ -77,33 +164,17 @@ enum ContactSheetRenderer {
         NSColor(p.bgColor).setFill()
         NSRect(x: 0, y: 0, width: totalW, height: totalH).fill()
 
-        // Resolve font
-        let psName: String
-        switch p.fontName {
-        case "Helvetica": psName = "Helvetica"
-        case "Times":     psName = "TimesNewRomanPSMT"
-        default:          psName = "HiraginoSans-W3"
-        }
-        let nsFont = NSFont(name: psName, size: fontSize) ?? NSFont.systemFont(ofSize: fontSize)
-        let textNS = NSColor(p.textColor)
-
         // Draw header
-        let headerAttrs: [NSAttributedString.Key: Any] = [.font: nsFont, .foregroundColor: textNS]
-        for (i, line) in headerLines.enumerated() {
+        let psName = resolveFontName(p.fontName)
+        let nsFont = NSFont(name: psName, size: fontSize) ?? NSFont.systemFont(ofSize: fontSize)
+        let headerAttrs: [NSAttributedString.Key: Any] = [.font: nsFont, .foregroundColor: NSColor(p.textColor)]
+        for (i, line) in m.headerLines.enumerated() {
             let y = CGFloat(totalH) - headerMargin - CGFloat(i + 1) * lineH
             NSAttributedString(string: line, attributes: headerAttrs).draw(at: CGPoint(x: headerMargin, y: y))
         }
 
-        // Timestamp style
-        let tsFontSize: CGFloat = max(8, CGFloat(cellW) * 0.065)
-        let tsFont = NSFont(name: psName, size: tsFontSize) ?? NSFont.systemFont(ofSize: tsFontSize)
-        let shadow = NSShadow()
-        shadow.shadowColor = NSColor.black.withAlphaComponent(0.75)
-        shadow.shadowBlurRadius = 2
-        shadow.shadowOffset = NSSize(width: 1, height: -1)
-        let tsAttrs: [NSAttributedString.Key: Any] = [.font: tsFont, .foregroundColor: textNS, .shadow: shadow]
-
         // Draw thumbnails + timestamps
+        let tsAttrs = timestampAttributes(params: p, cellW: cellW)
         for i in 0..<min(thumbnails.count, rows * cols) {
             let col = i % cols
             let row = i / cols
@@ -111,46 +182,65 @@ enum ContactSheetRenderer {
             // Y from bottom-left origin: top row is highest Y
             let y   = totalH - headerH - (row + 1) * cellH - row * spacing
             let destRect = NSRect(x: x, y: y, width: cellW, height: cellH)
-
-            let thumb = thumbnails[i]
-            NSGraphicsContext.current?.saveGraphicsState()
-            if p.cornerRadius > 0 {
-                NSBezierPath(roundedRect: destRect,
-                             xRadius: CGFloat(p.cornerRadius),
-                             yRadius: CGFloat(p.cornerRadius)).addClip()
-            }
-            if let img = NSImage(contentsOfFile: thumb.imagePath) {
-                img.draw(in: destRect, from: .zero, operation: .sourceOver, fraction: 1.0)
-            } else {
-                NSColor(white: 0.12, alpha: 1).setFill()
-                destRect.fill()
-            }
-            NSGraphicsContext.current?.restoreGraphicsState()
-
-            if p.showTimestamps {
-                let attrTS  = NSAttributedString(string: formatTimestamp(thumb.timestamp), attributes: tsAttrs)
-                let tsSize  = attrTS.size()
-                let pad: CGFloat = 4
-                let tsX: CGFloat
-                let tsY: CGFloat
-                switch p.tsPosition {
-                case "top-left":
-                    tsX = CGFloat(x) + pad;          tsY = CGFloat(y + cellH) - tsSize.height - pad
-                case "top-right":
-                    tsX = CGFloat(x + cellW) - tsSize.width - pad; tsY = CGFloat(y + cellH) - tsSize.height - pad
-                case "bottom-left":
-                    tsX = CGFloat(x) + pad;          tsY = CGFloat(y) + pad
-                default: // bottom-right
-                    tsX = CGFloat(x + cellW) - tsSize.width - pad; tsY = CGFloat(y) + pad
-                }
-                attrTS.draw(at: CGPoint(x: tsX, y: tsY))
-            }
+            drawCell(thumbnails[i], in: destRect, params: p, tsAttrs: tsAttrs)
         }
 
         NSGraphicsContext.restoreGraphicsState()
 
         guard let cgImg = ctx.makeImage() else { return nil }
         return NSImage(cgImage: cgImg, size: NSSize(width: totalW, height: totalH))
+    }
+
+    // Render one cell as a standalone image (transparent background — the
+    // grid's background color shows through rounded corners), for the
+    // Phase 3a addressable-grid display. Same drawing code as the sheet.
+    static func renderCellImage(_ thumb: Thumbnail, params p: GenerationParams) -> NSImage? {
+        let m = metrics(for: p)
+        guard m.cellW > 0 && m.cellH > 0 else { return nil }
+        let cs = CGColorSpaceCreateDeviceRGB()
+        guard let ctx = CGContext(
+            data: nil, width: m.cellW, height: m.cellH,
+            bitsPerComponent: 8, bytesPerRow: 0, space: cs,
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else { return nil }
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = NSGraphicsContext(cgContext: ctx, flipped: false)
+        let tsAttrs = timestampAttributes(params: p, cellW: m.cellW)
+        drawCell(thumb, in: NSRect(x: 0, y: 0, width: m.cellW, height: m.cellH), params: p, tsAttrs: tsAttrs)
+        NSGraphicsContext.restoreGraphicsState()
+        guard let cgImg = ctx.makeImage() else { return nil }
+        return NSImage(cgImage: cgImg, size: NSSize(width: m.cellW, height: m.cellH))
+    }
+
+    // Render the header block as a standalone strip (background color +
+    // header text), for the Phase 3a grid display. Returns nil when the
+    // header is disabled/empty.
+    static func renderHeaderImage(params p: GenerationParams) -> NSImage? {
+        let m = metrics(for: p)
+        guard m.headerH > 0, p.imageWidth > 0 else { return nil }
+        let fontSize: CGFloat = 14
+        let headerMargin: CGFloat = 10
+        let lineH: CGFloat = fontSize * 1.45
+        let cs = CGColorSpaceCreateDeviceRGB()
+        guard let ctx = CGContext(
+            data: nil, width: p.imageWidth, height: m.headerH,
+            bitsPerComponent: 8, bytesPerRow: 0, space: cs,
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else { return nil }
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = NSGraphicsContext(cgContext: ctx, flipped: false)
+        NSColor(p.bgColor).setFill()
+        NSRect(x: 0, y: 0, width: p.imageWidth, height: m.headerH).fill()
+        let psName = resolveFontName(p.fontName)
+        let nsFont = NSFont(name: psName, size: fontSize) ?? NSFont.systemFont(ofSize: fontSize)
+        let headerAttrs: [NSAttributedString.Key: Any] = [.font: nsFont, .foregroundColor: NSColor(p.textColor)]
+        for (i, line) in m.headerLines.enumerated() {
+            let y = CGFloat(m.headerH) - headerMargin - CGFloat(i + 1) * lineH
+            NSAttributedString(string: line, attributes: headerAttrs).draw(at: CGPoint(x: headerMargin, y: y))
+        }
+        NSGraphicsContext.restoreGraphicsState()
+        guard let cgImg = ctx.makeImage() else { return nil }
+        return NSImage(cgImage: cgImg, size: NSSize(width: p.imageWidth, height: m.headerH))
     }
 
     static func formatTimestamp(_ seconds: Double) -> String {
