@@ -114,3 +114,78 @@ No functional/behavior changes. Docs/config/build-script only.
   (`v2.3.0`).
 - Keep Parts 1–3 as separate commits (bundle ID, version sync,
   signing) even though they land in one PR/tag.
+
+## Implementation Result
+
+**Status:**
+- Completed
+
+### Changes
+
+Branch `chore/bundle-id-version-signing`, one commit per part:
+
+- **Part 1 (`57447f7`)**: bundle ID → `com.kni.FrameSheet`. The only
+  live occurrence of `com.gemini.FrameSheet` was the Info.plist
+  heredoc in `build.sh` (no entitlements, no notarization scripts,
+  no README/docs references). Orphaned-prefs consequence recorded in
+  DEV_LOG.
+- **Part 2 (`aff4911`)**: `CFBundleShortVersionString` derives from
+  `git describe --tags --abbrev=0` (v-stripped) and `CFBundleVersion`
+  from `git rev-list --count HEAD` (no prior convention existed —
+  the old script hardcoded 2.0.0/build 4; commit-count starts at
+  ~56). Fallbacks (2.3.0 / 0) cover non-git builds. Release
+  procedure documented in `docs/task-workflow.md` (tag first, then
+  build).
+- **Part 3 (`890d168`)**: all builds sign with the Developer ID
+  Application identity (`Kuniharu Nishimura (87B58V226A)`, present
+  in the keychain) with `--options runtime`; identity convention is
+  the new `FRAMESHEET_SIGN_IDENTITY` env var (auto-detect fallback,
+  then ad-hoc with warning — no identity string hardcoded).
+  `~/Applications` install rule untouched. CLAUDE.md build line
+  updated; decision #13 records the TCC rationale.
+
+### Deviations from the task's premises (flagged, not silently adapted)
+
+- **No notarization/codesign release script exists** in the repo —
+  release builds were the same ad-hoc `build.sh` path as debug. The
+  "existing release script still produces a notarized, stapled
+  build" check therefore had nothing to regress; notarization
+  remains an un-set-up, manual, release-only future step. No
+  notarytool/keychain-profile references existed to update, and
+  credentials were never registered under the old bundle ID.
+
+### Verification
+
+- Build: `./build.sh` passes; only the pre-existing deliberate
+  deprecation warnings. `build/` contains only the app + zip.
+- Bundle ID: built Info.plist reads `com.kni.FrameSheet`
+  (also visible in `codesign -dv` Identifier).
+- Version: built app reports 2.3.0 / build 56; zip name follows the
+  tag (`FrameSheet-v2.3.0-macOS.zip`).
+- Signing: two consecutive builds show **identical authority chains**
+  (Developer ID Application → Developer ID CA → Apple Root) and an
+  **identical designated requirement**
+  (`identifier "com.kni.FrameSheet" … OU = "87B58V226A"`);
+  `codesign --verify --deep --strict` passes; hardened runtime flag
+  set. `spctl --assess` reports "rejected" as expected for a
+  Developer-ID-signed-but-unnotarized app (irrelevant to local,
+  unquarantined debug builds).
+- Fresh prefs: app launches cleanly with no `com.kni.FrameSheet`
+  prefs present (defaults apply; no crash), quits normally.
+- Harnesses: render 30/30 and smoke 36/36 unchanged.
+- **Not verified**: actual TCC grant retention across rebuilds
+  (granting Files-and-Folders requires interactive system consent
+  prompts that this environment can't drive deterministically). The
+  stable designated requirement — the thing TCC keys grants on — is
+  verified as the proxy.
+
+### Remaining Issues
+
+- None
+
+### Follow-up Suggestions
+
+- When public distribution starts: register notarization credentials
+  (manual, owner's Apple Developer account), add the release-only
+  `notarytool submit` + `stapler` step, and add `--timestamp` to the
+  release signing invocation.
