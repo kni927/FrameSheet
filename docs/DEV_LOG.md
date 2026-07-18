@@ -4,6 +4,16 @@ This log details the features, design changes, and bug fixes implemented during 
 
 ---
 
+## [Unreleased] — Phase 3a Wrap-up - 2026-07-18
+
+### Added
+- **Keyboard support for the grid**: click selects a cell (accent focus ring); arrows move the selection in raster order / by column stride across all displayed cells (including dimmed hidden ones — see `docs/DECISIONS.md`); Space/Delete toggle hide; `,` / `.` nudge the selected cell by the configured step; Esc clears. Same code paths as the hover-overlay controls (keyboard and mouse operations produce byte-identical exports). Implemented as an `NSEvent` local monitor (deployment target macOS 11 predates `.onKeyPress`), passing events through while text fields are being edited or command/control/option is held.
+
+### Verified
+- **Real-video smoke tests** (CLI harness, new section): drives the actual `loadVideo` → auto-generate pipeline against the local samples in `docs/reference/Royalty Free Videos/` (git-ignored; harness skips cleanly when absent) plus a synthesized cues-less/duration-less WebM. All pass: Big Buck Bunny mp4 (596s source, 2.2s generation), Sintel VP9 WebM (888s, **1.7s — named regression target for the historical fast-mode hang**, well within the 120s timeout), Tears of Steel 4K mov (734s, 0.8s), and the duration-less WebM exercising the packet-scan fallback (estimated 7.9s of true 8s). Default-settings assertions: no error, 16/16 cells, non-empty preview, sane duration.
+
+---
+
 ## [Unreleased] — Phase 3a (Per-Thumbnail Interactivity) - 2026-07-18
 
 ### Added
