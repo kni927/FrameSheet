@@ -243,6 +243,24 @@ enum ContactSheetRenderer {
         return NSImage(cgImage: cgImg, size: NSSize(width: p.imageWidth, height: m.headerH))
     }
 
+    // Re-flow rule for hidden thumbnails (Phase 3a Stage B, per Decisions):
+    // visible cells compact in raster order, columns stay at the configured
+    // value, and the row count shrinks to fit: rows = ceil(visible / cols).
+    static func reflowParams(_ p: GenerationParams, visibleCount: Int) -> GenerationParams {
+        let rows = max(1, Int(ceil(Double(max(0, visibleCount)) / Double(max(1, p.cols)))))
+        return GenerationParams(
+            cols: p.cols, rows: rows,
+            imageWidth: p.imageWidth, spacing: p.spacing,
+            video: p.video,
+            showHeader: p.showHeader, showTimestamps: p.showTimestamps,
+            useCustomHeader: p.useCustomHeader, customHeaderTemplate: p.customHeaderTemplate,
+            bgColor: p.bgColor, textColor: p.textColor,
+            fontName: p.fontName, customFontPath: p.customFontPath,
+            tsPosition: p.tsPosition,
+            cornerRadius: p.cornerRadius
+        )
+    }
+
     static func formatTimestamp(_ seconds: Double) -> String {
         let s   = max(0, seconds)
         let h   = Int(s) / 3600

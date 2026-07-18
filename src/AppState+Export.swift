@@ -133,9 +133,11 @@ extension AppState {
         }
     }
 
-    // Write each thumbnail frame into a `<base>_frames/` subfolder as
-    // `<base>_NN.<ext>` (zero-padded), honoring the format setting.
+    // Write each visible thumbnail frame into a `<base>_frames/` subfolder
+    // as `<base>_NN.<ext>` (zero-padded), honoring the format setting.
+    // Hidden thumbnails are excluded, matching the exported sheet.
     private func saveIndividualFrames(baseName: String, in folder: URL) {
+        let thumbnails = visibleThumbnails
         guard !thumbnails.isEmpty else { return }
         let framesDir = folder.appendingPathComponent("\(baseName)_frames", isDirectory: true)
         do {
