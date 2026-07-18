@@ -154,7 +154,7 @@ final class FFmpegBackend: DecodeBackend {
     // ffmpeg), run 5-concurrent. Software decode: a single GOP per
     // invocation is cheap, and videotoolbox init overhead would dominate.
     func extractFrames(url: URL, timestamps: [Double], scaleWidth: Int, tempDir: String,
-                       completion: @escaping (Int, Bool) -> Void) {
+                       completion: @escaping (Int, Bool, [Int: Double]) -> Void) {
         let ff = ffmpegPath
         let videoPath = url.path.precomposedStringWithCanonicalMapping
         processLock.lock()
@@ -243,7 +243,9 @@ final class FFmpegBackend: DecodeBackend {
             let total = extracted
             countLock.unlock()
             DispatchQueue.main.async {
-                completion(total, wasCancelled)
+                // ffmpeg's input seek decodes the frame containing the
+                // requested time; no per-frame time adjustments to report.
+                completion(total, wasCancelled, [:])
             }
         }
     }
@@ -251,7 +253,7 @@ final class FFmpegBackend: DecodeBackend {
     // MARK: - Single-frame extraction (nudge)
 
     func extractSingleFrame(url: URL, timestamp: Double, scaleWidth: Int, outPath: String,
-                            completion: @escaping (Bool, String?) -> Void) {
+                            completion: @escaping (Bool, String?, Double?) -> Void) {
         let ff = ffmpegPath
         let videoPath = url.path.precomposedStringWithCanonicalMapping
         DispatchQueue.global(qos: .userInitiated).async {
@@ -280,7 +282,7 @@ final class FFmpegBackend: DecodeBackend {
                 && FileManager.default.fileExists(atPath: outPath)
             let errText = String(data: errData, encoding: .utf8).flatMap { $0.isEmpty ? nil : $0 }
             DispatchQueue.main.async {
-                completion(ok, errText)
+                completion(ok, errText, nil)
             }
         }
     }

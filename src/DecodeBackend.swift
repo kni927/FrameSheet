@@ -23,14 +23,19 @@ protocol DecodeBackend: AnyObject {
 
     // Extract one frame per timestamp, scaled to scaleWidth (preserving
     // aspect), written as thumb_%04d.jpg into tempDir in timestamp-array
-    // order. completion(extractedCount, wasCancelled) runs on main.
+    // order. completion(extractedCount, wasCancelled, actualTimestamps)
+    // runs on main; actualTimestamps maps a timestamp-array index to the
+    // frame time actually decoded when it differs from the request (e.g.
+    // the AVFoundation bounded-tolerance retry — see Decisions).
     func extractFrames(url: URL, timestamps: [Double], scaleWidth: Int, tempDir: String,
-                       completion: @escaping (Int, Bool) -> Void)
+                       completion: @escaping (Int, Bool, [Int: Double]) -> Void)
 
     // Extract a single frame (per-cell nudge path).
-    // completion(success, errorText) runs on main.
+    // completion(success, errorText, actualTimestamp) runs on main;
+    // actualTimestamp is non-nil when the decoded frame's time differs
+    // from the request.
     func extractSingleFrame(url: URL, timestamp: Double, scaleWidth: Int, outPath: String,
-                            completion: @escaping (Bool, String?) -> Void)
+                            completion: @escaping (Bool, String?, Double?) -> Void)
 
     // Terminate all in-flight work. Returns true if anything was
     // actually cancelled.
