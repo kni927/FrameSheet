@@ -136,7 +136,7 @@ extension AppState {
             timestamp: newTS,
             scaleWidth: scaleWidth,
             outPath: outPath
-        ) { [weak self] ok, errText in
+        ) { [weak self] ok, errText, actualTS in
             guard let self = self else { return }
             self.nudgingIDs.remove(id)
             // A full regeneration superseded this nudge; drop the result.
@@ -151,7 +151,7 @@ extension AppState {
                 }
                 return
             }
-            self.thumbnails[curIdx].timestamp = newTS
+            self.thumbnails[curIdx].timestamp = actualTS ?? newTS
             self.thumbnails[curIdx].imagePath = outPath
             if let cell = ContactSheetRenderer.renderCellImage(self.thumbnails[curIdx], params: params) {
                 self.cellImages[id] = cell

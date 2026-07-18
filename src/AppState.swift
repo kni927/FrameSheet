@@ -53,12 +53,14 @@ Dimensions: {{sample_width}}x{{sample_height}}
     // Keyboard selection (Phase 3a wrap-up) — transient, cleared on regen
     @Published var selectedThumbnailID: UUID? = nil
 
-    // Dependencies Status
+    // Dependencies Status (ffmpeg is optional since the AVFoundation
+    // backend became primary; required only for WebM/MKV etc.)
     @Published var ffmpegPath: String = ""
     @Published var ffprobePath: String = ""
     @Published var isFFmpegInstalled: Bool = false
     @Published var dependencyCheckMessage: String = "Initializing..."
     @Published var isCheckingDependencies: Bool = false
+    @Published var ffmpegNoticeDismissed: Bool = false
 
     // Application Running States
     @Published var isGenerating: Bool = false

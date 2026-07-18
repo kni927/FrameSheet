@@ -94,7 +94,7 @@ extension AppState {
             timestamps: timestamps,
             scaleWidth: thumbWEven,
             tempDir: tempDir
-        ) { [weak self] extracted, cancelled in
+        ) { [weak self] extracted, cancelled, timeOverrides in
             guard let self = self else { return }
             guard runID == self.generationID, !cancelled else {
                 if cancelled && runID == self.generationID {
@@ -111,8 +111,14 @@ extension AppState {
                 return
             }
             self.consoleOutput += ">>> Extracted \(extracted)/\(timestamps.count) frames. Composing contact sheet in Swift...\n"
-            self.thumbnails = newThumbnails
-            self.renderAndPresent(tempDir: tempDir, thumbnails: newThumbnails, params: cap, runID: runID)
+            // Apply per-frame actual decode times (bounded-tolerance retries)
+            // so burned-in timestamps stay truthful.
+            var finalThumbnails = newThumbnails
+            for (idx, actualTS) in timeOverrides where idx < finalThumbnails.count {
+                finalThumbnails[idx].timestamp = actualTS
+            }
+            self.thumbnails = finalThumbnails
+            self.renderAndPresent(tempDir: tempDir, thumbnails: finalThumbnails, params: cap, runID: runID)
         }
     }
 

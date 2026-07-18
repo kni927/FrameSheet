@@ -185,13 +185,18 @@ struct CanvasView: View {
                     }
                 }
 
-                // FFmpeg missing overlay
-                if !state.isFFmpegInstalled {
+                // FFmpeg missing notice. Since the AVFoundation backend
+                // became primary, ffmpeg is optional (needed only for
+                // WebM/MKV and other non-native formats) — the notice is
+                // informational and dismissible, shown once before any
+                // video is loaded.
+                if !state.isFFmpegInstalled && !state.isCheckingDependencies
+                    && state.selectedVideo == nil && !state.ffmpegNoticeDismissed {
                     Color.black.opacity(0.55)
                         .edgesIgnoringSafeArea(.all)
 
                     VStack(spacing: 16) {
-                        Image(systemName: "exclamationmark.triangle.fill")
+                        Image(systemName: "info.circle.fill")
                             .font(.system(size: 40))
                             .foregroundColor(.orange)
 
@@ -199,11 +204,11 @@ struct CanvasView: View {
                             .font(.system(size: 15, weight: .bold, design: .monospaced))
                             .foregroundColor(.white)
 
-                        Text("FrameSheet v2 requires FFmpeg for frame extraction.\nInstall via Homebrew:")
+                        Text("mp4 / mov / m4v work without it (native macOS decoder).\nWebM, MKV and other formats need FFmpeg:")
                             .font(.system(size: 10, design: .monospaced))
                             .foregroundColor(.gray)
                             .multilineTextAlignment(.center)
-                            .frame(maxWidth: 320)
+                            .frame(maxWidth: 340)
 
                         Text("brew install ffmpeg")
                             .font(.system(size: 11, design: .monospaced))
@@ -219,12 +224,20 @@ struct CanvasView: View {
                         }
                         .frame(width: 320)
 
-                        Button(action: { state.checkDependencies() }) {
-                            Label("Refresh", systemImage: "arrow.clockwise")
+                        HStack(spacing: 12) {
+                            Button(action: { state.checkDependencies() }) {
+                                Label("Refresh", systemImage: "arrow.clockwise")
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+                            .disabled(state.isCheckingDependencies)
+
+                            Button("Continue without FFmpeg") {
+                                state.ffmpegNoticeDismissed = true
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .controlSize(.small)
                         }
-                        .buttonStyle(.borderedProminent)
-                        .controlSize(.small)
-                        .disabled(state.isCheckingDependencies)
                     }
                     .padding(24)
                     .background(Color(NSColor.windowBackgroundColor))
