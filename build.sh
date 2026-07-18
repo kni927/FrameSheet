@@ -105,11 +105,28 @@ cat <<EOF > "$APP_DIR/Contents/Info.plist"
 EOF
 
 echo "=== Step 5: Code-signing Application Bundle ==="
-# Ad-hoc sign the whole bundle so it carries a valid CodeResources seal
-# covering Contents/Resources. Without this, a linker-only ad-hoc signature
-# on the executable causes "code has no resources but signature indicates
-# they must be present" after the app is zipped/unzipped on another machine.
-codesign --force --deep --sign - "$APP_DIR"
+# Sign the whole bundle so it carries a valid CodeResources seal covering
+# Contents/Resources. Without this, a linker-only signature on the
+# executable causes "code has no resources but signature indicates they
+# must be present" after the app is zipped/unzipped on another machine.
+#
+# Debug and release builds both sign with the Developer ID Application
+# identity so TCC grants (tied to bundle ID + code signature) survive
+# rebuilds — see docs/DECISIONS.md. Override with FRAMESHEET_SIGN_IDENTITY;
+# when no identity is available (other machines/CI) fall back to ad-hoc
+# with a warning. Notarization/stapling remains a release-only manual step.
+SIGN_IDENTITY="${FRAMESHEET_SIGN_IDENTITY:-}"
+if [ -z "$SIGN_IDENTITY" ]; then
+    SIGN_IDENTITY="$(security find-identity -v -p codesigning 2>/dev/null \
+        | sed -n 's/.*"\(Developer ID Application: [^"]*\)".*/\1/p' | head -1)"
+fi
+if [ -n "$SIGN_IDENTITY" ]; then
+    echo "Signing with: $SIGN_IDENTITY"
+    codesign --force --deep --options runtime --sign "$SIGN_IDENTITY" "$APP_DIR"
+else
+    echo "WARNING: no Developer ID Application identity found — falling back to ad-hoc signing (TCC grants will not survive rebuilds)."
+    codesign --force --deep --sign - "$APP_DIR"
+fi
 codesign --verify --deep --strict "$APP_DIR"
 
 echo "=== Step 6: Packaging Application as Zip ==="

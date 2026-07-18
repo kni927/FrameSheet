@@ -8,6 +8,8 @@ This log details the features, design changes, and bug fixes implemented during 
 
 ### Changed
 - **Bundle identifier**: `com.gemini.FrameSheet` (Antigravity-era leftover) → `com.kni.FrameSheet`. Consequence: `~/Library/Preferences/com.gemini.FrameSheet.plist` is orphaned — existing installs lose their persisted Phase 2 settings on first launch of the new build. Expected and accepted as pre-public-release housekeeping; no migration attempted. Notarization credentials were never registered for the old ID, so nothing to re-register (would be a manual step on the owner's Apple Developer account if/when notarization is set up).
+- **Version syncs from git tags**: `CFBundleShortVersionString` had been stuck at 2.0.0 through three releases. `build.sh` now derives it from the latest tag and `CFBundleVersion` from the commit count (started at ~56); release procedure documented in `docs/task-workflow.md` (tag first, then build).
+- **Debug builds sign with Developer ID + hardened runtime** (same identity as releases; `FRAMESHEET_SIGN_IDENTITY` override, ad-hoc fallback with warning). Rationale: TCC ties grants to bundle ID + code signature, so ad-hoc rebuilds invalidated grants such as folder-scoped file access on every build. Verified: two consecutive builds produce identical authority chains and an identical designated requirement. Notarization remains a release-only manual step (`spctl --assess` reports "rejected" until notarized — irrelevant for local, unquarantined debug builds).
 
 ---
 

@@ -13,7 +13,7 @@ Before making changes, read:
 
 ## Build
 
-- Build: `./build.sh` — compiles the Swift sources under `src/` via `swiftc -parse-as-library`, packages `build/FrameSheet.app`, ad-hoc codesigns it, and zips it. Repo-local output only.
+- Build: `./build.sh` — compiles the Swift sources under `src/` via `swiftc -parse-as-library`, packages `build/FrameSheet.app`, codesigns with the Developer ID Application identity (`FRAMESHEET_SIGN_IDENTITY` override; ad-hoc fallback), and zips it. Version comes from the latest git tag. Repo-local output only.
 - Debug installs go to `~/Applications`, never `/Applications`.
 
 ## Development Rules
