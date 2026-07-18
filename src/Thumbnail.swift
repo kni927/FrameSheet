@@ -1,10 +1,11 @@
 import Foundation
 
 // One extracted grid cell: its sample timestamp and the temp JPEG backing it.
-// `hidden` is unused for now — reserved for future per-thumbnail exclusion (Phase 3a).
+// `timestamp`/`imagePath` are mutable for per-cell nudging (Phase 3a Stage D);
+// `hidden` marks cells excluded from export (Stage B).
 struct Thumbnail: Identifiable {
     let id = UUID()
-    let timestamp: Double
-    let imagePath: String
+    var timestamp: Double
+    var imagePath: String
     var hidden: Bool = false
 }

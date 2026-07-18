@@ -46,6 +46,11 @@ Dimensions: {{sample_width}}x{{sample_height}}
     @Published var overwriteExisting: Bool = false { didSet { persistSettings() } }
     @Published var includeIndividualFrames: Bool = false { didSet { persistSettings() } }
 
+    // Per-thumbnail nudge (Phase 3a Stage D)
+    @Published var nudgeStepSeconds: Double = 1.0 { didSet { persistSettings() } }
+    // Cells with a single-frame re-extraction in flight
+    @Published var nudgingIDs: Set<UUID> = []
+
     // Dependencies Status
     @Published var ffmpegPath: String = ""
     @Published var ffprobePath: String = ""

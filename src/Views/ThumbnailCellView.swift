@@ -53,6 +53,37 @@ struct ThumbnailCellView: View {
                     }
                     .buttonStyle(.plain)
                     .help(thumbnail.hidden ? "Unhide this thumbnail" : "Hide this thumbnail (excluded from export)")
+
+                    // Per-cell time nudge (Stage D): re-extracts only this frame
+                    HStack(spacing: 10) {
+                        Button(action: {
+                            state.nudgeThumbnail(thumbnail.id, forward: false)
+                        }) {
+                            Image(systemName: "chevron.left")
+                                .font(.system(size: min(width, height) * 0.13, weight: .bold))
+                                .foregroundColor(.white)
+                                .shadow(radius: 2)
+                        }
+                        .buttonStyle(.plain)
+                        .help("Nudge this frame back \(String(format: "%g", state.nudgeStepSeconds))s")
+
+                        if state.nudgingIDs.contains(thumbnail.id) {
+                            ProgressView()
+                                .controlSize(.small)
+                        }
+
+                        Button(action: {
+                            state.nudgeThumbnail(thumbnail.id, forward: true)
+                        }) {
+                            Image(systemName: "chevron.right")
+                                .font(.system(size: min(width, height) * 0.13, weight: .bold))
+                                .foregroundColor(.white)
+                                .shadow(radius: 2)
+                        }
+                        .buttonStyle(.plain)
+                        .help("Nudge this frame forward \(String(format: "%g", state.nudgeStepSeconds))s")
+                    }
+                    .disabled(state.nudgingIDs.contains(thumbnail.id))
                 }
             }
         }

@@ -23,6 +23,85 @@ extension AppState {
         recomposeSheet()
     }
 
+    // Nudge one thumbnail's source timestamp by ±nudgeStepSeconds and
+    // re-extract ONLY that frame with a single ffmpeg invocation — no full
+    // regeneration (Phase 3a Stage D). The cell image and the export
+    // composite are refreshed from the updated Thumbnail.
+    func nudgeThumbnail(_ id: UUID, forward: Bool) {
+        guard let idx = thumbnails.firstIndex(where: { $0.id == id }),
+              let video = selectedVideo,
+              let params = displayParams,
+              let framesDir = currentFramesDir,
+              !nudgingIDs.contains(id)
+        else { return }
+
+        let delta = (forward ? 1.0 : -1.0) * nudgeStepSeconds
+        let maxTS = max(0, video.duration - 0.05)
+        let newTS = min(maxTS, max(0, thumbnails[idx].timestamp + delta))
+        guard abs(newTS - thumbnails[idx].timestamp) > 0.0005 else { return }
+
+        // Same scale width as the batch extraction (even number required)
+        let m = ContactSheetRenderer.metrics(for: params)
+        let scaleWidth = m.cellW % 2 == 0 ? m.cellW : m.cellW - 1
+
+        let outPath = (framesDir as NSString).appendingPathComponent(
+            "nudge_\(id.uuidString.prefix(8))_\(Int(newTS * 1000)).jpg")
+        let nfcVideo = video.path.precomposedStringWithCanonicalMapping
+        let ff = ffmpegPath
+        let runID = generationID
+
+        nudgingIDs.insert(id)
+        consoleOutput += ">>> Nudging frame to \(String(format: "%.3f", newTS))s (single re-extract)...\n"
+
+        DispatchQueue.global(qos: .userInitiated).async {
+            let task = Process()
+            task.executableURL = URL(fileURLWithPath: ff)
+            task.arguments = [
+                "-hide_banner", "-loglevel", "error",
+                "-ss", String(format: "%.3f", newTS),
+                "-i", nfcVideo,
+                "-frames:v", "1",
+                "-vf", "scale=\(scaleWidth):-2",
+                "-q:v", "3",
+                "-y", outPath
+            ]
+            task.standardOutput = FileHandle.nullDevice
+            let errPipe = Pipe()
+            task.standardError = errPipe
+            var launched = false
+            do {
+                try task.run()
+                launched = true
+                task.waitUntilExit()
+            } catch {}
+            let errData = errPipe.fileHandleForReading.readDataToEndOfFile()
+            let ok = launched && task.terminationStatus == 0
+                && FileManager.default.fileExists(atPath: outPath)
+
+            DispatchQueue.main.async {
+                self.nudgingIDs.remove(id)
+                // A full regeneration superseded this nudge; drop the result.
+                guard runID == self.generationID,
+                      let curIdx = self.thumbnails.firstIndex(where: { $0.id == id })
+                else { return }
+                guard ok else {
+                    if let err = String(data: errData, encoding: .utf8), !err.isEmpty {
+                        self.consoleOutput += "Nudge failed: \(err)"
+                    } else {
+                        self.consoleOutput += ">>> Nudge failed (no frame extracted).\n"
+                    }
+                    return
+                }
+                self.thumbnails[curIdx].timestamp = newTS
+                self.thumbnails[curIdx].imagePath = outPath
+                if let cell = ContactSheetRenderer.renderCellImage(self.thumbnails[curIdx], params: params) {
+                    self.cellImages[id] = cell
+                }
+                self.recomposeSheet()
+            }
+        }
+    }
+
     // Rebuild the export composite (previewImage / previewImagePath) from
     // the current thumbnails array — visible cells only, compacted in
     // raster order with the row count re-flowed (see reflowParams). Pure
