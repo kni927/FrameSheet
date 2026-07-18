@@ -4,6 +4,13 @@ This log details the features, design changes, and bug fixes implemented during 
 
 ---
 
+## [2.3.1] — Build Housekeeping: Bundle ID, Version Sync, Dev Signing - 2026-07-18
+
+### Changed
+- **Bundle identifier**: `com.gemini.FrameSheet` (Antigravity-era leftover) → `com.kni.FrameSheet`. Consequence: `~/Library/Preferences/com.gemini.FrameSheet.plist` is orphaned — existing installs lose their persisted Phase 2 settings on first launch of the new build. Expected and accepted as pre-public-release housekeeping; no migration attempted. Notarization credentials were never registered for the old ID, so nothing to re-register (would be a manual step on the owner's Apple Developer account if/when notarization is set up).
+
+---
+
 ## [2.3.0] — AVFoundation Primary Decode Backend - 2026-07-18
 
 ### Added
