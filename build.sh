@@ -78,7 +78,7 @@ cat <<EOF > "$APP_DIR/Contents/Info.plist"
     <key>CFBundleIconFile</key>
     <string>$APP_NAME.icns</string>
     <key>CFBundleIdentifier</key>
-    <string>com.gemini.$APP_NAME</string>
+    <string>com.kni.$APP_NAME</string>
     <key>CFBundleName</key>
     <string>$APP_NAME</string>
     <key>CFBundlePackageType</key>
