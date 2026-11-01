@@ -5,7 +5,7 @@ what comes next, what is on hold, and what waits on the owner. Rewrite it
 rather than append; keep it under about 40 lines. Rules are in `AGENTS.md`,
 decisions in `docs/DECISIONS.md`, and history in `docs/tasks/` and Git.
 
-Updated: 2026-11-01
+Updated: 2026-11-02
 
 ## Summary
 
@@ -20,8 +20,12 @@ reproduces MoviePrint v0.2.23 for Apple Silicon (owner, 2026-11-01).
 - `CLAUDE.md` Development Rules and FFmpeg Conventions describe v2 ("preserve
   the current SwiftUI architecture", "small targeted fixes"); revise them for
   v3 with the owner's approval naming `CLAUDE.md`.
-- First v3 task suggested by the research: a measurement spike on a Mac
-  (decode speed, Vision face detection per frame).
+- The v3 measurement spike is done: `docs/v3-measurements.md` (tool:
+  `tools/spike`). Its Recommendation (one 720 px pass, faces every 10th
+  frame, `hev1` to the ffmpeg path, 256 MB thumbnail cache) feeds the v3 spec.
+- Spike follow-ups: measure 4K HEVC and HDR once the owner has such files;
+  re-measure on the fastest Mac before raising defaults; re-check decode speed
+  with the macOS 27 `AVAssetReaderOutput.Provider` API.
 
 ## On hold
 
