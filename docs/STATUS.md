@@ -21,9 +21,11 @@ reproduces MoviePrint v0.2.23 for Apple Silicon: decisions 14–21 in
 - `CLAUDE.md` Commands still describe the v2 `swiftc` build; update them in
   the skeleton TASK (needs the owner's approval naming `CLAUDE.md` in that
   session).
-- Then: v3 skeleton (Swift package, core models, ported decode backends and
-  renderer, ffmpeg discovery; v2 `src/` removed), then the features in the
-  order of `docs/V3_SPEC.md`.
+- In progress: TF #01 takes the v3 skeleton TASK (Swift package, core model,
+  decode layer and ffmpeg discovery, minimal app with a default interval
+  sheet, `build.sh`, v2 `src/` removed). Then the features in the order of
+  `docs/V3_SPEC.md`; the kni Design System's type and spacing tokens are a
+  later TASK.
 - `docs/PROJECT.md` and `docs/ARCHITECTURE.md` describe v2; rewrite them with
   the skeleton TASK.
 
