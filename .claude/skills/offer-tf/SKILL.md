@@ -36,8 +36,8 @@ procedure.
    locally, or Start with worktree when step 3 found a working TF. No pull is
    needed first; the TF brings itself up to date when a TASK arrives. The
    card shows in the app on every Mac; the owner presses it on the Mac that
-   should do the work (the MacBook has more memory, the Mac mini is always
-   on). When the TF announces itself, send the TASK to the `from-session` of
+   should do the work (the client Mac has more memory, the server Mac is
+   always on). When the TF announces itself, send the TASK to the `from-session` of
    that message (while that is refused, the TASK is already in the prompt;
    send a later TASK through the Mac relay (`mac-relay` skill), or as
    English text for the owner to paste), and tell the owner in one line to close the card on the

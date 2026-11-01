@@ -30,7 +30,8 @@ procedures are in skills (Skills, below); the reasons are in
   `mac-mini-hq.<session ID>` in Google Drive `AI/Status/Sessions/`; `/rc`
   keeps the ID. A new Mac mini HQ tells Central HQ, which renames the file
   (also when its morning check finds the file pointing at a finished one).
-- **Mac mini Gate** (local, always on): `🖥️ Mac mini Gate`, the session of
+- **Mac mini Gate** (local, always on): `🖥️ Mac mini Gate` (as a relay
+  `To:`, `🖥️ Mac mini Gate | macminihq-*`), the session of
   the Remote Control server that launchd keeps running in
   `~/Projects/Local/MacMiniHQ` (kni927/dotfiles `docs/AUTOMATIONS.md`). It
   stays reachable from the Web and the phone when Claude Desktop restarts or
@@ -132,11 +133,12 @@ Send each message only to the sessions that need it.
   needs in its start prompt (`offer-tf`) or the repository; TFs report to
   their HQ as before.
 - **Mac relay:** a later message to a local session on a Mac goes as a file
-  in Google Drive, `AI/Handoff/Inbox/` for the Mac mini and
-  `AI/Handoff/Inbox/MacBook/` for the MacBook, which `handoff-relay` on that
-  Mac delivers within about five minutes, or when the MacBook wakes
-  (`mac-relay` skill). A file still in its inbox after ten minutes (an awake
-  Mac) gets an English message for the owner to paste instead.
+  in Google Drive, `AI/Handoff/Inbox/` for the server Mac (the Mac mini) and
+  `AI/Handoff/Inbox/Client/` for the client Mac (a MacBook), which
+  `handoff-relay` on that Mac delivers within about five minutes, or when a
+  sleeping Mac wakes (`mac-relay` skill). A file still in its inbox after ten
+  minutes (an awake Mac) gets an English message for the owner to paste
+  instead.
 - **Say where it went:** one English line, `Sent to: 🖥️ Mac mini HQ
   (SendMessage)`. Receipts are not acknowledged.
 - **Read before asking:** a cloud session reads any transcript with
@@ -258,7 +260,7 @@ Shared skills, copied unchanged into every repository's `.claude/skills/`:
 `hq-handover`, `launcher` (Quarterdeck and Launcher, and asking them for
 a session), `start-session` (Project HQ, everyday, or gateway session),
 `offer-tf` (a local TF as a one-click card), `rc-server` (TFs through Remote
-Control server mode), `find-session`, `mac-relay` (a message to a Mac mini
+Control server mode), `find-session`, `mac-relay` (a message to a Mac
 session through the Google Drive inbox), `reload-instructions` (bring a
 running session's instructions up to date), `explain-before-shorten` (rewrite a
 Japanese explanation so it is understood, then shorten it; copied text with no
