@@ -11,7 +11,7 @@
 # because plugins load before the hook runs.
 # The repositories are already cloned when it runs, but GitHub is not yet
 # reachable. kni927/dotfiles docs/CLOUD_ENVIRONMENTS.md explains each part.
-version=2026-11-01.8
+version=2026-11-01.9
 refresh=0; [ "${1:-}" = --refresh ] && refresh=1
 
 if [ $refresh = 0 ]; then
@@ -155,7 +155,14 @@ def fix_line(line, found):
     for rx in (SPACE_A, SPACE_B):
         text, n = rx.subn(r"\1", text)
         found["spaces"] += n
-    return re.sub(r"[\ue000\ue002](\d+)[\ue001\ue003]", lambda m: kept[int(m.group(1))], text)
+    # A quotation can hold inline code, so a restored span may itself hold a
+    # placeholder; restore until none is left.
+    ph = re.compile(r"[\ue000\ue002](\d+)[\ue001\ue003]")
+    for _ in range(len(kept) + 1):
+        if not ph.search(text):
+            break
+        text = ph.sub(lambda m: kept[int(m.group(1))], text)
+    return text
 
 
 def main():
@@ -192,8 +199,8 @@ def main():
         pass
 
     shown = "".join(out)
-    if shown == delta:
-        return
+    if shown == delta or re.search("[\ue000-\ue003]", shown):
+        return  # unchanged, or a placeholder survived: show the original
     logs = os.path.expanduser("~/Library/Logs")
     if os.path.isdir(logs):
         try:
