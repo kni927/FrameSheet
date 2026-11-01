@@ -1,31 +1,50 @@
-# Build products
-build/
-bin/
+# Credentials / private keys
 
-# OS generated files
+*.p8
+*.p12
+*.pem
+*.key
+*.mobileprovision
+*.provisionprofile
+*.cer
+*.certSigningRequest
+
+# Environment / secrets
+
+.env
+.env.*
+!.env.example
+!.env.*.example
+
+# Local AI-agent settings
+
+.claude/settings.local.json
+CLAUDE.local.md
+.claude/worktrees/
+
+# macOS / Xcode
+
 .DS_Store
-.DS_Store?
-._*
-.Spotlight-V100
-.Trashes
-ehthumbs.db
-Thumbs.db
+/build/
+/DerivedData/
+xcuserdata/
+*.xcuserstate
+*.xcresult/
+*.dSYM/
+*.dSYM.zip
+*.xcarchive/
+*.ipa
 
 # Swift Package Manager
+
+/.build/
 .swiftpm/
-.build/
 
-# Temporary files
-*.swp
-*~
-.tmp/
-
-# Test files
+# FrameSheet
+bin/
 test_video.mp4
 test_output.png
 test_assets/
 docs/reference/
-
-# PyInstaller & Build assets
 build_assets/
 *.spec
