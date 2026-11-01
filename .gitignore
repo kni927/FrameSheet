@@ -38,6 +38,7 @@ xcuserdata/
 # Swift Package Manager
 
 /.build/
+/tools/spike/.build/
 .swiftpm/
 
 # FrameSheet
