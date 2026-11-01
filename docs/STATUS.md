@@ -15,10 +15,6 @@ reproduces MoviePrint v0.2.23 for Apple Silicon: decisions 14–21 in
 
 ## Next
 
-- The v3 measurement spike is done: `docs/v3-measurements.md` (tool:
-  `tools/spike`). Its Recommendation (one 720 px pass, faces every 10th
-  frame, `hev1` to the ffmpeg path, 256 MB thumbnail cache) is not yet
-  carried into the **(measure)** items of `docs/V3_SPEC.md`.
 - Spike follow-ups: measure 4K HEVC and HDR once the owner has such files;
   re-measure on the fastest Mac before raising defaults; re-check decode speed
   with the macOS 27 `AVAssetReaderOutput.Provider` API.

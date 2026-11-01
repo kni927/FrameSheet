@@ -4,9 +4,10 @@ FrameSheet v3 reproduces MoviePrint v0.2.23 (fakob/MoviePrint_v004, MIT) as a
 native Apple Silicon app. This document is the target behaviour; decisions
 behind it are in `docs/DECISIONS.md` (14–21). Values come from MoviePrint's
 source (`app/utils/constants.js`, `app/store/localStorage.js`,
-`app/utils/utils.js`, components) as read on 2026-11-01; items marked
-**(measure)** wait on the measurement spike (`docs/v3-measurements.md`), and
-**(open)** items are for the owner to decide before the TASK that builds them.
+`app/utils/utils.js`, components) as read on 2026-11-01. Scan and cache
+values come from the measurement spike (`docs/v3-measurements.md`,
+2026-11-02); **(open)** items are for the owner to decide before the TASK that
+builds them.
 
 ## 1. Scope
 
@@ -142,8 +143,9 @@ app icon (owner, 2026-11-01).
   append " edit N".
 - **Face detection:** confidence threshold 0–100 (70); size threshold 0–100
   (10, % of frame height); "takes effect on next scan".
-- **Frame cache:** max size Original / 80 / 160 / 320 / 640 / 720 px (default
-  640 **(measure)**); Update frame cache.
+- **Thumbnail cache** (replaces MoviePrint's frame cache, whose per-frame
+  images do not fit: 50 GB for a 2 h film at 240 px): memory limit for decoded
+  display-size thumbnails, default 256 MB; Clear thumbnail cache.
 - **Experimental:** shot detection method Mean (default) / Histogram; detection
   chart (key F); automatic IN/OUT detection (off); input fields instead of
   sliders.
@@ -208,8 +210,13 @@ Alt and Ctrl become Option and Control.
 
 ## 10. Scanning
 
-- **Shot scan** reads every frame (transform applied), scaled to max 240 px
-  **(measure)**.
+- **One scan pass:** a single `AVAssetReader` output at max 720 px BGRA
+  (transform applied) feeds both the shot metric and face detection; the
+  240 px frame for the metric is derived from it with vImage. No second reader
+  or output, and no 240 px reader output (both are slower). About 9 min for a
+  2 h 1080p60 film on the measured Mac; progress and Cancel are shown. Use the
+  macOS 27 `AVAssetReaderOutput.Provider` API.
+- **Shot scan** reads every frame at max 240 px (derived as above).
   - Mean method: difference = |mean V − previous mean V| (HSV V, 0–255); mean
     colour = HSV mean converted to RGB.
   - Histogram method: 32×32×32 HSV histogram, normalised, chi-square
@@ -231,14 +238,19 @@ Alt and Ctrl become Option and Control.
   (print height − margins) / rows; scene width = max(ppf × length, ppf × min
   length).
 - Cut and merge recompute the middle-frame thumbs.
-- **Faces (Lv1):** Vision face rectangles on frames scaled to max 720 px
-  **(measure)**. Per face: confidence, size (box height as % of frame height),
+- **Faces (Lv1):** Vision face rectangles (Swift API, default revision) on
+  the scan pass's 720 px frames; warm the request up when a movie opens. Per face: confidence, size (box height as % of frame height),
   relative box. Per frame: `{frameNumber, faceCount, largestSize, faces}` in
-  the scan cache. Scope: every 100th / every 10th frame between the lowest and
-  highest visible thumb, or exactly the current thumbs. Where possible, faces
-  run in the same decode pass as the shot scan **(measure)**. Sort by face
+  the scan cache. Scope: every 10th (default) / every 100th frame between
+  the lowest and highest visible thumb, or exactly the current thumbs. When the
+  shot scan has not run, a face scan runs the same combined pass. On the
+  ffmpeg path, every 100th frame is the default. Sort by face
   count, size, confidence; filters (each toggleable): face count 1–10
   (default 1–3), size (default 50–100). Face rectangles overlay.
+- **Routing:** check the HEVC sample entry on open; `hev1` and codecs
+  AVFoundation lacks (WMV3, VP9/AV1 in MKV/WebM, …) go to the ffmpeg path,
+  which decodes in software (no `-hwaccel videotoolbox`) to a BGRA pipe.
+  Thumbnails use zero time tolerance, then the ±0.5 s retry (decision 11).
 - **ffmpeg discovery** (fallback decode): user-chosen path (persisted) →
   login-shell `command -v ffmpeg` (`/bin/zsh -lic`) → `/opt/homebrew/bin`,
   `/usr/local/bin`, `/opt/local/bin`, `~/.nix-profile/bin`,
@@ -272,8 +284,10 @@ Alt and Ctrl become Option and Control.
   shot/timeline); rotation ignored on import. Replace movie relinks a file.
 - **Persistence:** library, sheets and settings as Codable JSON in Application
   Support, saved shortly after each change and restored on launch; per-file
-  scan cache; on-disk JPEG frame cache at the frame-cache size.
+  scan cache (per-frame metric as Float32, about 1.5 MB per 2 h film, plus
+  face data for sampled frames); thumbnails are cached in memory only.
 
 ## 13. Open items
 
-- Defaults marked **(measure)**, after `docs/v3-measurements.md`.
+- None. Still to measure: 4K HEVC and HDR inputs, and the fastest Mac
+  (`docs/v3-measurements.md`, Caveats).
