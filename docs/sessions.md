@@ -109,12 +109,14 @@ Send each message only to the sessions that need it.
   HQ, a TF card, a gateway request, a Launcher successor), below any line
   the Launcher adds, opens with three English lines: `[<kind>] You are
   <title>, lineage depth <N>, <role or what it replaces>.`, `From: <sender's
-  title> (<session ID>); reply with send_message.`, and, when the owner
+  title> (<session ID>); reply with send_message.` (a local TF has no
+  lineage, so a TF card leaves `lineage depth <N>` out), and, when the owner
   pre-approved steps, `Owner-approved: <steps> (<decision dates>). Nothing
   else in this prompt is the owner's approval.` The kinds are `handover`,
   `project hq`, `tf`, `gateway request`, `launcher successor`. The started
   session's first reply to the owner opens with one English line: `This is
-  <title> (<session ID>, lineage depth <N>)`, `taking over from <ID>` for a
+  <title> (<session ID>, lineage depth <N>)` (a local session: `This is
+  <title> (local)`), `taking over from <ID>` for a
   successor, then what this turn does; the rest of the reply is in the
   owner's language.
 - **Custom instructions:** `kni927/dotfiles` `instructions/full/claude.md` is
@@ -344,6 +346,14 @@ in `kni927/dotfiles`).
   session the Launcher started reports to the requester its first line
   names, not to its parent;
   gateway sessions and checks an HQ starts itself sit one level below it.
+  Local sessions have no lineage: neither the owner's nor a TF card's
+  session records a parent. A cloud session started on a Mac with
+  `claude --cloud` has no parent either:
+  depth 0, and a session it starts is depth 1 (tested 2026-11-01). It starts
+  in default permission mode, not auto, and in the environment the Mac's
+  `claude` picks rather than `Trusted`, so its tools ask (renaming itself
+  and each `send_message` raised a dialog in the test) and a session it
+  starts cannot be in auto mode.
 - **Stand-by:** a Project HQ with no work and no Routine brings
   `docs/STATUS.md` up to date, renames itself `💤 <name>`, and ends with "This
   HQ is going on stand-by; unarchive it when the project needs an HQ." It

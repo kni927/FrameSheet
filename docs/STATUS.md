@@ -10,26 +10,30 @@ Updated: 2026-11-02
 ## Summary
 
 FrameSheet: macOS contact-sheet app, v2.3.1 released. v3 is a rebuild that
-reproduces MoviePrint v0.2.23 for Apple Silicon (owner, 2026-11-01).
+reproduces MoviePrint v0.2.23 for Apple Silicon: decisions 14–21 in
+`docs/DECISIONS.md`, target behaviour in `docs/V3_SPEC.md`.
 
 ## Next
 
-- v3 planning: the owner's research and decisions are in Google Drive
-  `AI/Handoff/FrameSheet/FrameSheet-v3-research-2026-11-01-rev2.md`. Record
-  the owner decisions in `docs/DECISIONS.md` and write the v3 spec in `docs/`.
-- `CLAUDE.md` Development Rules and FFmpeg Conventions describe v2 ("preserve
-  the current SwiftUI architecture", "small targeted fixes"); revise them for
-  v3 with the owner's approval naming `CLAUDE.md`.
 - The v3 measurement spike is done: `docs/v3-measurements.md` (tool:
   `tools/spike`). Its Recommendation (one 720 px pass, faces every 10th
-  frame, `hev1` to the ffmpeg path, 256 MB thumbnail cache) feeds the v3 spec.
+  frame, `hev1` to the ffmpeg path, 256 MB thumbnail cache) is not yet
+  carried into the **(measure)** items of `docs/V3_SPEC.md`.
 - Spike follow-ups: measure 4K HEVC and HDR once the owner has such files;
   re-measure on the fastest Mac before raising defaults; re-check decode speed
   with the macOS 27 `AVAssetReaderOutput.Provider` API.
+- `CLAUDE.md` Commands still describe the v2 `swiftc` build; update them in
+  the skeleton TASK (needs the owner's approval naming `CLAUDE.md` in that
+  session).
+- Then: v3 skeleton (Swift package, core models, ported decode backends and
+  renderer, ffmpeg discovery; v2 `src/` removed), then the features in the
+  order of `docs/V3_SPEC.md`.
+- `docs/PROJECT.md` and `docs/ARCHITECTURE.md` describe v2; rewrite them with
+  the skeleton TASK.
 
 ## On hold
 
-- None.
+- Face Lv2 (same-person grouping), after v3.0.0.
 
 ## Waiting on owner
 
@@ -37,7 +41,7 @@ reproduces MoviePrint v0.2.23 for Apple Silicon (owner, 2026-11-01).
 
 ## Notes
 
-- 2026-11-01: rules synced with repo-template; the repository is public, so
-  the research file's machine details stay out of committed files.
-  MoviePrint is MIT (keep its notice when porting code); PyMoviePrint has no
-  LICENSE file, so use its ideas only, not its code.
+- The repository is public: measurement and research files name no Mac
+  model, chip, hostname or personal file. MoviePrint is MIT (keep its notice
+  under `docs/licenses/` when porting code); PyMoviePrint has no LICENSE
+  file, so use its ideas only, not its code.

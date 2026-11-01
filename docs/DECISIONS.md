@@ -297,3 +297,33 @@ linked. Discovery must also find installs outside Homebrew (the v2
 - MoviePrint's guide layout (padding the print to paper aspect ratios) is not
   part of v3. A fixed output aspect ratio, if wanted later, would be a simple
   output option.
+
+### 19. v3 build: Swift 6 package with a tested core library
+
+#### Decision
+v3 is a Swift Package: a core library (models, layout maths, shot detection,
+naming, EDL, PNG chunk I/O, MoviePrint import) with unit tests run by
+`swift test`, and an app target. `build.sh` keeps assembling and signing the
+`.app` with the tag-derived version (decision 13). Swift 6 language mode with
+strict concurrency; SwiftUI, with AppKit only where SwiftUI falls short.
+
+#### Rationale
+The editor logic (scene lists, timeline layout, naming, import/export) is
+pure and worth testing; a package is also what ONNX Runtime needs if face Lv2
+comes. Supersedes the swiftc-only build for v3.
+
+### 20. v3 is built on `main`; v2 stays at its tags
+
+#### Decision
+v3 work lands on `main` from the start, following the Git Workflow in
+`AGENTS.md`. The v2 sources are removed when the v3 skeleton lands; v2 stays
+reachable at tag v2.3.1 and in history. No further v2 releases are planned.
+
+### 21. v3.0.0 scope: MoviePrint 0.2.23 minus the dropped features
+
+#### Decision
+The first v3 release covers MoviePrint 0.2.23 — interval, shot and face
+sheets; grid and timeline views; hover overlay, scrub, cut and merge; player
+view; export and import (PNG with embedded data, JSON, EDL); Save All — except
+guide layout, face grouping (Lv2) and age/gender (Lv3). Details are in
+`docs/V3_SPEC.md`.
