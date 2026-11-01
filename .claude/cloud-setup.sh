@@ -11,7 +11,7 @@
 # because plugins load before the hook runs.
 # The repositories are already cloned when it runs, but GitHub is not yet
 # reachable. kni927/dotfiles docs/CLOUD_ENVIRONMENTS.md explains each part.
-version=2026-11-01.7
+version=2026-11-01.8
 refresh=0; [ "${1:-}" = --refresh ] && refresh=1
 
 if [ $refresh = 0 ]; then
@@ -221,6 +221,91 @@ if __name__ == "__main__":
     sys.exit(0)
 PY
 chmod 755 ~/.claude/hooks/notation-display
+
+# pre-commit for public repositories, a verbatim copy of kni927/dotfiles
+# dot_config/git/public-hooks/executable_pre-commit (change it there and copy it
+# here). Clones whose AGENTS.md has "## Public Repository" use it; a clone added
+# later in the session gets it at the next refresh.
+mkdir -p ~/.claude/git-hooks
+cat > ~/.claude/git-hooks/pre-commit <<'PY'
+#!/usr/bin/env python3
+"""pre-commit for public repositories: stop personal details before they publish.
+
+A repository whose AGENTS.md has a "## Public Repository" section (cooViewer,
+FrameSheet) must not commit absolute home-directory paths, machine models,
+hostnames, session IDs, or local session-transcript paths. A push cannot be
+taken back, so this checks the lines a commit adds before it exists (owner,
+2026-11-01). chezmoi (Macs) and cloud-setup.sh (cloud sessions) point
+`core.hooksPath` of each such clone here.
+
+Files copied verbatim from kni927/repo-template (.claude/, docs/sessions.md)
+are not checked: they are reviewed there and copy-shared.sh commits them.
+"""
+
+import re
+import subprocess
+import sys
+
+SKIP = re.compile(r"^(\.claude/|docs/sessions\.md$)")
+CHECKS = [
+    ("home-directory path", re.compile(
+        r"/Users/(?!\.\.\.|<|Shared\b)[A-Za-z0-9._-]+|/home/(?!user/|<)[a-z][a-z0-9_-]*/|/var/folders/")),
+    ("session-transcript path", re.compile(r"\.claude/projects/-")),
+    ("session ID", re.compile(r"session_01[A-Za-z0-9]{16,}")),
+    ("hostname", re.compile(r"[A-Za-z0-9-]+\.ts\.net\b|(?<![\w.*])[A-Za-z0-9-]+\.local(?![.\w-])")),
+    ("machine model", re.compile(r"\b(Mac ?mini|MacBook( Air| Pro)?|iMac|Mac Studio|Mac Pro)\b")),
+]
+
+
+def main():
+    diff = subprocess.run(
+        ["git", "diff", "--cached", "-U0", "--no-color", "--no-ext-diff", "--diff-filter=ACMR"],
+        capture_output=True, text=True, errors="replace").stdout
+    found, path, line_no = [], None, 0
+    for line in diff.splitlines():
+        if line.startswith("+++ "):
+            path = line[6:] if line.startswith("+++ b/") else None
+            continue
+        if line.startswith("@@"):
+            m = re.search(r"\+(\d+)", line)
+            line_no = int(m.group(1)) if m else 0
+            continue
+        if not line.startswith("+") or path is None:
+            continue
+        text = line[1:]
+        if not SKIP.match(path):
+            for kind, rx in CHECKS:
+                m = rx.search(text)
+                if m:
+                    found.append(f"  {path}:{line_no}: {kind}: {m.group(0)}")
+        line_no += 1
+    if not found:
+        return 0
+    print("pre-commit: this is a public repository (AGENTS.md, Public Repository).", file=sys.stderr)
+    print("These added lines would publish personal details:", file=sys.stderr)
+    print("\n".join(found[:20]), file=sys.stderr)
+    if len(found) > 20:
+        print(f"  ... and {len(found) - 20} more", file=sys.stderr)
+    print("Rewrite them (repository-relative paths, ~/..., generic names). If a match "
+          "is a false positive, ask the owner; do not commit with --no-verify.", file=sys.stderr)
+    return 1
+
+
+if __name__ == "__main__":
+    try:
+        sys.exit(main())
+    except Exception as e:  # never block a commit because the check itself broke
+        print(f"pre-commit: check skipped ({e})", file=sys.stderr)
+        sys.exit(0)
+PY
+chmod 755 ~/.claude/git-hooks/pre-commit
+for repo in /home/user/*/; do
+  repo="${repo%/}"
+  [ -e "$repo/.git" ] && [ -f "$repo/AGENTS.md" ] || continue
+  grep -q '^## Public Repository' "$repo/AGENTS.md" || continue
+  [ -z "$(git -C "$repo" config --local core.hooksPath)" ] || continue
+  git -C "$repo" config --local core.hooksPath ~/.claude/git-hooks
+done
 
 python3 - <<'PY'
 import json, os
