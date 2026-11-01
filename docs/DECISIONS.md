@@ -222,3 +222,78 @@ Debug builds were ad-hoc signed, and every rebuild produced a different code sig
 - **Stable TCC grants**: an identical certificate + bundle ID yields a stable designated requirement, so permission grants survive rebuilds — relevant to FrameSheet mainly for folder-scoped file access.
 - **Tags as the single source of version truth** removes a manual per-release edit that had already drifted three releases.
 - **Fallback over failure**: contributors without the certificate still get working (ad-hoc) builds, with the trade-off surfaced in the build log.
+
+---
+
+## v3 decisions (2026-11-01)
+
+The owner decided these on 2026-11-01, after research by a gateway session
+(MoviePrint v0.2.23 source and help pages, PyMoviePrint, Apple documentation).
+Decisions 1–13 above describe v2 and stay as history; where a v3 decision
+contradicts one of them, v3 wins from v3.0.0 on.
+
+### 14. v3 is a rebuild that reproduces MoviePrint v0.2.23 for Apple Silicon
+
+#### Context
+MoviePrint (fakob/MoviePrint_v004, MIT) is no longer developed; its last
+release, v0.2.23, crashes under Rosetta 2 on Apple Silicon (0.2.12 and earlier
+still run, without face features). FrameSheet v2 is "settings → regenerate one
+flattened image", while MoviePrint is a document editor: movies → sheets →
+thumbs/scenes with persistent per-thumb state, undo, and many movies at once.
+Extending v2 toward that would replace nearly all of it.
+
+#### Decision
+- FrameSheet v3 reproduces MoviePrint v0.2.23, its UI layout and interactions
+  included, as a native Apple Silicon app.
+- Same repository (`kni927/FrameSheet`), new major version v3, rebuilt rather
+  than extended. v2 stays reachable through its tags and Git history.
+- MoviePrint's code may be ported where useful; ported code keeps its MIT
+  notice under `docs/licenses/`. PyMoviePrint has no LICENSE file: its ideas
+  may be used, never its code.
+
+### 15. v3 targets macOS 27 and Apple Silicon only
+
+#### Decision
+Minimum macOS 27, arm64 only, built with Xcode 27. Every Mac the owner uses
+runs macOS 27.
+
+#### Rationale
+Allows current SwiftUI (reorderable grids, document APIs), the Swift Vision
+API, and Liquid Glass without availability branches.
+
+### 16. Face features: detection only (Apple Vision) first
+
+#### Decision
+- Lv1, first: Apple Vision face rectangles — face count, size and position,
+  face sheets, sort and filter by count and size, rectangle overlay.
+- Lv2 (same-person grouping: unique faces, occurrence, FIND), for example
+  ONNX Runtime with YuNet + SFace models: to be considered later.
+- Lv3 (age and gender): not planned.
+
+#### Rationale
+Vision has no public face-identity embedding, so grouping needs an extra
+runtime and models; age and gender add a model for low accuracy and little
+value. Face analysis sits behind a protocol so Lv2 can be added without
+changing the UI.
+
+### 17. ffmpeg stays an external tool; discovery is fixed
+
+#### Decision
+Decision 1 still holds in v3: ffmpeg/ffprobe are not bundled and libav* is not
+linked. Discovery must also find installs outside Homebrew (the v2
+`findCommandPath` only checks two prefixes and a non-login shell's PATH).
+
+### 18. v3 look: kni Design System, dark only; guide layout dropped
+
+#### Decision
+- The app's content (movie list, grid and timeline, settings panel, player
+  view) uses the owner's kni Design System (Catppuccin Mocha base) for colour,
+  type and spacing, with tokens taken from the design system itself. The
+  appearance is fixed to dark.
+- System window chrome stays Liquid Glass (the Xcode 27 SDK no longer lets an
+  app opt out).
+- MoviePrint's own look (dark Semantic UI, orange accent) is not copied; only
+  its layout and interactions are.
+- MoviePrint's guide layout (padding the print to paper aspect ratios) is not
+  part of v3. A fixed output aspect ratio, if wanted later, would be a simple
+  output option.
