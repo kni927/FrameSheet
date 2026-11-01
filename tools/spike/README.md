@@ -40,11 +40,14 @@ Output keys: `fps`, `wall_s`; `scale_ms` and `metric_ms` per frame; `first_ms`
 system's busy cores during the run, which includes `VTDecoderXPCService` (and
 any background noise); `peak_mb` is the sampled physical footprint.
 
-`run-all.sh` builds the tool and runs the whole battery used for
-`docs/v3-measurements.md`, one log per command:
+`run-all.sh` builds the tool and runs measurements, one log per command. It is
+excluded from the Claude Code sandbox (`.claude/settings.json`).
 
 ```sh
-tools/spike/run-all.sh <h264-long> <hevc-hvc1> <hevc-original> <mkv> <out-dir> [sections]
+# Quick check after implementation work: the v3 settings, one run each, a few minutes.
+tools/spike/run-all.sh quick <out-dir> <video>...
+# The whole battery behind docs/v3-measurements.md: 3 runs each, about 2 h.
+tools/spike/run-all.sh full <h264-long> <hevc-hvc1> <hevc-original> <mkv> <out-dir> [sections]
 ```
 
 AVFoundation does not decode HEVC tagged `hev1`; remux such a file for the

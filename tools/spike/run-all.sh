@@ -1,26 +1,67 @@
 #!/bin/zsh
-# Builds the spike and runs the whole measurement battery of docs/v3-measurements.md.
-# Run outside the Claude Code sandbox (VideoToolbox decoding and the GPU are unavailable inside it).
+# Builds the spike and runs measurements. Run outside the Claude Code sandbox
+# (VideoToolbox decoding and the GPU are unavailable inside it); it is listed in
+# .claude/settings.json sandbox.excludedCommands.
 #
-#   tools/spike/run-all.sh <h264-long> <hevc-hvc1> <hevc-original> <mkv> <out-dir> [sections]
+#   tools/spike/run-all.sh quick <out-dir> <video>...
+#       Regression check after implementation work: one run each of the settings
+#       v3 uses (720 px BGRA decode, combined pass, faces, random access, ffmpeg)
+#       on the first 60-120 s of each video. A few minutes in all.
+#   tools/spike/run-all.sh full <h264-long> <hevc-hvc1> <hevc-original> <mkv> <out-dir> [sections]
+#       The whole battery behind docs/v3-measurements.md (3 runs each, about 2 h).
+#       sections: any of "decode faces random ffmpeg combined" (default: all).
 #
-# sections: any of "decode faces random ffmpeg combined" (default: all). Each command's
-# output goes to <out-dir>/<name>.log; progress goes to stdout.
+# Each command's output goes to <out-dir>/<name>.log; progress goes to stdout.
 set -u
-h264=$1 hevc=$2 hevc_orig=$3 mkv=$4 out=$5
-sections=${6:-"decode faces random ffmpeg combined"}
+mode=${1:-}
 scratch=~/Library/Caches/FrameSheet/spike
 spike=$scratch/release/spike
-mkdir -p "$out"
 
-swift build -c release --package-path "${0:A:h}" --scratch-path "$scratch" > "$out/build.log" 2>&1 \
-  || { echo "build failed, see $out/build.log"; exit 1; }
+build() {
+  mkdir -p "$1"
+  swift build -c release --package-path "${0:A:h}" --scratch-path "$scratch" > "$1/build.log" 2>&1 \
+    || { echo "build failed, see $1/build.log"; exit 1; }
+}
 
 run() {
   local name=$1; shift
   echo "$(date '+%H:%M:%S') $name"
   "$spike" "$@" > "$out/$name.log" 2>&1 || echo "  FAILED: $name"
 }
+
+summary() {
+  # One line per log: name and the median line the tool prints last.
+  for f in "$out"/*.log(N); do
+    [[ ${f:t} == build.log ]] && continue
+    echo "${f:t:r}: $(grep -i median "$f" | tail -1)"
+  done
+}
+
+if [[ $mode == quick ]]; then
+  (( $# >= 3 )) || { echo "usage: $0 quick <out-dir> <video>..."; exit 2; }
+  out=$2; shift 2
+  build "$out"
+  i=0
+  for file in "$@"; do
+    i=$((i + 1))
+    run q$i-decode-720-bgra decode   "$file" --runs 1 --seconds 60 --max 720
+    run q$i-combined-n10    combined "$file" --runs 1 --seconds 120 --every 10
+    run q$i-random-exact    random   "$file" --runs 1
+    if command -v ffmpeg > /dev/null; then
+      run q$i-ffmpeg        ffmpeg   "$file" --runs 1 --seconds 60
+    fi
+  done
+  run q1-faces-swift faces "$1" --runs 1 --frames 50
+  echo "$(date '+%H:%M:%S') done"
+  summary
+  exit 0
+fi
+
+[[ $mode == full ]] || { echo "usage: $0 quick|full ... (see the header of this script)"; exit 2; }
+shift
+h264=$1 hevc=$2 hevc_orig=$3 mkv=$4 out=$5
+sections=${6:-"decode faces random ffmpeg combined"}
+build "$out"
 
 # 1-2. Sequential decode and shot metric: first 5 min of the long H.264 film, whole HEVC file.
 if [[ $sections == *decode* ]]; then

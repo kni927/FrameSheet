@@ -327,3 +327,18 @@ sheets; grid and timeline views; hover overlay, scrub, cut and merge; player
 view; export and import (PNG with embedded data, JSON, EDL); Save All — except
 guide layout, face grouping (Lv2) and age/gender (Lv3). Details are in
 `docs/V3_SPEC.md`.
+
+### 22. Measurements: a quick check by default; the script runs outside the sandbox (2026-11-02)
+
+#### Decision
+- After implementation work, measurement is a short regression check
+  (`tools/spike/run-all.sh quick`: the settings v3 uses, one run each, a few
+  minutes). The full battery (3 runs each, about 2 h) reruns only when the
+  owner asks, for example for new kinds of input or a different Mac.
+- `tools/spike/run-all.sh` is listed in `.claude/settings.json`
+  `sandbox.excludedCommands` (owner approved, 2026-11-02).
+
+#### Rationale
+The spike's full battery took about 1 h 40 min and mostly re-checked settings
+already chosen. Inside the sandbox VideoToolbox cannot decode and Vision sees
+no GPU, so every run needed a bypass dialog.

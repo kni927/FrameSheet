@@ -5,7 +5,8 @@
 - Build: `./build.sh` — compiles the Swift sources under `src/` via `swiftc -parse-as-library`, packages `build/FrameSheet.app`, codesigns with the Developer ID Application identity (`FRAMESHEET_SIGN_IDENTITY` override; ad-hoc fallback), and zips it. Version comes from the latest git tag. Repo-local output only.
 - Test: none yet
 - Lint: none yet
-- Sandbox-excluded scripts (listed in `.claude/settings.json`): none yet
+- Measure: `tools/spike/run-all.sh quick <out-dir> <video>...` — after decode or scan changes, a few-minute check of the v3 scan settings (one run each); `full` reruns the battery behind `docs/v3-measurements.md` (about 2 h) only when the owner asks. Run it from the repository root as its own command.
+- Sandbox-excluded scripts (listed in `.claude/settings.json`): `tools/spike/run-all.sh` (VideoToolbox and the GPU are unavailable inside the sandbox; owner approved, 2026-11-02)
 - Checkpoint commands that always ask (`permissions.ask` in `.claude/settings.json`): none yet
 - Debug installs go to `~/Applications`, never `/Applications`.
 
