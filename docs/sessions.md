@@ -344,6 +344,11 @@ in `kni927/dotfiles`).
   session the Launcher started reports to the requester its first line
   names, not to its parent;
   gateway sessions and checks an HQ starts itself sit one level below it.
+  A cloud session started on a Mac with `claude --cloud` has no parent:
+  depth 0, and a session it starts is depth 1 (tested 2026-11-01). It starts
+  in default permission mode, not auto, and in the environment the Mac's
+  `claude` picks rather than `Trusted`, so its tools ask and a session it
+  starts cannot be in auto mode.
 - **Stand-by:** a Project HQ with no work and no Routine brings
   `docs/STATUS.md` up to date, renames itself `💤 <name>`, and ends with "This
   HQ is going on stand-by; unarchive it when the project needs an HQ." It
