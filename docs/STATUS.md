@@ -18,9 +18,9 @@ reproduces MoviePrint v0.2.23 for Apple Silicon: decisions 14–21 in
 - In progress: TF #01 v3-spike on a Mac — decode, shot-scan and Vision face
   measurements into `docs/v3-measurements.md`; fills the **(measure)** items
   in the spec.
-- `CLAUDE.md` Development Rules, Commands and FFmpeg Conventions still
-  describe v2; the HQ proposed v3 text to the owner (needs the owner's
-  approval naming `CLAUDE.md`).
+- `CLAUDE.md` Commands still describe the v2 `swiftc` build; update them in
+  the skeleton TASK (needs the owner's approval naming `CLAUDE.md` in that
+  session).
 - Then: v3 skeleton (Swift package, core models, ported decode backends and
   renderer, ffmpeg discovery; v2 `src/` removed), then the features in the
   order of `docs/V3_SPEC.md`.
@@ -33,7 +33,7 @@ reproduces MoviePrint v0.2.23 for Apple Silicon: decisions 14–21 in
 
 ## Waiting on owner
 
-- Spec open items (`docs/V3_SPEC.md` §13), before the TASKs that build them.
+- None.
 
 ## Notes
 

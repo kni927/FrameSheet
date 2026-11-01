@@ -105,7 +105,7 @@ headerHeightRatio 0.25, thumbInfoRatio 0.075.
 File name; optional folder path; optional details
 `TC | fps FPS | W × H | size | fourCC`; optional mini timeline with the IN/OUT
 range and thumb positions. MoviePrint's logo is replaced by the FrameSheet
-icon or nothing **(open)**.
+app icon (owner, 2026-11-01).
 
 ## 6. Settings panel
 
@@ -225,8 +225,8 @@ Alt and Ctrl become Option and Control.
   0.25 scale; IN = first frame with mean V ≥ 20, OUT = the same from the end;
   fall back to the brightest frame.
 - **Timeline layout:** fill rows until the summed length exceeds
-  `secondsPerRow × fps` (MoviePrint hard-codes 25 fps; v3 uses the movie's
-  fps **(open)**); px per frame = minimum over rows of (width − 2 × margin ×
+  `secondsPerRow × fps` with the movie's own fps (MoviePrint hard-codes 25 fps;
+  owner, 2026-11-01); px per frame = minimum over rows of (width − 2 × margin ×
   scenes) / frames, short scenes counted at the minimum length; row height =
   (print height − margins) / rows; scene width = max(ppf × length, ppf × min
   length).
@@ -276,6 +276,4 @@ Alt and Ctrl become Option and Control.
 
 ## 13. Open items
 
-- Print-header logo (§5.2).
-- Timeline rows: movie fps vs MoviePrint's fixed 25 fps (§10).
 - Defaults marked **(measure)**, after `docs/v3-measurements.md`.

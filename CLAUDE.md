@@ -13,26 +13,44 @@
 
 Before making changes, read:
 
-1. docs/PROJECT.md
-2. docs/ARCHITECTURE.md
-3. docs/DECISIONS.md
-4. docs/KNOWN_ISSUES.md
-5. docs/ANTIGRAVITY.md
+1. docs/V3_SPEC.md
+2. docs/DECISIONS.md (v3: decisions 14 on)
+3. docs/PROJECT.md
+4. docs/ARCHITECTURE.md
+5. docs/KNOWN_ISSUES.md
+6. docs/ANTIGRAVITY.md
 
 ## Development Rules
 
-- Preserve the current SwiftUI architecture.
-- Do not bundle FFmpeg — the app shells out to a system-installed `ffmpeg`/`ffprobe`, checked on launch.
-- `vcsi` has been removed entirely as of v2.0.0; do not reintroduce it or any Python dependency.
+- v3 is a rebuild that reproduces MoviePrint v0.2.23 (`docs/V3_SPEC.md`);
+  follow the spec's behaviour and values, and ask the HQ when it is silent or
+  marked (open).
+- Target macOS 27+, arm64 only, Swift 6 language mode; SwiftUI, with AppKit
+  only where SwiftUI falls short.
+- Keep logic that needs no UI (models, layout maths, shot detection, naming,
+  EDL, PNG chunks, import) in the core library, covered by `swift test`.
+- Do not bundle FFmpeg or link libav*; the app finds a system `ffmpeg`/`ffprobe`
+  as `docs/V3_SPEC.md` §10 describes.
+- No Python dependency; `vcsi` stays removed.
+- MoviePrint code may be ported; keep its MIT notice under `docs/licenses/`.
+  Never copy PyMoviePrint code (no license).
+- Reproduce MoviePrint's layout and interactions, not its look: content uses
+  the kni Design System (Catppuccin Mocha), dark only.
 - Keep UI text in English.
-- Prefer small targeted fixes over large refactors.
 - Do not remove historical information from docs/ANTIGRAVITY.md.
 
-## FFmpeg Conventions
+## Decode Conventions
 
-- Frame extraction uses one input-seeking invocation per frame (`ffmpeg -ss <t> -i <file> -frames:v 1`), run 5-way concurrent via `runParallelFrameExtraction()` — not a single-pass `fps=1/interval` filter, and not `-hwaccel videotoolbox` (decoder init overhead dominates for single-frame decodes; software decode is cheap per GOP).
-- Temporary thumbnails are written as JPEG (`-q:v 3`), not PNG, to minimize I/O overhead.
-- Duration is read from ffprobe format/stream duration first. If missing, `N/A`, or 0, `estimateDuration` falls back to a packet-timestamp scan before generation proceeds — see docs/DEV_LOG.md ("Phase 4") for the two-attempt strategy.
+- AVFoundation first: `AVAssetImageGenerator` for random access (thumbs),
+  `AVAssetReader` for sequential scans; route a file to ffmpeg only when
+  AVFoundation has no decodable video track (decision 10).
+- Exact-time extraction first, then one retry with ±0.5 s tolerance, keeping
+  the time actually decoded (decision 11).
+- ffmpeg fallback: duration from ffprobe format/stream duration first; if
+  missing, `N/A`, or 0, fall back to a packet-timestamp scan (docs/DEV_LOG.md,
+  "Phase 4").
+- Scan resolution, face sampling and the frame-cache size follow
+  `docs/v3-measurements.md`.
 
 ## Sandbox
 - The global Claude Code instructions define how to run commands so sandbox
