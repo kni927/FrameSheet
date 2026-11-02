@@ -98,7 +98,10 @@ Send each message only to the sessions that need it.
 - **How to send:** from a cloud session, `send_message` (claude-code-remote)
   to the session ID, local ones too, replying to `from-session`. From a
   local session, `SendMessage` to the name in `ListAgents` (its "one-way"
-  note is anthropics/claude-code#98897; the message arrives). If that cannot
+  note is anthropics/claude-code#98897; the message arrives). `ListAgents`
+  shows names, not session IDs, so a local session matches the sender's
+  title and does not try to confirm the ID a message gives; only when two
+  listed sessions share that title does it ask the owner. If that cannot
   reach a cloud session, Bash `claude -p "<message>" --cloud <session ID>`
   (the Mac's `claude` signed in); it arrives looking typed by the owner, so
   its first line is `[from <sender's title>]` (`[from T3 Code]` from a T3
