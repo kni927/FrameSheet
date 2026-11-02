@@ -74,6 +74,11 @@ final class AppModel {
     @ObservationIgnored private var discovery: Task<Void, Never>?
     @ObservationIgnored private var columnsAtDragStart: Int?
     @ObservationIgnored private var scrubPending: Int?
+    /// Live scrub frames, kept apart from `cache`: display-size frames are
+    /// several MB each, and filling the shared cache with them evicted the
+    /// grid's thumbs, which then redrew. Only the most recent ones are kept.
+    @ObservationIgnored private var scrubFrames: [(key: String, image: CGImage)] = []
+    private static let scrubFrameLimit = 16
     @ObservationIgnored private var scrubDecode: Task<Void, Never>?
 
     init() {
@@ -588,6 +593,7 @@ final class AppModel {
         scrub = nil
         scrubImage = nil
         scrubPending = nil
+        scrubFrames.removeAll()
     }
 
     /// Width the live frame is decoded at: its on-screen pixels, in steps of
@@ -609,8 +615,10 @@ final class AppModel {
             defer { scrubDecode = nil }
             while let frame = scrubPending, let session = scrub, let file = library.file(session.ref.fileId) {
                 scrubPending = nil
+        scrubFrames.removeAll()
                 let width = scrubDecodeWidth
-                if let cached = cache.image(file: file.id, frame: frame, width: width) {
+                let key = Self.loadingKey(file.id, frame, width)
+                if let cached = scrubFrames.first(where: { $0.key == key })?.image {
                     scrubImage = cached
                     continue
                 }
@@ -620,8 +628,9 @@ final class AppModel {
                 guard let backend = try? await backend(for: file),
                       let decoded = try? await backend.frame(frame, maxWidth: width)
                 else { continue }
-                cache.insert(decoded.image, file: file.id, frame: decoded.actualFrame, width: width)
-                cache.insert(decoded.image, file: file.id, frame: decoded.requestedFrame, width: width)
+                scrubFrames.removeAll { $0.key == key }
+                scrubFrames.append((key, decoded.image))
+                if scrubFrames.count > Self.scrubFrameLimit { scrubFrames.removeFirst() }
                 if scrub?.thumbId == session.thumbId { scrubImage = decoded.image }
             }
         }
