@@ -1,63 +1,53 @@
 #!/bin/bash
-# MoviePrint SwiftUI Wrapper Build Script
-set -e
+# FrameSheet v3 build: compiles the Swift package in release mode (arm64)
+# with its build products outside the repository, then assembles, signs and
+# zips build/FrameSheet.app. build/ holds only the .app and the zip.
+set -euo pipefail
 
 APP_NAME="FrameSheet"
-# Build from the directory this script lives in (the repo checkout)
-SCRATCH_DIR="$(cd "$(dirname "$0")" && pwd)"
+REPO_DIR="$(cd "$(dirname "$0")" && pwd)"
+# SwiftPM products and the iconset stay out of the repository.
+SCRATCH_DIR="${FRAMESHEET_SCRATCH_PATH:-$HOME/Library/Caches/FrameSheet/build}"
 
 # Version comes from the latest git tag (vX.Y.Z -> X.Y.Z) so releases
 # only need a tag, never a script edit. Build number is the monotonic
-# commit count (started at 55 = the v2.3.1 housekeeping commit range).
-# Fallbacks cover non-git contexts (e.g. building from a tarball).
-VERSION="$(git -C "$SCRATCH_DIR" describe --tags --abbrev=0 2>/dev/null | sed 's/^v//')"
-VERSION="${VERSION:-2.3.0}"
-BUILD_NUMBER="$(git -C "$SCRATCH_DIR" rev-list --count HEAD 2>/dev/null)"
+# commit count. Fallbacks cover non-git contexts (e.g. a tarball).
+VERSION="$(git -C "$REPO_DIR" describe --tags --abbrev=0 2>/dev/null | sed 's/^v//' || true)"
+VERSION="${VERSION:-3.0.0}"
+BUILD_NUMBER="$(git -C "$REPO_DIR" rev-list --count HEAD 2>/dev/null || true)"
 BUILD_NUMBER="${BUILD_NUMBER:-0}"
-BUILD_DIR="$SCRATCH_DIR/build"
+BUILD_DIR="$REPO_DIR/build"
 APP_DIR="$BUILD_DIR/$APP_NAME.app"
 
 echo "=== Step 1: Cleaning previous build ==="
-# Kill any running instances to ensure the new binary runs on next launch
+# Kill any running instance so the new binary runs on next launch
 killall "$APP_NAME" 2>/dev/null || true
 rm -rf "$BUILD_DIR"
-mkdir -p "$APP_DIR/Contents/MacOS"
-mkdir -p "$APP_DIR/Contents/Resources"
+mkdir -p "$APP_DIR/Contents/MacOS" "$APP_DIR/Contents/Resources"
 
-echo "=== Step 2: Creating app icon from AppIcon.png ==="
-ICON_PNG="$SCRATCH_DIR/src/assets/AppIcon.png"
-ICONSET_DIR="$BUILD_DIR/icon.iconset"
+echo "=== Step 2: Compiling the Swift package ==="
+SWIFT_ARGS=(-c release --arch arm64 --package-path "$REPO_DIR" --scratch-path "$SCRATCH_DIR")
+swift build "${SWIFT_ARGS[@]}" --product "$APP_NAME"
+BIN_DIR="$(swift build "${SWIFT_ARGS[@]}" --show-bin-path)"
+cp "$BIN_DIR/$APP_NAME" "$APP_DIR/Contents/MacOS/$APP_NAME"
 
+echo "=== Step 3: Creating app icon from assets/AppIcon.png ==="
+ICON_PNG="$REPO_DIR/assets/AppIcon.png"
+ICONSET_DIR="$SCRATCH_DIR/icon.iconset"
 if [ -f "$ICON_PNG" ]; then
+    rm -rf "$ICONSET_DIR"
     mkdir -p "$ICONSET_DIR"
-    
-    # Resize PNG for standard icon sizes
-    sips -s format png -z 16 16     "$ICON_PNG" --out "$ICONSET_DIR/icon_16x16.png"
-    sips -s format png -z 32 32     "$ICON_PNG" --out "$ICONSET_DIR/icon_16x16@2x.png"
-    sips -s format png -z 32 32     "$ICON_PNG" --out "$ICONSET_DIR/icon_32x32.png"
-    sips -s format png -z 64 64     "$ICON_PNG" --out "$ICONSET_DIR/icon_32x32@2x.png"
-    sips -s format png -z 128 128   "$ICON_PNG" --out "$ICONSET_DIR/icon_128x128.png"
-    sips -s format png -z 256 256   "$ICON_PNG" --out "$ICONSET_DIR/icon_128x128@2x.png"
-    sips -s format png -z 256 256   "$ICON_PNG" --out "$ICONSET_DIR/icon_256x256.png"
-    sips -s format png -z 512 512   "$ICON_PNG" --out "$ICONSET_DIR/icon_256x256@2x.png"
-    sips -s format png -z 512 512   "$ICON_PNG" --out "$ICONSET_DIR/icon_512x512.png"
-    sips -s format png -z 1024 1024 "$ICON_PNG" --out "$ICONSET_DIR/icon_512x512@2x.png"
-    
-    # Compile iconset to .icns file
+    for size in 16 32 128 256 512; do
+        double=$((size * 2))
+        sips -s format png -z "$size" "$size" "$ICON_PNG" --out "$ICONSET_DIR/icon_${size}x${size}.png" >/dev/null
+        sips -s format png -z "$double" "$double" "$ICON_PNG" --out "$ICONSET_DIR/icon_${size}x${size}@2x.png" >/dev/null
+    done
     iconutil -c icns "$ICONSET_DIR" -o "$APP_DIR/Contents/Resources/$APP_NAME.icns"
     rm -rf "$ICONSET_DIR"
     echo "App icon generated successfully."
 else
-    echo "WARNING: AppIcon.png not found. Continuing without icon."
+    echo "WARNING: assets/AppIcon.png not found. Continuing without icon."
 fi
-
-echo "=== Step 3: Compiling Swift Code ==="
-# Source lives in multiple files under src/ (see docs/UI_AUDIT.md §4);
-# collect them all rather than naming one entrypoint.
-SWIFT_SOURCES=$(find "$SCRATCH_DIR/src" -name "*.swift" | sort)
-swiftc -sdk $(xcrun --show-sdk-path) -parse-as-library \
-  $SWIFT_SOURCES \
-  -o "$APP_DIR/Contents/MacOS/$APP_NAME"
 
 echo "=== Step 4: Creating Info.plist ==="
 cat <<EOF > "$APP_DIR/Contents/Info.plist"
@@ -80,6 +70,8 @@ cat <<EOF > "$APP_DIR/Contents/Info.plist"
             </array>
         </dict>
     </array>
+    <key>CFBundleDevelopmentRegion</key>
+    <string>en</string>
     <key>CFBundleExecutable</key>
     <string>$APP_NAME</string>
     <key>CFBundleIconFile</key>
@@ -94,8 +86,12 @@ cat <<EOF > "$APP_DIR/Contents/Info.plist"
     <string>$VERSION</string>
     <key>CFBundleVersion</key>
     <string>$BUILD_NUMBER</string>
+    <key>LSArchitecturePriority</key>
+    <array>
+        <string>arm64</string>
+    </array>
     <key>LSMinimumSystemVersion</key>
-    <string>11.0</string>
+    <string>27.0</string>
     <key>NSHighResolutionCapable</key>
     <true/>
     <key>NSHumanReadableCopyright</key>
@@ -106,15 +102,14 @@ EOF
 
 echo "=== Step 5: Code-signing Application Bundle ==="
 # Sign the whole bundle so it carries a valid CodeResources seal covering
-# Contents/Resources. Without this, a linker-only signature on the
-# executable causes "code has no resources but signature indicates they
-# must be present" after the app is zipped/unzipped on another machine.
+# Contents/Resources.
 #
 # Debug and release builds both sign with the Developer ID Application
 # identity so TCC grants (tied to bundle ID + code signature) survive
-# rebuilds — see docs/DECISIONS.md. Override with FRAMESHEET_SIGN_IDENTITY;
-# when no identity is available (other machines/CI) fall back to ad-hoc
-# with a warning. Notarization/stapling remains a release-only manual step.
+# rebuilds — see docs/DECISIONS.md (13). Override with
+# FRAMESHEET_SIGN_IDENTITY; when no identity is available (other machines/CI)
+# fall back to ad-hoc with a warning. Notarization/stapling remains a
+# release-only manual step.
 SIGN_IDENTITY="${FRAMESHEET_SIGN_IDENTITY:-}"
 if [ -z "$SIGN_IDENTITY" ]; then
     SIGN_IDENTITY="$(security find-identity -v -p codesigning 2>/dev/null \
@@ -131,10 +126,7 @@ codesign --verify --deep --strict "$APP_DIR"
 
 echo "=== Step 6: Packaging Application as Zip ==="
 ZIP_NAME="${APP_NAME}-v${VERSION}-macOS.zip"
-rm -f "$BUILD_DIR/$ZIP_NAME"
-cd "$BUILD_DIR"
-ditto -c -k --sequesterRsrc --keepParent "$APP_NAME.app" "$ZIP_NAME"
-cd "$SCRATCH_DIR"
+(cd "$BUILD_DIR" && ditto -c -k --sequesterRsrc --keepParent "$APP_NAME.app" "$ZIP_NAME")
 echo "Application ZIP packaged successfully at: $BUILD_DIR/$ZIP_NAME"
 
 echo "=== Build Complete! ==="
