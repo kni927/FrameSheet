@@ -2,114 +2,101 @@
 
 ## System Overview
 
-FrameSheet is a single-binary Swift/SwiftUI app pairing an in-process AVFoundation/VideoToolbox decode backend (with a system-`ffmpeg` fallback for WebM/MKV) with a native CoreGraphics compositor. There are no bundled binaries or Python dependencies (since v2.0.0), and no Xcode project — `build.sh` compiles everything under `src/` with `swiftc -parse-as-library`.
+FrameSheet v3 is a Swift package with a UI-free core library and a SwiftUI
+app. The core holds the document model, the layout maths, persistence and
+the decode layer; the app holds the window, the views and the app state. v2
+(`src/`, a `swiftc`-only build) was removed with the v3 skeleton and stays
+at tag v2.3.1.
 
 ```mermaid
 graph TD
-    A[SwiftUI Views] -->|Config & Actions| B[AppState Coordinator]
-    B -->|probe / extract via protocol| P[DecodeBackend]
-    P -->|primary: resident AVAsset, VideoToolbox| AV[AVFoundationBackend]
-    P -->|fallback: WebM/MKV etc.| FF[FFmpegBackend → system ffmpeg/ffprobe]
-    AV -->|Extracts| E[Temp JPEG frames  retained for the session]
-    FF -->|Extracts| E
-    E -->|Thumbnail array| G[ContactSheetRenderer<br/>shared drawCell]
-    G -->|per-cell images| H[LazyVGrid display]
-    G -->|flattened composite| I[Export previewImage]
-    B -->|encode PNG/JPEG, template, quick save| F[Destination]
+    V[SwiftUI views] --> M[AppModel @MainActor]
+    M -->|Library edits, selection| L[Library model]
+    M -->|save / load JSON| S[LibraryStore]
+    M -->|open movie| R[DecoderRouter]
+    R -->|default| AV[AVFoundationBackend<br/>AVAssetImageGenerator, VideoToolbox]
+    R -->|no decodable track, hev1| FF[FFmpegBackend<br/>system ffmpeg/ffprobe]
+    M -->|discover ffmpeg| FL[FFmpegLocator]
+    AV --> C[ThumbnailCache NSCache]
+    FF --> C
+    C --> V
+    V -->|layout| G[GridGeometry]
 ```
 
-## Source Layout (`src/`)
+## Package layout
 
 ```
-src/
-├── FrameSheetApp.swift        @main entry; WindowGroup; ⌘O command
-├── AppDelegate.swift          Finder/Dock open-event routing
-├── Models.swift               VideoFileInfo, FFProbeResult
-├── Thumbnail.swift            One grid cell: id, timestamp, imagePath, hidden
-├── DecodeBackend.swift        Protocol: probe, duration estimation,
-│                              batch/single-frame extraction, cancel
-├── AVFoundationBackend.swift  Primary: resident AVAsset + VideoToolbox,
-│                              zero-tolerance + bounded ±0.5s retry
-├── FFmpegBackend.swift        Fallback: ffmpeg/ffprobe process spawn
-│                              (WebM/MKV etc.; packet-scan duration)
-├── AppState.swift             ObservableObject: all @Published state
-├── AppState+Dependencies.swift  ffmpeg/ffprobe discovery & launch check
-├── AppState+Loading.swift     loadVideo + backend routing (AVF-first),
-│                              duration-estimation flow
-├── AppState+Generation.swift  sampling math, backend.extractFrames,
-│                              renderAndPresent (sheet + cell images)
-├── AppState+Grid.swift        Phase 3a: hide/unhide, re-flow recompose,
-│                              per-cell nudge, keyboard selection & shortcuts
-├── AppState+Export.swift      filename templating, PNG/JPEG encode,
-│                              save panel / quick save, individual frames
-├── AppState+Persistence.swift UserDefaults round-trip for settings
-├── AppState+Sizing.swift      width/height solving, fit-to-screen zoom
-├── ContactSheetRenderer.swift metrics, drawCell, full-sheet render,
-│                              per-cell render, header strip, reflowParams
-├── Extensions.swift           Color.toHex, NSImage.pixelSize, monoFont
-├── FontPanelBridge.swift      NSFontPanel bridge for custom fonts
-├── assets/AppIcon.png         build resource (build.sh → .icns)
-└── Views/
-    ├── MainView.swift         window layout; installs the key monitor
-    ├── TopBarView.swift       zoom controls, console toggle
-    ├── SidebarView.swift      single scrolling settings column +
-    │                          pinned Generate/Cancel
-    ├── CanvasView.swift       video info bar, grid/preview display,
-    │                          drag & drop, export action bar
-    ├── ThumbnailGridView.swift  LazyVGrid + header strip; drag-reorder
-    ├── ThumbnailCellView.swift  one cell: hover overlay (timestamp,
-    │                          hide, nudge), selection ring
-    ├── ConsoleView.swift      collapsible log panel
-    ├── Tabs/                  sidebar sections (LayoutTab, StyleTab,
-    │                          FramesTab, OutputSection, ColorPresetSelector)
-    └── Components/            DependencyRow, CheckerboardBackground
+Package.swift                    Swift 6, macOS 27, arm64
+Sources/FrameSheetCore/          no SwiftUI or AppKit
+├── Models.swift                 Library, MovieFile, Sheet, Thumb, Scene,
+│                                Settings, Defaults (all Codable)
+├── IntervalFrames.swift         mapRange + getIntervalArray (MoviePrint),
+│                                sheet naming, timecode
+├── GridGeometry.swift           grid part of MoviePrint getScaleValueObject
+├── LibraryStore.swift           JSON in Application Support
+└── Decode/
+    ├── DecodeBackend.swift      protocol, MediaInfo, DecodedFrame, errors
+    ├── AVFoundationBackend.swift  probe, zero-tolerance thumbs + ±0.5 s retry
+    ├── FFmpegBackend.swift      ffprobe probe, packet-scan duration,
+    │                            one input-seeking ffmpeg run per frame (×5)
+    ├── DecoderRouter.swift      AVFoundation first, ffmpeg fallback
+    ├── FFmpegLocator.swift      user path → login shell → known directories
+    ├── ProcessRunner.swift      shell-free Process with timeout/cancel
+    └── ThumbnailCache.swift     NSCache limited by pixel bytes (256 MB)
+Sources/FrameSheet/              the app
+├── FrameSheetApp.swift          Window scene, AppDelegate, single-key keys
+├── AppModel.swift               @Observable state, adding movies, selection,
+│                                thumbnail loading, debounced saving
+├── ContentView.swift            split view, toolbar, drop target, footer, toast
+├── MovieListView.swift          movie rows with posters, sheet rows
+├── SheetGridView.swift          grid of the selected sheet
+├── SettingsPanel.swift          settings sidebar (ffmpeg row so far)
+└── Theme.swift                  Catppuccin Mocha colours
+Tests/FrameSheetCoreTests/       swift test (Swift Testing)
+assets/AppIcon.png               build.sh → .icns
+tools/spike/                     separate measurement package
 ```
 
-## Core Model
+## Core model
 
-### State: one `AppState`, split by concern
+`Library` is the whole document: movies in list order (`MovieFile`, with a
+bookmark, probe data, IN/OUT, transform, scan state and a sheet counter),
+sheets per movie (`Sheet`: type, view, columns, seconds per row, parent,
+thumbs, scenes), global `Settings`, and the selection. Sheet names are
+`MoviePrint-N` from the per-movie counter. Interval sheets take N frame
+numbers evenly between IN and OUT with MoviePrint's own rounding. The app
+mutates the library on the main actor and saves it as JSON half a second
+after each change; it is loaded once on launch. Settings decode with defaults
+for missing keys so later versions can add fields.
 
-All app state lives in a single `ObservableObject` (`AppState`), shared by every window. Its behavior is split across extension files by concern (see layout above) rather than separate service classes — the Phase 1 refactor (see `docs/DECISIONS.md` #5) chose per-concern extensions over introducing an abstraction layer. Generation settings persist via `UserDefaults` (`AppState+Persistence.swift`); transient state (zoom, console, selection, hidden flags) does not.
+## Decoding
 
-### Decode backends (v2.3.0)
+Movies open through `DecoderRouter`: AVFoundation first; the file goes to
+ffmpeg when AVFoundation has no video track, the track is not decodable, or
+the HEVC sample entry is `hev1` (VideoToolbox rejects it although the track
+claims to be decodable). Frames are addressed by number. AVFoundation asks
+for the middle of a frame's display interval with zero tolerance and retries
+a failure once with ±0.5 s, reporting the frame actually decoded (decision
+11); the app then moves the thumb to that frame. The ffmpeg path seeks half a
+frame early, takes the first frame from a PNG pipe, five runs at a time in
+software decode, and retries 0.5 s earlier when the frame count estimated
+from the duration runs past the last frame. Sequential scanning
+(`AVAssetReader`, shot and face scans) is not built yet; its design is in
+`docs/V3_SPEC.md` §10.
 
-Frame decoding sits behind the `DecodeBackend` protocol; `AppState` never talks to a decoder directly. Routing per load: probe with **AVFoundation** first (resident `AVAsset`, `AVAssetImageGenerator`, VideoToolbox hardware decode); fall back to **ffmpeg** only when the asset has no decodable video track (WebM/MKV, or codec/hardware gaps like AV1 before M3). ffmpeg is optional — required only for fallback formats, with a clear error naming the format when missing (decisions #10–#12: routing, exact-tolerance-with-bounded-retry, per-backend baselines in `tests/baselines/`).
+ffmpeg is found in the order of §10 (user path, login-shell `command -v`,
+known directories), each candidate validated with `ffmpeg -version`;
+`ffprobe` must sit next to it.
 
-### Generation pipeline
+## Display
 
-1. `loadVideo(url:)` routes to a backend (above) and probes metadata through it. If duration is missing/`N/A`/0, the backend's `estimateDuration` runs (ffmpeg: demux-only packet-timestamp scan, two attempts, cancellable) before generating.
-2. `generateContactSheet()` computes sampling timestamps (grid size × start/end delay, or custom timestamps), then `backend.extractFrames` produces one JPEG per timestamp — AVFoundation: batched `generateCGImagesAsynchronously` with zero tolerance plus per-frame bounded retry; ffmpeg: **one input-seeking invocation per frame** (`-ss <t> -i <file> -frames:v 1`, software decode, JPEG `-q:v 3`), 5 concurrent.
-3. The temp frames dir is **retained** for the session (replaced on the next generation) so per-thumbnail features can re-read and re-extract individual frames.
-4. `renderAndPresent` composites the export image and renders the per-cell display images in the same pass, then publishes atomically with a `generationID` guard against superseded runs. Per-frame actual decode times reported by the backend are applied to the `Thumbnail` array first, keeping burned-in timestamps truthful.
-
-### Display vs. export (Phase 3a)
-
-The preview is an addressable grid, not a flattened bitmap:
-
-- `thumbnails: [Thumbnail]` is the single source of grid order and per-cell state (timestamp, backing frame path, hidden flag).
-- **Display path**: `ThumbnailGridView` lays out one `ThumbnailCellView` per element with `ContactSheetRenderer.metrics` geometry, using pre-rendered per-cell images (`cellImages[id]`) and a header strip. It reads a `displayParams` snapshot captured at render time, so in-flight settings changes cannot shear the layout before regeneration lands.
-- **Export path**: `ContactSheetRenderer.render` flattens the same array into one image (`previewImage`), which Copy/Save/Quick-Save consume.
-- Both paths draw cells through the same `drawCell` function — the single source of truth that keeps on-screen cells and exported cells pixel-identical.
-
-### Per-thumbnail interactions (`AppState+Grid.swift`)
-
-- **Hide**: toggles `Thumbnail.hidden`; the grid dims the cell in place, while the export recomposes with visible cells compacted in raster order and rows re-flowed to `ceil(visible/cols)` (`reflowParams`; decision #8). Hidden state resets on regeneration.
-- **Reorder**: drag & drop (`onDrag`/`onDrop` + `DropDelegate`; deployment target macOS 11 predates `.draggable`) live-moves elements of `thumbnails`; the sheet recomposes on drop.
-- **Nudge**: shifts one cell's timestamp by the configured step and re-extracts *only that frame* through the active backend into the retained frames dir (AVFoundation: resident asset, no process spawn; ~65ms vs ~131ms via ffmpeg on the 4K sample), then re-renders that cell and recomposes.
-- **Keyboard**: an `NSEvent` local monitor (macOS 11-compatible) provides click-to-select with a focus ring, arrow navigation over all displayed cells (including dimmed hidden ones — decision #9), Space/Delete hide, `,`/`.` nudge, and Esc to clear. Events pass through while a text field is being edited or command/control/option is held.
-
-### Export (`AppState+Export.swift`)
-
-Filename templating (`{{filename}}`, `{{width}}`, `{{height}}`, `{{columns}}`, `{{rows}}`, `{{date}}`), PNG/JPEG encoding (JPEG quality slider; translucent backgrounds composite over the opaque background color behind an inline warning — decision #7), quick save next to the source video with `_2`/`_3` auto-suffixing, and optional per-frame export of visible thumbnails into a `<name>_frames/` subfolder.
-
-## Superseded designs
-
-Kept for historical context; details in `docs/DECISIONS.md` and `docs/DEV_LOG.md`:
-
-- **Monolithic `main.swift`** (through v2.0.x): all state, views, and rendering in one file at the repo root — superseded by the Phase 1 split and later the `src/` move.
-- **Tabbed sidebar** (Layout/Style/Frames segmented tabs): superseded by the MoviePrint-style single scrolling settings column (Phase 1 Stage B).
-- **`vcsi`/Python engine** (pre-v2.0.0) and **Fast Mode keyframe previews** (removed in Phase 3, 2026-07-07): superseded by the parallel per-frame input-seek engine, which is fast enough to be the only path.
+`GridGeometry` reproduces MoviePrint's grid sizes (thumb width = movie width
+× 0.25, margin from the margin ratio, rounded corners, header height) and
+scales the print to fit the main area at zoom 1. Thumbs are decoded at 640 px
+wide (posters at 320 px) into `ThumbnailCache`; views re-read the cache when
+`AppModel.imageGeneration` changes.
 
 ## Dependencies
 
-No bundled binaries. `ffmpeg`/`ffprobe` are resolved from common install prefixes and PATH at launch; a blocking overlay with re-check guides installation when missing.
+No bundled binaries and no packages. `ffmpeg`/`ffprobe` are optional, needed
+only for files AVFoundation cannot decode.

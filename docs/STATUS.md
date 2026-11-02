@@ -10,7 +10,7 @@ Updated: 2026-11-02
 ## Summary
 
 FrameSheet: macOS contact-sheet app, v2.3.1 released. v3 is a rebuild that
-reproduces MoviePrint v0.2.23 for Apple Silicon: decisions 14–21 in
+reproduces MoviePrint v0.2.23 for Apple Silicon: decisions 14–22 in
 `docs/DECISIONS.md`, target behaviour in `docs/V3_SPEC.md`.
 
 ## Next
@@ -18,16 +18,13 @@ reproduces MoviePrint v0.2.23 for Apple Silicon: decisions 14–21 in
 - Spike follow-ups: measure 4K HEVC and HDR once the owner has such files;
   re-measure on the fastest Mac before raising defaults; re-check decode speed
   with the macOS 27 `AVAssetReaderOutput.Provider` API.
-- `CLAUDE.md` Commands still describe the v2 `swiftc` build; update them in
-  the skeleton TASK (needs the owner's approval naming `CLAUDE.md` in that
-  session).
-- In progress: TF #01 takes the v3 skeleton TASK (Swift package, core model,
-  decode layer and ffmpeg discovery, minimal app with a default interval
-  sheet, `build.sh`, v2 `src/` removed). Then the features in the order of
+- The v3 skeleton is on `main` (Swift package, core model, decode layer with
+  ffmpeg routing and discovery, minimal app with a default interval sheet,
+  `build.sh`; v2 `src/` removed). Next: the features in the order of
   `docs/V3_SPEC.md`; the kni Design System's type and spacing tokens are a
   later TASK.
-- `docs/PROJECT.md` and `docs/ARCHITECTURE.md` describe v2; rewrite them with
-  the skeleton TASK.
+- Builds and tests go through `scripts/check.sh` (listed in
+  `sandbox.excludedCommands`; owner approved 2026-11-02).
 
 ## On hold
 

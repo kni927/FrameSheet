@@ -206,6 +206,8 @@ Backend changes legitimately change pixels (different scaler/color pipeline than
 - **ffmpeg path**: the Phase-1 render baseline stays authoritative; the renderer harness must remain byte-identical, and the WebM smoke tests (hang-regression timeout, duration-less packet scan) must pass unchanged through the fallback route.
 - **AVFoundation path**: default-settings outputs for the local sample videos are committed under `tests/baselines/` and byte-compared by the smoke suite, which also asserts deterministic reruns and that every cell is backed by a real frame file. Baselines are machine-anchored (hardware decoders can differ across chips); regeneration requires a DEV_LOG entry.
 
+> **No longer applies (v3 skeleton, 2026-11-02):** the v2 renderer and `tests/baselines/` were removed with the v2 sources. v3 checks decoding with `swift test`: the decode tests make short clips with the system ffmpeg whose frames encode their own number, and assert that each backend returns the requested frame.
+
 ---
 
 ### 13. Debug builds sign with Developer ID; version derives from git tags (v2.3.1 — 2026-07-18)

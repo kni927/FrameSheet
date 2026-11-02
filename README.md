@@ -1,67 +1,47 @@
-# <img src="src/assets/AppIcon.png" width="40" valign="middle"> FrameSheet
+# <img src="assets/AppIcon.png" width="40" valign="middle"> FrameSheet
 
-![FrameSheet UI Preview](docs/preview.png)
+FrameSheet is a macOS app that makes video contact sheets (MoviePrints).
 
-FrameSheet is a macOS native app that generates customizable video contact sheets (MoviePrints).  
-**v2** replaces the vcsi backend with a native ffmpeg engine + CoreGraphics compositor, delivering dramatically faster generation especially for HEVC/4K content. By default, FrameSheet generates an instant **Fast Mode** preview using only the video's keyframes, with an optional **Normal Mode** for a full, evenly-spaced sampling pass.
+**v3 is in development**: a rebuild that reproduces
+[MoviePrint](https://github.com/fakob/MoviePrint_v004) v0.2.23 natively for
+Apple Silicon — many movies at once, interval, shot-detection and face sheets,
+editable thumbs and scenes, and export as PNG/JPG, JSON and EDL. The target
+behaviour is in [docs/V3_SPEC.md](docs/V3_SPEC.md). The released app is v2
+(tag `v2.3.1`), a settings-to-one-image contact sheet generator.
 
-## Features
+## Status
 
-- **SwiftUI Native Experience**: Sleek, responsive, and lightweight UI following modern macOS design.
-- **Fast Mode (keyframes only)**: Enabled by default. Extracts only the video's keyframes (`-skip_frame nokey`) for near-instant previews, even on 4K HEVC footage.
-- **Real-time Previews**: See grid size, spacing, font, and colors update on-the-fly.
-- **Flexible Grid Controls**: Adjust columns, rows, spacing, and image width with quick `−` / `+` steppers.
-- **Standard macOS Font Picker**: Choose any installed system font via macOS's native font panel.
-- **Timestamp Overlays**: Uniform or custom timestamps drawn in four corner positions.
-- **Custom Header Template**: Jinja2-style placeholders (`{{filename}}`, `{{duration}}`, etc.) resolved in Swift.
-- **Built-in Console Logger**: Inspect raw ffmpeg output, copy or export log.
+The v3 skeleton runs: add movies with the + button, the A key or by dropping
+them on the window; each movie gets a default interval sheet of 16 thumbs in
+4 columns, and the movie list is restored on the next launch. Everything else
+in the spec comes in later versions.
 
-## Fast Mode vs. Normal Mode
+## Requirements
 
-| | Fast Mode (default) | Normal Mode |
-|---|---|---|
-| Frame selection | Keyframes only (`-skip_frame nokey`) | Evenly-spaced sampling (`fps=1/interval`) |
-| Speed | Near-instant, even for 4K HEVC | Slower — decodes the full sampled range sequentially |
-| Thumbnail count | May be **less than `rows × columns`**, depending on the video's keyframe interval (GOP length). The grid's row count automatically shrinks to fit the actual count. | Always exactly `rows × columns` |
-| Timestamps | Approximate (interpolated across the sampled range) | Exact, evenly-spaced (or custom, if configured) |
-| Custom Timestamps | Disabled | Available |
-
-The toolbar shows an indicator next to "Show in Finder" reporting how many of the extracted keyframes were used, e.g.:
-
-```
-Fast mode: 16 of 54 keyframes
-```
-
-Toggle "Fast mode: keyframes only" off in the Layout tab to switch to Normal Mode for a full, precisely-spaced contact sheet.
-
-## Performance
-
-| Mode | 4K60 HEVC, 60s, 4×4 grid |
-|---|---|
-| **Fast Mode (default)** | **<1 second** — decodes keyframes only |
-| **Normal Mode** | **~25 seconds** — sequential decode of the sampled range (`-hwaccel videotoolbox` enabled, but the `fps` filter still requires decoding every frame) |
-
-Both modes use VideoToolbox hardware decoding (`-hwaccel videotoolbox`) and JPEG (`-q:v 3`) for temporary thumbnail files to minimize I/O overhead. Normal Mode decodes the video linearly rather than seeking to each frame individually, which eliminates the keyframe-reload penalty that made HEVC extraction so slow in v1; Fast Mode goes further by skipping non-keyframe decoding entirely.
-
-> **Note**: Normal Mode generation time scales with the sampled duration and frame rate — high-fps slow-motion HEVC footage (e.g. 240fps) can take significantly longer (several minutes) than the figures above.
-
-## Prerequisites
-
-Only **FFmpeg** is required — no Python, no vcsi.
+- macOS 27 or later on Apple Silicon.
+- **FFmpeg**, only for files AVFoundation cannot decode (WebM, MKV, WMV, HEVC
+  tagged `hev1`). FrameSheet looks for a chosen path, then your login shell's
+  `PATH`, then the usual install directories (Homebrew, MacPorts, Nix).
 
 ```bash
 brew install ffmpeg
 ```
 
-The app detects `ffmpeg` / `ffprobe` on launch and shows an overlay if they are missing.
-
 ## Building
+
+Requires Xcode 27.
 
 ```bash
 ./build.sh
 ```
 
-The packaged application is generated at `./build/FrameSheet.app`.
+The app is assembled at `./build/FrameSheet.app` (with a zip next to it);
+SwiftPM's build products stay in `~/Library/Caches/FrameSheet/build`. Run the
+core tests with:
+
+```bash
+swift test --scratch-path ~/Library/Caches/FrameSheet/build
+```
 
 ## Author
 
@@ -70,3 +50,7 @@ Created and maintained by **kni**.
 ## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+MoviePrint code ported into FrameSheet keeps its MIT notice
+([docs/licenses/MoviePrint-LICENSE](docs/licenses/MoviePrint-LICENSE)); the
+Catppuccin palette is MIT as well
+([docs/licenses/Catppuccin-LICENSE](docs/licenses/Catppuccin-LICENSE)).
