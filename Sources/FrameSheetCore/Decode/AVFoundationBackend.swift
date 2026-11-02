@@ -89,6 +89,14 @@ public final class AVFoundationBackend: DecodeBackend {
         return CMTime(seconds: startTime + seconds, preferredTimescale: 600_000)
     }
 
+    /// The frame a zero-tolerance request returns: the requested one, or
+    /// the last frame for a request past the end (`time(of:)` clamps there).
+    /// Not derived from the decoded time, whose rounding can be a frame off
+    /// in files whose timestamps are not exact multiples of 1/fps.
+    private func exactFrame(_ frame: Int) -> Int {
+        min(frame, max(0, info.frameCount - 1))
+    }
+
     private static func key(_ time: CMTime) -> Int64 {
         CMTimeConvertScale(time, timescale: 600_000, method: .roundHalfAwayFromZero).value
     }
@@ -114,9 +122,9 @@ public final class AVFoundationBackend: DecodeBackend {
     public func frame(_ frameNumber: Int, maxWidth: Int) async throws -> DecodedFrame {
         let requested = time(of: frameNumber)
         do {
-            let (image, actual) = try await makeGenerator(maxWidth: maxWidth, exact: true).image(at: requested)
+            let (image, _) = try await makeGenerator(maxWidth: maxWidth, exact: true).image(at: requested)
             return DecodedFrame(
-                image: image, requestedFrame: frameNumber, actualFrame: self.frameNumber(at: actual),
+                image: image, requestedFrame: frameNumber, actualFrame: exactFrame(frameNumber),
                 retried: false)
         } catch is CancellationError {
             throw CancellationError()
@@ -159,11 +167,26 @@ public final class AVFoundationBackend: DecodeBackend {
                     if let image = try? result.image {
                         let frame = DecodedFrame(
                             image: image, requestedFrame: number,
-                            actualFrame: (try? result.actualTime).map(frameNumber(at:)) ?? number,
+                            actualFrame: exactFrame(number),
                             retried: false)
                         continuation.yield(FrameResult(index: index, frameNumber: number, result: .success(frame)))
                     } else {
                         failed.append(index)
+                    }
+                }
+                // Results whose requested time matched no request (the
+                // generator can report it in another timescale) were never
+                // yielded: decode those one by one too, exact first.
+                let unmatched = pending.values.flatMap { $0 }
+                for index in unmatched where !Task.isCancelled {
+                    let number = frameNumbers[index]
+                    // `frame` already retries with tolerance on failure.
+                    do {
+                        let frame = try await self.frame(number, maxWidth: maxWidth)
+                        continuation.yield(FrameResult(index: index, frameNumber: number, result: .success(frame)))
+                    } catch {
+                        let message = (error as? DecodeError) ?? DecodeError(error.localizedDescription)
+                        continuation.yield(FrameResult(index: index, frameNumber: number, result: .failure(message)))
                     }
                 }
                 for index in failed where !Task.isCancelled {
