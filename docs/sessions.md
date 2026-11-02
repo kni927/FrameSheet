@@ -95,6 +95,9 @@ Send each message only to the sessions that need it.
   TF's report, its HQ checks the repository and GitHub and tells the owner
   only that it is verified, unless the report and the state disagree, the TF
   is blocked without having said so, or a decision belongs in the HQ's chat.
+- **Asking the owner:** in the conversation, in prose with a recommendation,
+  not with the AskUserQuestion choice dialog; a skipped or unanswered
+  question is not a decision (owner, 2026-11-03).
 - **How to send:** from a cloud session, `send_message` (claude-code-remote)
   to the session ID, local ones too, replying to `from-session`. From a
   local session, `SendMessage` to the name in `ListAgents` (its "one-way"
