@@ -17,7 +17,10 @@ was created. This skill catches both up without a new session.
 2. Read `instructions/full/claude.md` in `kni927/dotfiles`: in a cloud
    session the clone at `/home/user/dotfiles` if there is one (pull it
    first), otherwise attach it with `add_repo` (access `read`) and clone it;
-   on a Mac the clone at `~/Projects/GitHub/dotfiles` (pull it first). This is the owner's current
+   on a Mac read it from GitHub with
+   `gh api repos/kni927/dotfiles/contents/instructions/full/claude.md -H "Accept: application/vnd.github.raw"`
+   as its own call (`gh` runs outside the sandbox; a `git -C` pull of the
+   dotfiles clone stays sandboxed and fails). This is the owner's current
    custom instructions; where it differs from the copy in your system prompt,
    follow the file.
 3. On a Mac (a local session), also read `~/.claude/CLAUDE.md` in full: the
