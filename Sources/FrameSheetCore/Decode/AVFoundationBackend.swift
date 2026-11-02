@@ -53,7 +53,11 @@ public final class AVFoundationBackend: DecodeBackend {
             throw RoutingError("HEVC tagged hev1 is not decodable by AVFoundation")
         }
 
-        let duration = try await asset.load(.duration).seconds
+        // The video track's own length: the file's duration can include a
+        // longer audio track, which would put the last frames past the video.
+        let trackDuration = timeRange.duration.seconds
+        let duration = trackDuration.isFinite && trackDuration > 0
+            ? trackDuration : try await asset.load(.duration).seconds
         let display = naturalSize.applying(transform)
         let fps = Double(nominalRate)
         let size = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize).map(Int64.init) ?? 0
@@ -81,7 +85,8 @@ public final class AVFoundationBackend: DecodeBackend {
     /// request cannot land on the neighbour through rounding.
     private func time(of frame: Int) -> CMTime {
         let fps = info.fps > 0 ? info.fps : 25
-        return CMTime(seconds: startTime + (Double(frame) + 0.5) / fps, preferredTimescale: 600_000)
+        let seconds = min(Double(frame) + 0.5, max(0.5, info.duration * fps - 0.25)) / fps
+        return CMTime(seconds: startTime + seconds, preferredTimescale: 600_000)
     }
 
     private static func key(_ time: CMTime) -> Int64 {
@@ -90,7 +95,8 @@ public final class AVFoundationBackend: DecodeBackend {
 
     private func frameNumber(at time: CMTime) -> Int {
         let fps = info.fps > 0 ? info.fps : 25
-        return max(0, Int(((time.seconds - startTime) * fps).rounded(.down)))
+        // A frame's start time; round so 6.9999 counts as frame 7.
+        return max(0, Int(((time.seconds - startTime) * fps).rounded()))
     }
 
     private func makeGenerator(maxWidth: Int, exact: Bool) -> AVAssetImageGenerator {
@@ -108,8 +114,10 @@ public final class AVFoundationBackend: DecodeBackend {
     public func frame(_ frameNumber: Int, maxWidth: Int) async throws -> DecodedFrame {
         let requested = time(of: frameNumber)
         do {
-            let (image, _) = try await makeGenerator(maxWidth: maxWidth, exact: true).image(at: requested)
-            return DecodedFrame(image: image, requestedFrame: frameNumber, actualFrame: frameNumber, retried: false)
+            let (image, actual) = try await makeGenerator(maxWidth: maxWidth, exact: true).image(at: requested)
+            return DecodedFrame(
+                image: image, requestedFrame: frameNumber, actualFrame: self.frameNumber(at: actual),
+                retried: false)
         } catch is CancellationError {
             throw CancellationError()
         } catch {
@@ -150,7 +158,9 @@ public final class AVFoundationBackend: DecodeBackend {
                     let number = frameNumbers[index]
                     if let image = try? result.image {
                         let frame = DecodedFrame(
-                            image: image, requestedFrame: number, actualFrame: number, retried: false)
+                            image: image, requestedFrame: number,
+                            actualFrame: (try? result.actualTime).map(frameNumber(at:)) ?? number,
+                            retried: false)
                         continuation.yield(FrameResult(index: index, frameNumber: number, result: .success(frame)))
                     } else {
                         failed.append(index)

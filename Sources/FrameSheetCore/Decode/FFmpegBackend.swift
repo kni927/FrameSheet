@@ -141,24 +141,42 @@ public final class FFmpegBackend: DecodeBackend {
     }
 
     public func frame(_ frameNumber: Int, maxWidth: Int) async throws -> DecodedFrame {
+        let start = seconds(of: frameNumber)
+        let first = try await extract(at: start, maxWidth: maxWidth)
+        if let image = first.image {
+            return DecodedFrame(image: image, requestedFrame: frameNumber, actualFrame: frameNumber, retried: false)
+        }
+        // No frame at or after the seek point: the frame count estimated
+        // from the duration can run past the last frame. Retry once 0.5 s
+        // earlier (decision 11) and keep the frame that comes back, the
+        // first one at or after the new seek point.
+        let fps = info.fps > 0 ? info.fps : 25
+        let retryStart = max(0, start - 0.5)
+        if let image = try await extract(at: retryStart, maxWidth: maxWidth).image {
+            let actual = max(0, Int((retryStart * fps - 1e-6).rounded(.up)))
+            return DecodedFrame(image: image, requestedFrame: frameNumber, actualFrame: actual, retried: true)
+        }
+        let reason = first.error.isEmpty ? "ffmpeg returned no image" : first.error
+        throw DecodeError("Frame \(frameNumber): \(reason)")
+    }
+
+    private func extract(at seconds: Double, maxWidth: Int) async throws -> (image: CGImage?, error: String) {
         // Even width for the scaler; never wider than the movie.
         let width = max(2, min(maxWidth, info.width > 0 ? info.width : maxWidth) / 2 * 2)
         let result = try await ProcessRunner.run(tools.ffmpeg, [
             "-hide_banner", "-loglevel", "error", "-nostdin",
-            "-ss", String(format: "%.6f", seconds(of: frameNumber)),
+            "-ss", String(format: "%.6f", seconds),
             "-i", path,
             "-frames:v", "1", "-an", "-sn",
             "-vf", "scale=\(width):-2",
             "-f", "image2pipe", "-c:v", "png", "-",
         ], timeout: .seconds(60))
+        let error = result.stderrText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard result.status == 0, !result.stdout.isEmpty,
               let source = CGImageSourceCreateWithData(result.stdout as CFData, nil),
               let image = CGImageSourceCreateImageAtIndex(source, 0, nil)
-        else {
-            let reason = result.stderrText.trimmingCharacters(in: .whitespacesAndNewlines)
-            throw DecodeError("Frame \(frameNumber): \(reason.isEmpty ? "ffmpeg returned no image" : reason)")
-        }
-        return DecodedFrame(image: image, requestedFrame: frameNumber, actualFrame: frameNumber, retried: false)
+        else { return (nil, error) }
+        return (image, error)
     }
 
     public func frames(_ frameNumbers: [Int], maxWidth: Int) -> AsyncStream<FrameResult> {

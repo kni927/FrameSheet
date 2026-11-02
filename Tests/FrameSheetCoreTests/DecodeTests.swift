@@ -152,6 +152,11 @@ import Testing
         for (index, number) in wanted.enumerated() {
             #expect(seen[index] == number, "frame \(number) at index \(index)")
         }
+        // Past the last frame: the backend returns a frame it names truthfully.
+        let pastEnd = try await backend.frame(Self.frameCount, maxWidth: 160)
+        #expect(Self.frameNumber(in: pastEnd.image) == pastEnd.actualFrame)
+        #expect(pastEnd.actualFrame < Self.frameCount)
+
         let single = try await backend.frame(7, maxWidth: 4000)
         #expect(single.image.width == 320)
         #expect(Self.frameNumber(in: single.image) == 7)
