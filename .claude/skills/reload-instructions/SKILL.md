@@ -1,6 +1,6 @@
 ---
 name: reload-instructions
-description: Bring a long-running session's instructions up to date - pull the attached repositories, re-read AGENTS.md, CLAUDE.md and docs/sessions.md, and read the owner's current custom instructions from kni927/dotfiles instructions/full/claude.md, which win over the copy the session started with. Use when the owner says "reload", or when Upstream HQ says the custom instructions changed.
+description: Bring a long-running session's instructions up to date - pull the attached repositories, re-read AGENTS.md, CLAUDE.md and docs/sessions.md, on a Mac re-read ~/.claude/CLAUDE.md, and read the owner's current custom instructions from kni927/dotfiles instructions/full/claude.md, which win over the copy the session started with. Use when the owner says "reload", or when Upstream HQ or an HQ says the instructions changed.
 ---
 
 # Reload the instructions
@@ -19,8 +19,13 @@ was created. This skill catches both up without a new session.
    with `add_repo` (access `read`) and clone it. This is the owner's current
    custom instructions; where it differs from the copy in your system prompt,
    follow the file.
-3. Never copy that file, or any part of it, into another repository, an
+3. On a Mac (a local session), also read `~/.claude/CLAUDE.md` in full: the
+   owner's global instructions, which `chezmoi apply` updates from dotfiles
+   `dot_claude/CLAUDE.md`. If it looks older than the change you were told
+   about, ask the owner to run `chezmoi apply` first. Where it differs from
+   what you were following, follow the file.
+4. Never copy that file, or any part of it, into another repository, an
    artifact, or a message: it holds personal details, and some repositories
    are public (`kni927/cooViewer`).
-4. Tell the owner in one English line what changed (files and sections), or
+5. Tell the owner in one English line what changed (files and sections), or
    `Instructions unchanged`.
