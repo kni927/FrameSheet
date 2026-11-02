@@ -34,6 +34,12 @@ Sources/FrameSheetCore/          no SwiftUI or AppKit
 │                                sheet naming, timecode
 ├── GridGeometry.swift           grid part of MoviePrint getScaleValueObject
 ├── LibraryStore.swift           JSON in Application Support
+├── Editing/
+│   ├── EditHistory.swift        50-step undo/redo; EditableLibrary.edit
+│   ├── IntervalEditing.swift    thumb and sheet operations, interval scenes
+│   ├── Scrub.swift              pointer → frame mapping, scrub actions
+│   ├── GridLayout.swift         optimised columns, stats line, zoom, frame info
+│   └── ThumbNavigation.swift    next/previous thumb, dimming, scrub layout
 └── Decode/
     ├── DecodeBackend.swift      protocol, MediaInfo, DecodedFrame, errors
     ├── AVFoundationBackend.swift  probe, zero-tolerance thumbs + ±0.5 s retry
@@ -44,16 +50,21 @@ Sources/FrameSheetCore/          no SwiftUI or AppKit
     ├── ProcessRunner.swift      shell-free Process with timeout/cancel
     └── ThumbnailCache.swift     NSCache limited by pixel bytes (256 MB)
 Sources/FrameSheet/              the app
-├── FrameSheetApp.swift          Window scene, AppDelegate, single-key keys
-├── AppModel.swift               @Observable state, adding movies, selection,
-│                                thumbnail loading, debounced saving
-├── ContentView.swift            split view, toolbar, drop target, footer, toast
-├── MovieListView.swift          movie rows with posters, sheet rows
-├── SheetGridView.swift          grid of the selected sheet
-├── SettingsPanel.swift          settings sidebar (ffmpeg row so far)
-└── Theme.swift                  Catppuccin Mocha colours
+├── FrameSheetApp.swift          Window scene, menus, AppDelegate, key monitor
+├── AppModel.swift               @Observable state over an EditableLibrary:
+│                                edits, selection, zoom, scrub, thumbnail
+│                                loading, debounced saving
+├── ContentView.swift            split view, window toolbar, drop target,
+│                                footer, toast
+├── FloatingToolbar.swift        sheet toolbar over the grid
+├── MovieListView.swift          movie rows, sheet rows, context menus, Locate
+├── SheetGridView.swift          grid, thumbs, hover overlay, frame info, reorder
+├── ScrubOverlay.swift           scrub overlay with neighbours and Cancel bar
+├── SettingsPanel.swift          grid, styling, frame info, cache, ffmpeg
+└── Theme.swift                  kni Design System tokens and fonts
 Tests/FrameSheetCoreTests/       swift test (Swift Testing)
 assets/AppIcon.png               build.sh → .icns
+assets/fonts/                    IBM Plex Sans and Mono (OFL), bundled by build.sh
 tools/spike/                     separate measurement package
 ```
 
@@ -68,6 +79,21 @@ numbers evenly between IN and OUT with MoviePrint's own rounding. The app
 mutates the library on the main actor and saves it as JSON half a second
 after each change; it is loaded once on launch. Settings decode with defaults
 for missing keys so later versions can add fields.
+
+## Editing
+
+Every user-visible edit goes through `AppModel.edit`, which runs a `Library`
+operation inside `EditableLibrary.edit`: the library before the edit becomes
+one undo step (50 kept, not persisted), and the change is saved and its new
+frames decoded. Selection, zoom and global settings change without an undo
+step. The operations follow MoviePrint: insert takes the frame midway to the
+visible neighbour, IN/OUT recapture the visible count between the new limits,
+Expand makes a child sheet over the thumb's interval scene (scenes split at
+the midpoints between visible thumbs) whose id is the thumb's id, and the
+scrub maps the pointer between the neighbours (Shift, Option and Control
+change the range; the first and last thumb extend to the movie's ends). The
+scrub decodes at display size with one request in flight and the latest
+position next; release applies the exact frame as one undo step.
 
 ## Decoding
 
@@ -90,11 +116,16 @@ known directories), each candidate validated with `ffmpeg -version`;
 
 ## Display
 
+Views use the kni Design System through `Theme`: Catppuccin Mocha surfaces
+(base, mantle, crust) with 1 pt borders, the accent for selection only, Plex
+Sans and Plex Mono from `Contents/Resources/Fonts` (`ATSApplicationFontsPath`)
+with Hiragino Sans as the system fallback for Japanese.
 `GridGeometry` reproduces MoviePrint's grid sizes (thumb width = movie width
 × 0.25, margin from the margin ratio, rounded corners, header height) and
-scales the print to fit the main area at zoom 1. Thumbs are decoded at 640 px
+scales the print to fit the main area at the current zoom (0.25 … 8). Thumbs are decoded at 640 px
 wide (posters at 320 px) into `ThumbnailCache`; views re-read the cache when
-`AppModel.imageGeneration` changes.
+`AppModel.imageGeneration` changes, and an image the cache has evicted is
+decoded again when a view asks for it.
 
 ## Dependencies
 

@@ -11,10 +11,27 @@ behaviour is in [docs/V3_SPEC.md](docs/V3_SPEC.md). The released app is v2
 
 ## Status
 
-The v3 skeleton runs: add movies with the + button, the A key or by dropping
-them on the window; each movie gets a default interval sheet of 16 thumbs in
-4 columns, and the movie list is restored on the next launch. Everything else
-in the spec comes in later versions.
+v3 so far: add movies with the + button, the A key or by dropping them on the
+window. Each movie gets a default interval sheet of 16 thumbs in 4 columns,
+which you can edit:
+
+- **Hover a thumb** for IN, OUT, insert before/after, EXPAND and Hide (each
+  button has a tooltip); hold ⌥ and IN/OUT turn into ◀ HIDE / HIDE ▶, which
+  hide every thumb before or after it.
+- **Drag the handle** in the middle of a thumb to scrub: CHANGE TO by default,
+  ⇧ for ADD BEFORE, ⌥ for ADD AFTER, ⌃ to reach the start or end of the movie;
+  drop on the Cancel bar to cancel. A quick click on the handle keeps the scrub
+  open: move to pick, click to confirm, Esc to cancel. With a thumb selected,
+  Return scrubs with the arrow keys.
+- **Drag a thumb** onto another to reorder; ⇧⌥←/→ move the selection.
+- The toolbar over the grid adds interval sheets (2×2 … 6×6), duplicates the
+  sheet, zooms (⌘− / ⌘0 / ⌘=), shows hidden thumbs, cycles the frame info and
+  optimises the grid; the settings sidebar (3) sets columns, rows, margins and
+  frame info; the movie list (1) renames, duplicates and deletes sheets.
+- ⌘Z / ⇧⌘Z undo and redo up to 50 edits.
+
+Saving prints, shot detection, the player view and faces come in later
+versions.
 
 ## Requirements
 
@@ -53,4 +70,6 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 MoviePrint code ported into FrameSheet keeps its MIT notice
 ([docs/licenses/MoviePrint-LICENSE](docs/licenses/MoviePrint-LICENSE)); the
 Catppuccin palette is MIT as well
-([docs/licenses/Catppuccin-LICENSE](docs/licenses/Catppuccin-LICENSE)).
+([docs/licenses/Catppuccin-LICENSE](docs/licenses/Catppuccin-LICENSE)), and the
+bundled IBM Plex fonts are under the SIL Open Font License 1.1
+([docs/licenses/IBM-Plex-LICENSE](docs/licenses/IBM-Plex-LICENSE)).

@@ -18,12 +18,17 @@ reproduces MoviePrint v0.2.23 for Apple Silicon: decisions 14–22 in
 - Spike follow-ups: measure 4K HEVC and HDR once the owner has such files;
   re-measure on the fastest Mac before raising defaults; re-check decode speed
   with the macOS 27 `AVAssetReaderOutput.Provider` API.
-- v3.0.0 order (owner, 2026-11-02): T03 interval editing (in progress, TF
-  #01) → T04 Save MoviePrint, header, naming, PNG/JSON export and import →
-  T05 shot scan, timeline, cut/merge, EDL → T06 player view → T07 faces Lv1 →
-  T08 transforms, Save All, polish → version and release TASK.
-- Builds and tests go through `scripts/check.sh` (listed in
-  `sandbox.excludedCommands`; owner approved 2026-11-02).
+- v3.0.0 order (owner, 2026-11-02): T03 interval editing (done) → T04 Save
+  MoviePrint, header, naming, PNG/JSON export and import → T05 shot scan,
+  timeline, cut/merge, EDL → T06 player view → T07 faces Lv1 → T08
+  transforms, Save All, polish → version and release TASK.
+- UI pass (owner, 2026-11-02): side by side with MoviePrint the v3 UI is
+  still hard to read; detailed UI changes come in a later TASK. Tooltips on
+  every control are wanted from now on.
+- T03 items the owner has not tried yet: Rename/Delete sheet, Locate for a
+  missing movie, ⌃⌘F, frame info position and colours, Columns undo.
+- Builds and tests go through `scripts/check.sh` or `scripts/check.sh
+  install`, spelled exactly so (exclusions match the exact string).
 
 ## On hold
 

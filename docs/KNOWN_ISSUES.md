@@ -31,3 +31,15 @@ history of this file up to tag v2.3.1.
   `CFBundleShortVersionString` from the latest tag, which is still v2.3.1.
 * **Workaround**: Expected; the version changes when v3 is tagged (a task of
   its own).
+
+### 4. Scrub overlay is cramped in a small window
+* **Description**: The scrub overlay places the neighbours and the live frame
+  across the main area; in a window around 900 pt wide the action label and
+  timecode are truncated.
+* **Workaround**: Widen the window or hide a sidebar (1 or 3). The UI pass
+  after T03 revisits the layout.
+
+### 5. ⌘Z in the sheet rename field undoes the library
+* **Description**: The Edit menu's Undo and Redo act on the library, so ⌘Z
+  while renaming a sheet undoes the last library edit instead of the typing.
+* **Workaround**: Press Escape to cancel the rename instead.
