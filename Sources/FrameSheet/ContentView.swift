@@ -19,7 +19,7 @@ struct ContentView: View {
             MainArea()
                 .inspector(isPresented: $model.showSettings) {
                     SettingsPanel()
-                        .inspectorColumnWidth(min: 240, ideal: 280, max: 360)
+                        .inspectorColumnWidth(min: 260, ideal: 300, max: 380)
                 }
         }
         .toolbar {
@@ -51,27 +51,37 @@ struct ContentView: View {
             }
         }
         .tint(Theme.accent)
+        .font(Theme.bodySm)
+        .foregroundStyle(Theme.text)
         .overlay(alignment: .bottom) { Toast() }
     }
 }
 
-/// Main area: the sheet grid or the empty state, the drop target and the
-/// footer.
+/// Main area: the sheet grid or the empty state, the floating toolbar, the
+/// scrub overlay, the drop target and the footer.
 struct MainArea: View {
     @Environment(AppModel.self) private var model
     @State private var isDropTargeted = false
 
     var body: some View {
         VStack(spacing: 0) {
-            ZStack {
-                Theme.windowBackground
+            ZStack(alignment: .top) {
+                Theme.base
                 if let file = model.currentFile, let sheet = model.currentSheet {
                     SheetGridView(file: file, sheet: sheet)
+                    FloatingToolbar(sheet: sheet)
+                        .padding(.top, Theme.space3)
                 } else {
                     EmptyState()
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
+                if let scrub = model.scrub, let file = model.currentFile {
+                    ScrubOverlay(session: scrub, file: file)
                 }
                 if isDropTargeted { DropOverlay() }
             }
+            .coordinateSpace(.named(MainArea.space))
+            .onGeometryChange(for: CGSize.self) { $0.size } action: { model.mainAreaSize = $0 }
             .dropDestination(for: URL.self) { urls, _ in
                 model.addMovies(urls, clearFirst: NSEvent.modifierFlags.contains(.option))
                 return true
@@ -79,16 +89,20 @@ struct MainArea: View {
             Footer()
         }
     }
+
+    /// Coordinate space of the main area; the scrub maps pointer X in it.
+    static let space = "mainArea"
 }
 
 private struct EmptyState: View {
     var body: some View {
-        VStack(spacing: 8) {
+        VStack(spacing: Theme.space2) {
             Image(systemName: "film.stack")
-                .font(.system(size: 40))
-                .foregroundStyle(Theme.overlay1)
+                .font(.system(size: 40, weight: .light))
+                .foregroundStyle(Theme.textMuted)
             Text("Drop movies here or press A to add them")
-                .foregroundStyle(Theme.secondaryText)
+                .font(Theme.body)
+                .foregroundStyle(Theme.textMuted)
         }
     }
 }
@@ -99,12 +113,12 @@ private struct DropOverlay: View {
         let clear = NSEvent.modifierFlags.contains(.option)
         ZStack {
             Theme.crust.opacity(0.85)
-            RoundedRectangle(cornerRadius: 12)
-                .strokeBorder(Theme.accent, style: StrokeStyle(lineWidth: 3, dash: [10, 6]))
-                .padding(24)
+            RoundedRectangle(cornerRadius: Theme.radiusLg)
+                .strokeBorder(Theme.accent, style: StrokeStyle(lineWidth: 2, dash: [10, 6]))
+                .padding(Theme.space6)
             Text(clear ? "CLEAR LIST AND ADD MOVIES" : "ADD MOVIES TO LIST")
-                .font(.title2.weight(.semibold))
-                .foregroundStyle(Theme.accent)
+                .font(Theme.heading1)
+                .foregroundStyle(Theme.accentInk)
         }
         .allowsHitTesting(false)
     }
@@ -116,20 +130,20 @@ private struct Footer: View {
     var body: some View {
         HStack {
             if let sheet = model.currentSheet {
-                let count = sheet.visibleThumbs.count
-                let rows = Int((Double(count) / Double(max(1, sheet.columnCount))).rounded(.up))
-                Text("\(sheet.columnCount) Columns × \(rows) Rows = \(count)")
-                    .foregroundStyle(Theme.secondaryText)
+                Text(GridLayout.statsLine(columns: sheet.columnCount, thumbCount: sheet.visibleThumbs.count))
+                    .font(Theme.caption)
+                    .foregroundStyle(Theme.textMuted)
             }
             Spacer()
             Button("Save MoviePrint") {}
                 .disabled(true)
                 .help("Save MoviePrint (M) — not built yet")
         }
-        .font(.callout)
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        .background(Theme.mantle)
+        .font(Theme.bodySm)
+        .padding(.horizontal, Theme.space3)
+        .padding(.vertical, Theme.space2)
+        .background(Theme.crust)
+        .overlay(alignment: .top) { Rectangle().fill(Theme.border).frame(height: 1) }
     }
 }
 
@@ -138,10 +152,10 @@ private struct Toast: View {
 
     var body: some View {
         if let message = model.toast {
-            HStack(alignment: .top, spacing: 10) {
-                Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(Theme.peach)
+            HStack(alignment: .top, spacing: Theme.space3) {
+                Image(systemName: "exclamationmark.triangle").foregroundStyle(Theme.warning)
                 Text(message)
-                    .foregroundStyle(Theme.primaryText)
+                    .foregroundStyle(Theme.text)
                     .textSelection(.enabled)
                     .fixedSize(horizontal: false, vertical: true)
                 Button {
@@ -150,11 +164,14 @@ private struct Toast: View {
                     Image(systemName: "xmark")
                 }
                 .buttonStyle(.plain)
-                .foregroundStyle(Theme.secondaryText)
+                .foregroundStyle(Theme.textMuted)
+                .help("Dismiss")
             }
-            .padding(12)
+            .font(Theme.bodySm)
+            .padding(Theme.space3)
             .frame(maxWidth: 520)
-            .background(Theme.surface0, in: RoundedRectangle(cornerRadius: 10))
+            .background(Theme.mantle, in: RoundedRectangle(cornerRadius: Theme.radiusMd))
+            .overlay(RoundedRectangle(cornerRadius: Theme.radiusMd).strokeBorder(Theme.border, lineWidth: 1))
             .padding(.bottom, 52)
         }
     }
