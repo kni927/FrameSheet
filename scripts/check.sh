@@ -6,12 +6,21 @@
 #
 #   scripts/check.sh            test + build
 #   scripts/check.sh install    test + build + install to ~/Applications
+#                               and launch the installed copy
 #   scripts/check.sh build      build only (skip tests)
+#   scripts/check.sh launch     launch ~/Applications/FrameSheet.app by path
+#                               (by name, macOS may pick /Applications instead)
 set -euo pipefail
 
 REPO_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 SCRATCH_DIR="${FRAMESHEET_SCRATCH_PATH:-$HOME/Library/Caches/FrameSheet/build}"
 MODE="${1:-}"
+
+if [ "$MODE" = "launch" ]; then
+    open "$HOME/Applications/FrameSheet.app"
+    echo "Launched: ~/Applications/FrameSheet.app"
+    exit 0
+fi
 
 if [ "$MODE" != "build" ]; then
     echo "=== swift test ==="
@@ -30,4 +39,6 @@ if [ "$MODE" = "install" ]; then
     rm -rf "$HOME/Applications/FrameSheet.app"
     ditto "$REPO_DIR/build/FrameSheet.app" "$HOME/Applications/FrameSheet.app"
     echo "Installed: ~/Applications/FrameSheet.app"
+    open "$HOME/Applications/FrameSheet.app"
+    echo "Launched: ~/Applications/FrameSheet.app"
 fi

@@ -6,7 +6,8 @@
   },
   "sandbox": {
     "excludedCommands": [
-      "tools/spike/run-all.sh"
+      "tools/spike/run-all.sh",
+      "scripts/check.sh"
     ]
   }
 }

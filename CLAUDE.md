@@ -2,11 +2,12 @@
 @AGENTS.md
 
 ## Commands
-- Build: `./build.sh` — compiles the Swift sources under `src/` via `swiftc -parse-as-library`, packages `build/FrameSheet.app`, codesigns with the Developer ID Application identity (`FRAMESHEET_SIGN_IDENTITY` override; ad-hoc fallback), and zips it. Version comes from the latest git tag. Repo-local output only.
-- Test: none yet
+- Build: `./build.sh` — builds the Swift package (`swift build -c release --arch arm64`, products in `~/Library/Caches/FrameSheet/build`), assembles `build/FrameSheet.app` with the icon from `assets/AppIcon.png`, codesigns with the Developer ID Application identity (`FRAMESHEET_SIGN_IDENTITY` override; ad-hoc fallback), and zips it. Version comes from the latest git tag. `build/` holds only the `.app` and the zip.
+- Test: `swift test --scratch-path ~/Library/Caches/FrameSheet/build` — `FrameSheetCore` tests; the decode tests make short clips with the system ffmpeg and are skipped without it.
+- Check: `scripts/check.sh [install|build]` — `swift test`, `./build.sh` and, with `install`, the copy to `~/Applications`, in one call. SwiftPM cannot build inside the sandbox, so run builds and tests through this script, from the repository root as its own command, rather than one bypass per step.
 - Lint: none yet
 - Measure: `tools/spike/run-all.sh quick <out-dir> <video>...` — after decode or scan changes, a few-minute check of the v3 scan settings (one run each); `full` reruns the battery behind `docs/v3-measurements.md` (about 2 h) only when the owner asks. Run it from the repository root as its own command.
-- Sandbox-excluded scripts (listed in `.claude/settings.json`): `tools/spike/run-all.sh` (VideoToolbox and the GPU are unavailable inside the sandbox; owner approved, 2026-11-02)
+- Sandbox-excluded scripts (listed in `.claude/settings.json`): `tools/spike/run-all.sh` (VideoToolbox and the GPU are unavailable inside the sandbox; owner approved, 2026-11-02); `scripts/check.sh` (SwiftPM cannot build inside the sandbox; owner approved, 2026-11-02)
 - Checkpoint commands that always ask (`permissions.ask` in `.claude/settings.json`): none yet
 - Debug installs go to `~/Applications`, never `/Applications`.
 
