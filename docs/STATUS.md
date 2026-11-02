@@ -18,10 +18,11 @@ reproduces MoviePrint v0.2.23 for Apple Silicon: decisions 14–22 in
 - Spike follow-ups: measure 4K HEVC and HDR once the owner has such files;
   re-measure on the fastest Mac before raising defaults; re-check decode speed
   with the macOS 27 `AVAssetReaderOutput.Provider` API.
-- v3.0.0 order (owner, 2026-11-02): T03 interval editing (done) → T04 Save
-  MoviePrint, header, naming, PNG/JSON export and import → T05 shot scan,
-  timeline, cut/merge, EDL → T06 player view → T07 faces Lv1 → T08
-  transforms, Save All, polish → version and release TASK.
+- v3.0.0 order (owner, 2026-11-02): T03 interval editing (done) → T03b UI
+  legibility pass (in progress, TF #01) → T04 Save MoviePrint, header, naming,
+  PNG/JSON export and import → T05 shot scan, timeline, cut/merge, EDL → T06
+  player view → T07 faces Lv1 → T08 transforms, Save All, polish → version
+  and release TASK.
 - UI pass (owner, 2026-11-02): side by side with MoviePrint the v3 UI is
   still hard to read; detailed UI changes come in a later TASK. Tooltips on
   every control are wanted from now on.
