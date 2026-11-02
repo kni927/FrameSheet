@@ -7,7 +7,7 @@
 - Check: `scripts/check.sh [install|build]` — `swift test`, `./build.sh` and, with `install`, the copy to `~/Applications`, in one call. SwiftPM cannot build inside the sandbox, so run builds and tests through this script, from the repository root as its own command, rather than one bypass per step.
 - Lint: none yet
 - Measure: `tools/spike/run-all.sh quick <out-dir> <video>...` — after decode or scan changes, a few-minute check of the v3 scan settings (one run each); `full` reruns the battery behind `docs/v3-measurements.md` (about 2 h) only when the owner asks. Run it from the repository root as its own command.
-- Sandbox-excluded scripts (listed in `.claude/settings.json`): `tools/spike/run-all.sh` (VideoToolbox and the GPU are unavailable inside the sandbox; owner approved, 2026-11-02); `scripts/check.sh` (SwiftPM cannot build inside the sandbox; owner approved, 2026-11-02)
+- Sandbox-excluded scripts (listed in `.claude/settings.json`): `tools/spike/run-all.sh` (VideoToolbox and the GPU are unavailable inside the sandbox; owner approved, 2026-11-02); `scripts/check.sh` and `scripts/check.sh install` (SwiftPM cannot build inside the sandbox; owner approved, 2026-11-02). An exclusion matches only the exact string, so run these spelled exactly so, with no other arguments; `tools/spike/run-all.sh` with its arguments still runs sandboxed
 - Checkpoint commands that always ask (`permissions.ask` in `.claude/settings.json`): none yet
 - Debug installs go to `~/Applications`, never `/Applications`.
 
