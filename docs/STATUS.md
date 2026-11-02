@@ -27,8 +27,8 @@ reproduces MoviePrint v0.2.23 for Apple Silicon: decisions 14–22 in
   every control are wanted from now on.
 - T03 items the owner has not tried yet: Rename/Delete sheet, Locate for a
   missing movie, ⌃⌘F, frame info position and colours, Columns undo.
-- Builds and tests go through `scripts/check.sh` or `scripts/check.sh
-  install`, spelled exactly so (exclusions match the exact string).
+- Builds and tests go through `scripts/check.sh` (`install` also installs
+  and launches); it runs outside the sandbox without a dialog.
 
 ## On hold
 
