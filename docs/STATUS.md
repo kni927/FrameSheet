@@ -18,11 +18,10 @@ reproduces MoviePrint v0.2.23 for Apple Silicon: decisions 14–22 in
 - Spike follow-ups: measure 4K HEVC and HDR once the owner has such files;
   re-measure on the fastest Mac before raising defaults; re-check decode speed
   with the macOS 27 `AVAssetReaderOutput.Provider` API.
-- The v3 skeleton is on `main` (Swift package, core model, decode layer with
-  ffmpeg routing and discovery, minimal app with a default interval sheet,
-  `build.sh`; v2 `src/` removed). Next: the features in the order of
-  `docs/V3_SPEC.md`; the kni Design System's type and spacing tokens are a
-  later TASK.
+- v3.0.0 order (owner, 2026-11-02): T03 interval editing (in progress, TF
+  #01) → T04 Save MoviePrint, header, naming, PNG/JSON export and import →
+  T05 shot scan, timeline, cut/merge, EDL → T06 player view → T07 faces Lv1 →
+  T08 transforms, Save All, polish → version and release TASK.
 - Builds and tests go through `scripts/check.sh` (listed in
   `sandbox.excludedCommands`; owner approved 2026-11-02).
 
