@@ -125,8 +125,9 @@ Send each message only to the sessions that need it.
 - **Custom instructions:** `kni927/dotfiles` `instructions/full/claude.md` is
   the owner's current text; a running session keeps the copy it started with.
   When Upstream HQ changes that file, it tells each active HQ to use
-  `reload-instructions`; repository instruction files catch up by themselves
-  when a session gets a new container, or on the owner's "reload".
+  `reload-all`; repository instruction files catch up by themselves
+  when a session gets a new container, or on the owner's "reload-all" (cloud
+  and local sessions).
 - **Cloud to Mac is refused:** since about 2026-10-20 the server refuses
   `send_message` from a cloud session into a local one
   (`elevated_session_untrusted_device`, anthropics/claude-code#103864); Mac
@@ -266,7 +267,7 @@ Shared skills, copied unchanged into every repository's `.claude/skills/`:
 a session), `start-session` (Project HQ, everyday, or gateway session),
 `offer-tf` (a local TF as a one-click card), `rc-server` (TFs through Remote
 Control server mode), `find-session`, `mac-relay` (a message to a Mac
-session through the Google Drive inbox), `reload-instructions` (bring a
+session through the Google Drive inbox), `reload-all` (bring a
 running session's instructions up to date), `explain-before-shorten` (rewrite a
 Japanese explanation so it is understood, then shorten it; copied text with no
 license, so not in public repositories). `.claude/cloud-setup.sh`, copied the
