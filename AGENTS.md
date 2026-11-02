@@ -1,4 +1,4 @@
-<!-- Template synced: repo-template@9c800f0 on 2026-11-02. -->
+<!-- Template synced: repo-template@7c180e8 on 2026-11-02. -->
 # Project Instructions
 
 ## Public Repository
