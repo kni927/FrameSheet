@@ -23,9 +23,7 @@ reproduces MoviePrint v0.2.23 for Apple Silicon: decisions 14–22 in
   PNG/JSON export and import → T05 shot scan, timeline, cut/merge, EDL → T06
   player view → T07 faces Lv1 → T08 transforms, Save All, polish → version
   and release TASK.
-- UI pass (owner, 2026-11-02): side by side with MoviePrint the v3 UI is
-  still hard to read; detailed UI changes come in a later TASK. Tooltips on
-  every control are wanted from now on.
+- Tooltips on every control are wanted from now on (owner, 2026-11-02).
 - T03 items the owner has not tried yet: Rename/Delete sheet, Locate for a
   missing movie, ⌃⌘F, frame info position and colours, Columns undo.
 - Builds and tests go through `scripts/check.sh` (`install` also installs
