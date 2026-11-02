@@ -185,8 +185,48 @@ public enum Defaults {
     public static let thumbnailCacheMB = 256
 }
 
-public enum FrameInfo: String, Codable, Sendable {
+public enum FrameInfo: String, Codable, Sendable, CaseIterable {
     case frames, timecode, hidden
+}
+
+/// Where the frame info sits on a thumb (MoviePrint `FRAMEINFO_POSITION`).
+public enum FrameInfoPosition: String, Codable, Sendable, CaseIterable {
+    case topLeft, topCenter, topRight, centerCenter, bottomLeft, bottomCenter, bottomRight
+
+    public var label: String {
+        switch self {
+        case .topLeft: "Top Left"
+        case .topCenter: "Top Center"
+        case .topRight: "Top Right"
+        case .centerCenter: "Center Center"
+        case .bottomLeft: "Bottom Left"
+        case .bottomCenter: "Bottom Center"
+        case .bottomRight: "Bottom Right"
+        }
+    }
+}
+
+/// sRGB colour with alpha, components 0–1.
+public struct RGBA: Codable, Sendable, Equatable, Hashable {
+    public var red: Double
+    public var green: Double
+    public var blue: Double
+    public var alpha: Double
+
+    public init(red: Double, green: Double, blue: Double, alpha: Double = 1) {
+        self.red = red
+        self.green = green
+        self.blue = blue
+        self.alpha = alpha
+    }
+
+    public init(hex: UInt32, alpha: Double = 1) {
+        self.init(
+            red: Double((hex >> 16) & 0xFF) / 255, green: Double((hex >> 8) & 0xFF) / 255,
+            blue: Double(hex & 0xFF) / 255, alpha: alpha)
+    }
+
+    public static let clear = RGBA(red: 0, green: 0, blue: 0, alpha: 0)
 }
 
 /// Global settings (§6). Only part of the panel exists yet; the values are
@@ -203,6 +243,15 @@ public struct Settings: Codable, Sendable, Equatable {
     public var roundedCorners = true
     public var showHiddenThumbs = false
     public var frameInfo: FrameInfo = .hidden
+    /// Catppuccin Mocha crust on text, in place of MoviePrint's black on
+    /// #eee.
+    public var frameInfoColor = RGBA(hex: 0x11111B)
+    public var frameInfoBackground = RGBA(hex: 0xCDD6F4)
+    public var frameInfoPosition: FrameInfoPosition = .topLeft
+    /// 1–100.
+    public var frameInfoSize: Double = 10
+    /// 0–50.
+    public var frameInfoMargin: Double = 0
     public var thumbnailCacheMB = Defaults.thumbnailCacheMB
     /// User-chosen ffmpeg path (§10); nil means discover it.
     public var ffmpegPath: String?
@@ -214,6 +263,7 @@ public struct Settings: Codable, Sendable, Equatable {
     private enum CodingKeys: String, CodingKey {
         case marginSlider, showHeader, showPathInHeader, showDetailsInHeader, showTimelineInHeader
         case roundedCorners, showHiddenThumbs, frameInfo, thumbnailCacheMB, ffmpegPath
+        case frameInfoColor, frameInfoBackground, frameInfoPosition, frameInfoSize, frameInfoMargin
     }
 
     public init(from decoder: any Decoder) throws {
@@ -229,6 +279,11 @@ public struct Settings: Codable, Sendable, Equatable {
         frameInfo = try c.decodeIfPresent(FrameInfo.self, forKey: .frameInfo) ?? d.frameInfo
         thumbnailCacheMB = try c.decodeIfPresent(Int.self, forKey: .thumbnailCacheMB) ?? d.thumbnailCacheMB
         ffmpegPath = try c.decodeIfPresent(String.self, forKey: .ffmpegPath)
+        frameInfoColor = try c.decodeIfPresent(RGBA.self, forKey: .frameInfoColor) ?? d.frameInfoColor
+        frameInfoBackground = try c.decodeIfPresent(RGBA.self, forKey: .frameInfoBackground) ?? d.frameInfoBackground
+        frameInfoPosition = try c.decodeIfPresent(FrameInfoPosition.self, forKey: .frameInfoPosition) ?? d.frameInfoPosition
+        frameInfoSize = try c.decodeIfPresent(Double.self, forKey: .frameInfoSize) ?? d.frameInfoSize
+        frameInfoMargin = try c.decodeIfPresent(Double.self, forKey: .frameInfoMargin) ?? d.frameInfoMargin
     }
 }
 
