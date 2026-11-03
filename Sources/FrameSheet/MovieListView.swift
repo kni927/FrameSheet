@@ -68,7 +68,6 @@ private struct MovieRow: View {
                     .padding(.top, 2)
             } else {
                 Text(details)
-                    .font(Theme.detailCondensed)
                     .monospacedDigit()
                     .lineLimit(1)
                     .truncationMode(.middle)

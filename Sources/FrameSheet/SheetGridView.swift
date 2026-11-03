@@ -17,6 +17,8 @@ struct SheetGridView: View {
         let dimmed = hoverButton.map { Sheet.affectedThumbs($0.button, of: $0.thumb, in: thumbs) } ?? []
         // Target rows beyond the thumbs' rows preview as empty cells.
         let cellCount = model.gridCellCount(of: sheet)
+        // Target rows below the thumbs' rows dim the thumbs past columns × rows.
+        let targetCount = sheet.columnCount * model.targetRows(of: sheet)
         GeometryReader { proxy in
             let padding = Self.padding
             let top = padding
@@ -30,7 +32,7 @@ struct SheetGridView: View {
                         let frame = geometry.thumbFrame(at: index)
                         ThumbView(
                             file: file, sheet: sheet, thumb: thumb, size: frame.size,
-                            cornerRadius: geometry.borderRadius, dimmed: dimmed.contains(thumb.id),
+                            cornerRadius: geometry.borderRadius, dimmed: dimmed.contains(thumb.id) || index >= targetCount,
                             onHoverButton: { button in
                                 hoverButton = button.map { (thumb.id, $0) }
                             })
