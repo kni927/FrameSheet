@@ -24,11 +24,10 @@ reproduces MoviePrint v0.2.23 for Apple Silicon: decisions 14–22 in
   player view → T07 faces Lv1 → T08 transforms, Save All, polish → version
   and release TASK.
 - Tooltips on every control, kept short (owner, 2026-11-02/03).
-- To the HQ for the spec (owner, 2026-11-03): SF fonts as the app default
-  instead of IBM Plex; plain sheet names (e.g. screenshot-1) instead of
-  MoviePrint-N; Save as a download button in the toolbar (T04); a player view
-  button with T06. `docs/V3_SPEC.md` §4 and §6 still describe the floating
-  toolbar, footer, no Preferences window and "Change thumb count".
+- `docs/V3_SPEC.md` §6 Grid view still describes "Change thumb count"; T03b
+  made Rows a target with a Replace button (HQ to update).
+- Sheets are still named `MoviePrint-N` in code; the spec now says `Sheet-N`
+  (owner, 2026-11-03), for T04.
 - Not yet tried by the owner: Rename/Delete sheet, Locate, ⌃⌘F, the scrub at
   the smallest window size, ⌘Z while renaming.
 - Builds and tests go through `scripts/check.sh` (`install` also installs
