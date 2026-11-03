@@ -6,8 +6,8 @@ This file contains crucial instructions, project overview, and development logs 
 
 - **Name**: FrameSheet (previously MoviePrint wrapper)
 - **Role**: A premium macOS native SwiftUI wrapper for `vcsi` (Video Contact Sheet Creator).
-- **Directory**: `/Users/kni/.gemini/antigravity/scratch/MoviePrintWrapper`
-- **Output Bundle**: `/Users/kni/.gemini/antigravity/scratch/MoviePrintWrapper/build/FrameSheet.app`
+- **Directory**: `~/.gemini/antigravity/scratch/MoviePrintWrapper`
+- **Output Bundle**: `~/.gemini/antigravity/scratch/MoviePrintWrapper/build/FrameSheet.app`
 
 ## Technical Stack & Constraints
 
@@ -16,7 +16,7 @@ This file contains crucial instructions, project overview, and development logs 
 - **AI Output Language**: Japanese (logs, thoughts, plans, and explanations to the user must be in Japanese)
 - **Compilation**: Single-file swiftc compiler setup via `build.sh`.
 - **Dependencies**:
-  - `vcsi` (typically installed at `/Users/kni/miniforge3/bin/vcsi` or on the PATH)
+  - `vcsi` (typically installed at `~/miniforge3/bin/vcsi` or on the PATH)
   - `ffmpeg` and `ffprobe` (checked at launch)
 
 ---

@@ -1,5 +1,8 @@
 # UI Audit: FrameSheet vs. MoviePrint
 
+> **Superseded (2026-11-01).** This audit describes v2. The v3 rebuild
+> follows `docs/V3_SPEC.md` (decisions 14 on); this file is kept as history.
+
 **Audit-only.** No UI or application code was changed to produce this
 document. Source: `main.swift` (static read, 2208 lines, single file)
 and five reference screenshots of MoviePrint in `docs/reference/`
