@@ -74,7 +74,9 @@ extension AppModel {
     /// off the main actor; then the individual thumbs when asked. The toast
     /// shows each stage; Cancel stops between frames and between stages.
     func saveSheet() {
-        guard !isSaving, let file = currentFile, let sheet = currentSheet else { return }
+        guard !isSaving else { return }
+        if let id = library.currentFileId { checkMovieFile(id) }
+        guard let file = currentFile, let sheet = currentSheet else { return }
         guard !missing.contains(file.id) else {
             toast = "\(file.name): the movie is missing."
             return
@@ -95,7 +97,9 @@ extension AppModel {
                 let (url, failures, fromWindow) = try await writeSheet(
                     file: file, sheet: sheet, settings: settings, plan: plan)
                 showNotice("Saved \(url.lastPathComponent)")
-                if failures + fromWindow > 0 {
+                if failures + fromWindow > 0, !checkMovieFile(file.id), missing.contains(file.id) {
+                    toast = "\(file.name): the movie is missing."
+                } else if failures + fromWindow > 0 {
                     // The window's thumbs are 640 px wide, often less than
                     // the print's, so the save says when it used them.
                     toast = "\(file.name): \(failures + fromWindow) frame(s) could not be decoded for the print"
@@ -105,7 +109,9 @@ extension AppModel {
             } catch is CancellationError {
                 showNotice("Saving canceled.")
             } catch {
-                toast = "\(sheet.name) could not be saved: \(error.localizedDescription)"
+                toast = !checkMovieFile(file.id) && missing.contains(file.id)
+                    ? "\(file.name): the movie is missing."
+                    : "\(sheet.name) could not be saved: \(error.localizedDescription)"
             }
         }
     }
@@ -260,7 +266,9 @@ extension AppModel {
                 showNotice("Saved \(url.lastPathComponent)")
                 if settings.openFinderAfterSaving { NSWorkspace.shared.activateFileViewerSelecting([url]) }
             } catch {
-                toast = "Frame \(thumb.frameNumber) could not be saved: \(error.localizedDescription)"
+                toast = !checkMovieFile(file.id) && missing.contains(file.id)
+                    ? "\(file.name): the movie is missing."
+                    : "Frame \(thumb.frameNumber) could not be saved: \(error.localizedDescription)"
             }
         }
     }

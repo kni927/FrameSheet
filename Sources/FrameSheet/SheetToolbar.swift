@@ -3,7 +3,8 @@ import SwiftUI
 
 /// The sheet tools in the window toolbar next to the title (§4's floating
 /// toolbar, moved there by the owner, 2026-11-03), the parts that work on
-/// interval sheets: back to parent, add interval sheet, duplicate, zoom (with
+/// interval sheets: back to parent, add interval sheet, duplicate, undo and
+/// redo, zoom (with
 /// Fit height and Fit width when they would change the fit), show hidden
 /// thumbs, show header, cycle frame info, optimize grid layout, Save
 /// Sheet with its menu, then the right panel toggle. Disabled while no sheet is shown (not the toggle). Each group is
@@ -23,7 +24,7 @@ struct SheetToolbar: ToolbarContent {
                 Button {
                     model.backToParent()
                 } label: {
-                    Label("Back to parent", systemImage: "arrow.uturn.backward")
+                    Label("Back to parent", systemImage: "arrow.turn.left.up")
                 }
                 .buttonStyle(ToolbarIconStyle(grouped: true))
                 .toolbarHelp("Back to parent sheet")
@@ -48,6 +49,23 @@ struct SheetToolbar: ToolbarContent {
                 .buttonStyle(ToolbarIconStyle(grouped: true))
                 .toolbarHelp("Duplicate sheet")
                 .disabled(noSheet)
+                // The Edit menu's Undo and Redo, text field typing included.
+                Button {
+                    model.performUndo()
+                } label: {
+                    Label("Undo", systemImage: "arrow.uturn.backward")
+                }
+                .buttonStyle(ToolbarIconStyle(grouped: true))
+                .toolbarHelp("Undo (⌘Z)")
+                .disabled(!model.canPerformUndo)
+                Button {
+                    model.performRedo()
+                } label: {
+                    Label("Redo", systemImage: "arrow.uturn.forward")
+                }
+                .buttonStyle(ToolbarIconStyle(grouped: true))
+                .toolbarHelp("Redo (⇧⌘Z)")
+                .disabled(!model.canPerformRedo)
             }
         }
         .sharedBackgroundVisibility(.hidden)

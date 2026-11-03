@@ -418,7 +418,8 @@ private struct OutputSection: View {
         let settings = model.library.settings
         let folder = model.outputFolder(for: model.currentFile)
         let isPNG = settings.outputFormat == .png
-        // Folder and size always; the rest under More (owner, 2026-11-03).
+        // Folder, size and format always; the rest under More (owner,
+        // 2026-11-03).
         PanelSection(title: "Output", expandedKey: "output") {
             PanelRow("Folder") {
                 Text(settings.outputSameFolderAsMovie
@@ -437,10 +438,10 @@ private struct OutputSection: View {
                 title: "Same as movie file", isOn: model.setting(\.outputSameFolderAsMovie),
                 help: "Save next to the movie instead")
             SizeRows()
-        } more: {
             PanelRow("Format") {
                 FormatPicker(selection: model.setting(\.outputFormat), help: "Image format of the print")
             }
+        } more: {
             LabeledSlider(
                 title: "Quality", value: intSetting(\.outputQuality), range: 0...100,
                 help: "JPG quality of the print")

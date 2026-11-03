@@ -20,21 +20,15 @@ struct FrameSheetApp: App {
             CommandGroup(replacing: .newItem) {
                 Button("Add Movies…") { model.presentOpenPanel() }
             }
-            // Library undo (§3). While a text field is being edited, the
-            // items undo and redo the typing instead (KNOWN_ISSUES 5); they
-            // stay enabled while the rename field has focus, so the shortcut
-            // reaches it.
+            // Library undo (§3), or the typing while a text field is being
+            // edited (`AppModel.performUndo`); the toolbar has the same.
             CommandGroup(replacing: .undoRedo) {
-                Button("Undo") {
-                    if let text = Self.editedText { text.undoManager?.undo() } else { model.undo() }
-                }
-                .keyboardShortcut("z", modifiers: .command)
-                .disabled(!model.canUndo && !model.isEditingText)
-                Button("Redo") {
-                    if let text = Self.editedText { text.undoManager?.redo() } else { model.redo() }
-                }
-                .keyboardShortcut("z", modifiers: [.command, .shift])
-                .disabled(!model.canRedo && !model.isEditingText)
+                Button("Undo") { model.performUndo() }
+                    .keyboardShortcut("z", modifiers: .command)
+                    .disabled(!model.canPerformUndo)
+                Button("Redo") { model.performRedo() }
+                    .keyboardShortcut("z", modifiers: [.command, .shift])
+                    .disabled(!model.canPerformRedo)
             }
             // View menu; Enter Full Screen (⌃⌘F) comes with the window.
             CommandGroup(before: .toolbar) {
@@ -55,11 +49,6 @@ struct FrameSheetApp: App {
                 .environment(model)
                 .preferredColorScheme(.dark)
         }
-    }
-
-    /// The field editor of the text field being edited in the key window.
-    @MainActor private static var editedText: NSText? {
-        NSApp.keyWindow?.firstResponder as? NSText
     }
 }
 

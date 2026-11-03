@@ -212,6 +212,26 @@ final class AppModel {
         if document.redo() { refreshLinks(); didChange() }
     }
 
+    /// Undo and Redo in the Edit menu and the window toolbar: the typing
+    /// while a text field is being edited (KNOWN_ISSUES 5), else the library.
+    /// They stay enabled while the rename field has focus, so the shortcut
+    /// reaches it.
+    var canPerformUndo: Bool { canUndo || isEditingText }
+    var canPerformRedo: Bool { canRedo || isEditingText }
+
+    func performUndo() {
+        if let text = Self.editedText { text.undoManager?.undo() } else { undo() }
+    }
+
+    func performRedo() {
+        if let text = Self.editedText { text.undoManager?.redo() } else { redo() }
+    }
+
+    /// The field editor of the text field being edited in the key window.
+    private static var editedText: NSText? {
+        NSApp.keyWindow?.firstResponder as? NSText
+    }
+
     /// After undo or redo (of Replace movie, Clear movie list or an import):
     /// drops backends and images that belong to another file than the entry
     /// now names, checks again which movies are missing and loads posters.
@@ -565,10 +585,41 @@ final class AppModel {
         }
     }
 
+    /// Whether a movie is still where its entry says; a cheap check (no
+    /// probe) after a decode failure and on selecting a movie or sheet. A
+    /// file that is not at its URL is looked up by its bookmark as on launch:
+    /// when the bookmark finds it elsewhere, the entry follows (not undoable,
+    /// like launch) and its images are decoded again; when it is gone, the
+    /// movie is marked missing (Locate in the movie list) and its backend
+    /// dropped. Returns false in both cases, so the caller shows no
+    /// decode-failure toast.
+    @discardableResult
+    func checkMovieFile(_ fileId: UUID) -> Bool {
+        guard let i = library.files.firstIndex(where: { $0.id == fileId }) else { return false }
+        guard !missing.contains(fileId) else { return false }
+        if FileManager.default.fileExists(atPath: library.files[i].url.path) { return true }
+        var resolved = library
+        var gone: Set<UUID> = []
+        Self.resolveBookmark(at: i, in: &resolved, missing: &gone)
+        backends[fileId] = nil
+        if scrub?.ref.fileId == fileId { cancelScrub() }
+        if gone.contains(fileId) {
+            missing.insert(fileId)
+        } else {
+            let moved = resolved.files[i]
+            linkedURLs[fileId] = moved.url
+            forgetImages()
+            update { $0.files[i] = moved }
+            for file in library.files { loadPoster(file) }
+        }
+        return false
+    }
+
     // MARK: - Selection
 
     func select(file id: UUID) {
         guard library.file(id) != nil else { return }
+        checkMovieFile(id)
         update { Self.selectFile(id, in: &$0) }
     }
 
@@ -582,6 +633,7 @@ final class AppModel {
 
     func select(sheet sheetId: UUID, of fileId: UUID) {
         cancelScrub()
+        checkMovieFile(fileId)
         update {
             $0.currentFileId = fileId
             $0.currentSheetId = sheetId
@@ -963,7 +1015,8 @@ final class AppModel {
             do {
                 backend = try await self.backend(for: file)
             } catch {
-                toast = "\(file.name): \(error.localizedDescription)"
+                for frame in wanted { loading.remove(Self.loadingKey(file.id, frame, width)) }
+                if checkMovieFile(file.id) { toast = "\(file.name): \(error.localizedDescription)" }
                 return
             }
             var failures = 0
@@ -984,7 +1037,11 @@ final class AppModel {
                     failures += 1
                 }
             }
-            if failures > 0 { toast = "\(file.name): \(failures) frame(s) could not be decoded." }
+            guard failures > 0 else { return }
+            // A moved or deleted file shows as missing in the movie list
+            // instead; done loading first, so a followed file decodes again.
+            for frame in wanted { loading.remove(Self.loadingKey(file.id, frame, width)) }
+            if checkMovieFile(file.id) { toast = "\(file.name): \(failures) frame(s) could not be decoded." }
         }
     }
 
