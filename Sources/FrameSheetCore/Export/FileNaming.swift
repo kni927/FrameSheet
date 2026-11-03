@@ -25,7 +25,7 @@ public enum FileNaming {
 
     /// Expands `[MN]` movie name, `[ME]` extension, `[SN]` (or `[MPN]`)
     /// sheet name, `[FN]` frame number padded to 6 digits and `[TC]`
-    /// timecode `HH_MM_SS_FF`, then sanitises the result. Without a frame
+    /// timecode `HH_MM_SS_FF`, then sanitizes the result. Without a frame
     /// number `[FN]` and `[TC]` are empty. Tokens are matched in upper case
     /// only (MoviePrint's lookup fails on other cases).
     public static func expand(
@@ -51,7 +51,7 @@ public enum FileNaming {
                 result.append(rest.removeFirst())
             }
         }
-        return sanitise(result)
+        return sanitize(result)
     }
 
     /// `expand` with the movie's file name ("film.mp4").
@@ -65,7 +65,7 @@ public enum FileNaming {
     }
 
     /// Replaces each of `/\?%*:|"<>` with "-".
-    public static func sanitise(_ name: String) -> String {
+    public static func sanitize(_ name: String) -> String {
         String(name.map { invalidCharacters.contains($0) ? "-" : $0 })
     }
 

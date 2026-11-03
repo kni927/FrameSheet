@@ -7,9 +7,9 @@ public struct ScrubModifiers: OptionSet, Sendable {
     public let rawValue: Int
     public init(rawValue: Int) { self.rawValue = rawValue }
 
-    /// From the left neighbour to the current thumb; insert before.
+    /// From the left neighbor to the current thumb; insert before.
     public static let shift = ScrubModifiers(rawValue: 1 << 0)
-    /// From the current thumb to the right neighbour; insert after.
+    /// From the current thumb to the right neighbor; insert after.
     public static let option = ScrubModifiers(rawValue: 1 << 1)
     /// Left or right of the live frame: extend to movie start or end.
     public static let control = ScrubModifiers(rawValue: 1 << 2)
@@ -39,8 +39,8 @@ public enum ScrubAction: Sendable, Equatable {
 }
 
 public struct ScrubMapping: Sendable {
-    /// Frames of the scrubbed thumb and its visible neighbours (a thumb at
-    /// either end is its own neighbour there).
+    /// Frames of the scrubbed thumb and its visible neighbors (a thumb at
+    /// either end is its own neighbor there).
     public var thumbFrame: Int
     public var leftFrame: Int
     public var rightFrame: Int
@@ -67,8 +67,8 @@ public struct ScrubMapping: Sendable {
     }
 
     /// The frame for a pointer position. Over the live frame the pointer maps
-    /// linearly between the neighbours (Shift: left neighbour → thumb;
-    /// Option: thumb → right neighbour). Left or right of it, the frame
+    /// linearly between the neighbors (Shift: left neighbor → thumb;
+    /// Option: thumb → right neighbor). Left or right of it, the frame
     /// holds at that end, except with Control or on the first/last thumb,
     /// where it maps on to the start or end of the movie.
     public func frame(atX x: Double, modifiers: ScrubModifiers) -> Int {

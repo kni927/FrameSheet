@@ -84,7 +84,7 @@ import Testing
 
 /// Decodes clips made on the fly by the system ffmpeg (skipped without
 /// it). Frame n of each clip shows n in binary as six black or white
-/// stripes (bit 0 on the left), which survive scaling and colour
+/// stripes (bit 0 on the left), which survive scaling and color
 /// conversion, so the decoded image tells which frame came back.
 @Suite(.serialized) struct DecodeIntegrationTests {
     static let tools: FFmpegTools? = {

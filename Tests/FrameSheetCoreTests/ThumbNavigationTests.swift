@@ -56,7 +56,7 @@ private func sheet(_ frames: [Int], hidden: Set<Int> = []) -> Sheet {
         #expect(last.keyboardRange(modifiers: []) == 50...999)
     }
 
-    @Test func scrubLayoutCentresTheLiveFrame() {
+    @Test func scrubLayoutCentersTheLiveFrame() {
         let layout = ScrubLayout(containerWidth: 1200, containerHeight: 800, aspectRatioInv: 9.0 / 16.0)
         #expect(layout.live.width == 600)
         #expect(abs(layout.live.midX - 600) < 0.001)

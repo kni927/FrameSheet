@@ -123,10 +123,7 @@ struct MainArea: View {
         .dropDestination(for: URL.self) { urls, _ in
             // PNGs and JSON files are imported as sheets; the rest are
             // added as movies (Option clears the list first).
-            let sheets = urls.filter { AppModel.importExtensions.contains($0.pathExtension.lowercased()) }
-            let movies = urls.filter { !AppModel.importExtensions.contains($0.pathExtension.lowercased()) }
-            if !movies.isEmpty { model.addMovies(movies, clearFirst: NSEvent.modifierFlags.contains(.option)) }
-            if !sheets.isEmpty { model.importSheets(sheets) }
+            model.openFiles(urls, clearFirst: NSEvent.modifierFlags.contains(.option))
             return true
         } isTargeted: { isDropTargeted = $0 }
     }

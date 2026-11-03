@@ -4,7 +4,7 @@ import Observation
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// A scrub in progress (§7): the thumb, its neighbours' frames and the frame
+/// A scrub in progress (§7): the thumb, its neighbors' frames and the frame
 /// under the pointer (or chosen with the arrow keys).
 struct ScrubSession {
     var ref: SheetRef
@@ -39,8 +39,13 @@ final class AppModel {
     var library: Library { document.library }
     private(set) var ffmpeg: FFmpegDiscovery?
     private(set) var isFindingFFmpeg = false
-    /// Latest error for the toast; nil hides it.
-    var toast: String?
+    /// Latest warning or error for the toast; nil hides it. It clears itself
+    /// after `toastSeconds` (the close button hides it sooner).
+    var toast: String? {
+        didSet { scheduleToastDismissal() }
+    }
+    @ObservationIgnored private var toastDismissal: Task<Void, Never>?
+    static let toastSeconds = 10
     /// A short confirmation ("Saved …"), shown when no error is; clears
     /// itself after a few seconds.
     var notice: String?
@@ -236,6 +241,17 @@ final class AppModel {
         loadCurrentSheet()
     }
 
+    /// Restarts the timer that clears the toast, for each new message.
+    private func scheduleToastDismissal() {
+        toastDismissal?.cancel()
+        guard let message = toast else { return }
+        toastDismissal = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(Self.toastSeconds))
+            guard !Task.isCancelled, let self, toast == message else { return }
+            toast = nil
+        }
+    }
+
     // MARK: - ffmpeg
 
     func findFFmpeg() {
@@ -295,15 +311,28 @@ final class AppModel {
 
     func presentOpenPanel() {
         let panel = NSOpenPanel()
-        panel.message = "Add movies"
+        panel.message = "Add movies (PNG and JSON files are imported as sheets)"
         panel.allowsMultipleSelection = true
         panel.canChooseDirectories = false
         guard panel.runModal() == .OK else { return }
-        addMovies(panel.urls, clearFirst: false)
+        openFiles(panel.urls)
     }
 
-    func addMovies(_ urls: [URL], clearFirst: Bool) {
+    /// Every way files come in (Add movies, drop, Import Sheet…, Open With)
+    /// ends here: PNGs and JSON files are imported as sheets, the rest are
+    /// added as movies. `clearFirst` (Option-drop) clears the list first.
+    func openFiles(_ urls: [URL], clearFirst: Bool = false) {
+        // A file reference URL (/.file/id=…) has no extension to route by.
+        let files = urls.filter(\.isFileURL).map { ($0 as NSURL).filePathURL ?? $0 }
+        let routed = IncomingFiles.route(files)
+        guard !routed.movies.isEmpty || !routed.sheets.isEmpty else { return }
         if clearFirst { clearList() }
+        if !routed.movies.isEmpty { addMovies(routed.movies) }
+        if !routed.sheets.isEmpty { importSheets(routed.sheets) }
+    }
+
+    /// Adds movies as they are; files from outside go through `openFiles`.
+    private func addMovies(_ urls: [URL]) {
         Task {
             var added: [MovieFile] = []
             for url in urls where url.isFileURL {
@@ -397,6 +426,10 @@ final class AppModel {
     /// as one undo step (thumb frames kept, clamped to the new length); the
     /// cached thumbs are dropped and decoded again from the new file.
     private func relink(_ fileId: UUID, to url: URL) {
+        guard !IncomingFiles.isSheetFile(url) else {
+            toast = "\(url.lastPathComponent) is a sheet file, not a movie: use Import Sheet… to import it."
+            return
+        }
         Task {
             let backend: any DecodeBackend
             do {
@@ -421,8 +454,6 @@ final class AppModel {
 
     // MARK: - Import (§12)
 
-    static let importExtensions: Set<String> = ["png", "json"]
-
     /// More options → Import Sheet…
     func presentImportPanel() {
         let panel = NSOpenPanel()
@@ -431,7 +462,7 @@ final class AppModel {
         panel.allowsMultipleSelection = true
         panel.canChooseDirectories = false
         guard panel.runModal() == .OK else { return }
-        importSheets(panel.urls)
+        openFiles(panel.urls)
     }
 
     /// Reads PNGs and JSON files from FrameSheet or MoviePrint 0.2.x: each
@@ -439,7 +470,7 @@ final class AppModel {
     /// `onImportMoviePrint`), all in one undo step. A movie that exists is
     /// probed like Add movies; one that does not shows as missing, for
     /// Locate.
-    func importSheets(_ urls: [URL]) {
+    private func importSheets(_ urls: [URL]) {
         Task {
             var errors: [String] = []
             var found: [(id: UUID, name: String, data: SheetExchange, backend: (any DecodeBackend)?, missing: Bool)] = []
@@ -655,9 +686,9 @@ final class AppModel {
         max(shownThumbs(of: sheet).count, sheet.columnCount * targetRows(of: sheet))
     }
 
-    func optimiseGrid() {
+    func optimizeGrid() {
         guard let ref = currentRef else { return }
-        edit { $0.optimiseGrid(ref) }
+        edit { $0.optimizeGrid(ref) }
     }
 
     func zoom(in zoomIn: Bool) { zoom = GridLayout.zoom(from: zoom, in: zoomIn) }
@@ -756,7 +787,7 @@ final class AppModel {
         guard let ref = currentRef, let sheet = currentSheet, let file = currentFile,
               let own = sheet.thumbs.first(where: { $0.id == thumb })
         else { return }
-        let (left, right) = sheet.visibleNeighbours(of: thumb)
+        let (left, right) = sheet.visibleNeighbors(of: thumb)
         let layout = scrubLayout(for: file)
         let mapping = ScrubMapping(
             thumbFrame: own.frameNumber, leftFrame: left, rightFrame: right, frameCount: file.frameCount,

@@ -284,9 +284,9 @@ public struct SheetExchange: Sendable, Equatable {
     }
 
     /// `<file>-<sheet>.json`, the file name with its extension
-    /// ("film.mp4-Sheet-1.json"), sanitised.
+    /// ("film.mp4-Sheet-1.json"), sanitized.
     public static func jsonFileName(movieFileName: String, sheetName: String) -> String {
-        FileNaming.sanitise("\(movieFileName)-\(sheetName)") + ".json"
+        FileNaming.sanitize("\(movieFileName)-\(sheetName)") + ".json"
     }
 
     private struct JSONFile: Decodable {

@@ -121,7 +121,7 @@ private struct FrameInfoLabel: View {
 /// the optional folder and details lines, right-aligned as in MoviePrint or
 /// left-aligned (`headerAlignment`) over the full width, and the optional
 /// mini timeline under them. Sizes are `PrintHeader.Metrics` of the logo
-/// band; colours are kni tokens.
+/// band; colors are kni tokens.
 struct PrintHeaderView: View {
     let file: MovieFile
     /// The print's thumbs, for the timeline.

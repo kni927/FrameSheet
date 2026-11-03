@@ -2,8 +2,8 @@ import FrameSheetCore
 import SwiftUI
 
 /// The scrub overlay over the main area (§7): Cancel bar on top, then the
-/// low neighbour, the live frame with its CHANGE TO / ADD … label, and the
-/// high neighbour. Placement comes from `ScrubLayout`, so the frames line up
+/// low neighbor, the live frame with its CHANGE TO / ADD … label, and the
+/// high neighbor. Placement comes from `ScrubLayout`, so the frames line up
 /// with the pointer mapping in `AppModel`.
 struct ScrubOverlay: View {
     @Environment(AppModel.self) private var model
@@ -17,8 +17,8 @@ struct ScrubOverlay: View {
             CancelBar(highlighted: session.overCancel, keyboard: session.keyboard, sticky: session.sticky)
                 .frame(height: ScrubLayout.cancelBarHeight)
                 .frame(maxWidth: .infinity)
-            neighbour(session.lowFrame, in: layout.left)
-            neighbour(session.highFrame, in: layout.right)
+            neighbor(session.lowFrame, in: layout.left)
+            neighbor(session.highFrame, in: layout.right)
             live(in: layout.live)
             label(in: layout.label)
             hint(in: layout.hint)
@@ -37,7 +37,7 @@ struct ScrubOverlay: View {
         .allowsHitTesting(session.keyboard || session.sticky)
     }
 
-    private func neighbour(_ frame: Int, in rect: CGRect) -> some View {
+    private func neighbor(_ frame: Int, in rect: CGRect) -> some View {
         VStack(spacing: Theme.space1) {
             FrameImage(image: model.image(file: file.id, frame: frame, width: AppModel.thumbWidth))
                 .frame(width: rect.width, height: rect.height)
@@ -61,7 +61,7 @@ struct ScrubOverlay: View {
             .offset(x: rect.minX, y: rect.minY)
     }
 
-    /// The action, frame number and timecode on one line, centred over the
+    /// The action, frame number and timecode on one line, centered over the
     /// live frame; in a narrow window the timecode truncates first.
     private func label(in rect: CGRect) -> some View {
         HStack(spacing: Theme.space2) {

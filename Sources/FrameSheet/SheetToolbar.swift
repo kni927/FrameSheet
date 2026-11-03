@@ -134,7 +134,7 @@ struct SheetToolbar: ToolbarContent {
                     .toolbarHelp("Frame info: \(frameInfoName(settings.frameInfo)) (click cycles)")
                     .disabled(noSheet)
                     Button {
-                        model.optimiseGrid()
+                        model.optimizeGrid()
                     } label: {
                         Label("Optimize grid", systemImage: "square.grid.3x3")
                     }

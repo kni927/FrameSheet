@@ -23,7 +23,7 @@ import Testing
         let name = FileNaming.expand(
             "[MN]|[ME]|[SN]|[MPN]|[FN]|[TC]", movieName: "a.b", movieExtension: "mov",
             sheetName: "Sheet-2", frameNumber: 25 * 3661 + 7, fps: 25)
-        // "|" is sanitised too.
+        // "|" is sanitized too.
         #expect(name == "a.b-mov-Sheet-2-Sheet-2-091532-01_01_01_07")
         // Without a frame number [FN] and [TC] are empty; other cases stay literal.
         #expect(FileNaming.expand("[MN]-[FN][TC]-[mn]", movieName: "x", movieExtension: "mp4",
@@ -39,9 +39,9 @@ import Testing
         #expect(FileNaming.split(fileName: ".hidden") == (".hidden", ""))
     }
 
-    @Test func sanitising() {
-        #expect(FileNaming.sanitise(#"a/b\c?d%e*f:g|h"i<j>k"#) == "a-b-c-d-e-f-g-h-i-j-k")
-        #expect(FileNaming.sanitise("Ünïcode film") == "Ünïcode film")
+    @Test func sanitizing() {
+        #expect(FileNaming.sanitize(#"a/b\c?d%e*f:g|h"i<j>k"#) == "a-b-c-d-e-f-g-h-i-j-k")
+        #expect(FileNaming.sanitize("Ünïcode film") == "Ünïcode film")
     }
 
     @Test func editSuffixWhenNotOverwriting() {
@@ -62,6 +62,22 @@ import Testing
         #expect(FileNaming.templateLacksFrameToken("[MN].[ME]-thumb"))
         #expect(!FileNaming.templateLacksFrameToken(FileNaming.defaultIndividualThumbTemplate))
         #expect(!FileNaming.templateLacksFrameToken("[MN]-[TC]"))
+    }
+}
+
+@Suite struct IncomingFilesTests {
+    @Test func sheetFilesGoToImportAndTheRestToMovies() {
+        let urls = ["a.mp4", "b.png", "c.JSON", "d.Png", "e.mov", "noext", "f.json.mov", "g.mkv.json"]
+            .map { URL(fileURLWithPath: "/tmp/\($0)") }
+        let routed = IncomingFiles.route(urls)
+        #expect(routed.sheets.map(\.lastPathComponent) == ["b.png", "c.JSON", "d.Png", "g.mkv.json"])
+        #expect(routed.movies.map(\.lastPathComponent) == ["a.mp4", "e.mov", "noext", "f.json.mov"])
+    }
+
+    @Test func movieTypesAreNotSheets() {
+        for name in ["clip.m4v", "clip.avi", "clip.MP4", "clip.jpg", ".png"] {
+            #expect(!IncomingFiles.isSheetFile(URL(fileURLWithPath: "/tmp/\(name)")), "\(name)")
+        }
     }
 }
 

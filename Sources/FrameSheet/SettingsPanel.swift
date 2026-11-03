@@ -284,7 +284,7 @@ private struct FrameInfoSection: View {
             LabeledSlider(
                 title: "Size", value: model.setting(\.frameInfoSize), range: 1...100,
                 help: "Relative to thumb height")
-            ColorRow(title: "Colour", value: model.setting(\.frameInfoColor), keepsOpacity: false)
+            ColorRow(title: "Color", value: model.setting(\.frameInfoColor), keepsOpacity: false)
             ColorRow(title: "Background", value: model.setting(\.frameInfoBackground), keepsOpacity: true)
             LabeledSlider(
                 title: "Background opacity",
@@ -340,8 +340,8 @@ private struct FontFamilyPicker: View {
     }
 }
 
-/// A few Catppuccin swatches, Transparent, and the system colour picker for
-/// any other colour. With `keepsOpacity` a new colour keeps the opacity set
+/// A few Catppuccin swatches, Transparent, and the system color picker for
+/// any other color. With `keepsOpacity` a new color keeps the opacity set
 /// by the slider (the opacity of Transparent is restored to 100 %).
 private struct ColorRow: View {
     let title: String
@@ -353,7 +353,7 @@ private struct ColorRow: View {
         PanelRow(title) {
             HStack(spacing: Theme.space1) {
                 ForEach(Theme.frameInfoPresets, id: \.name) { preset in
-                    Swatch(rgba: preset.rgba, selected: value.alpha > 0 && sameColour(value, preset.rgba)) {
+                    Swatch(rgba: preset.rgba, selected: value.alpha > 0 && sameColor(value, preset.rgba)) {
                         choose(preset.rgba)
                     }
                     .help(preset.name)
@@ -366,19 +366,19 @@ private struct ColorRow: View {
                     supportsOpacity: false
                 )
                 .labelsHidden()
-                .help("Any colour")
+                .help("Any color")
             }
         }
         .help(help ?? title)
     }
 
-    private func choose(_ colour: RGBA) {
-        var new = colour
+    private func choose(_ color: RGBA) {
+        var new = color
         new.alpha = keepsOpacity && value.alpha > 0 ? value.alpha : 1
         value = new
     }
 
-    private func sameColour(_ a: RGBA, _ b: RGBA) -> Bool {
+    private func sameColor(_ a: RGBA, _ b: RGBA) -> Bool {
         abs(a.red - b.red) < 0.002 && abs(a.green - b.green) < 0.002 && abs(a.blue - b.blue) < 0.002
     }
 }
@@ -452,8 +452,8 @@ private struct OutputSection: View {
                 title: "Overwrite", isOn: model.setting(\.overwrite),
                 help: "Replace a file of the same name; off adds \" edit N\"")
             SwitchRow(
-                title: "Include individual thumbs", isOn: model.setting(\.includeIndividualThumbs),
-                help: "Also save each visible thumb at full size, in a folder named after the print")
+                title: "Also save each thumb", isOn: model.setting(\.includeIndividualThumbs),
+                help: "Saves every visible thumb as its own image in a folder named after the sheet image")
             SwitchRow(
                 title: "Embed frame numbers", isOn: model.setting(\.embedFrameNumbers),
                 help: "PNG only: embed the frames, columns and transform so the PNG can be imported")
@@ -552,9 +552,36 @@ private struct NamingSection: View {
                 title: "Single thumb", key: \.singleThumbNameTemplate, isThumb: true,
                 fileExtension: settings.thumbFormat.fileExtension)
             TemplateField(
-                title: "Individual thumbs", key: \.individualThumbNameTemplate, isThumb: true,
+                title: "Each thumb", key: \.individualThumbNameTemplate, isThumb: true,
                 fileExtension: settings.thumbFormat.fileExtension)
+            TokenLegend()
         }
+    }
+}
+
+/// The tokens a template may hold, under the fields.
+private struct TokenLegend: View {
+    static let tokens: [(token: String, meaning: String)] = [
+        ("[MN]", "movie name"),
+        ("[ME]", "extension"),
+        ("[SN]", "sheet name ([MPN] also works)"),
+        ("[FN]", "frame number (6 digits)"),
+        ("[TC]", "timecode HH_MM_SS_FF"),
+    ]
+
+    var body: some View {
+        Grid(alignment: .leading, horizontalSpacing: Theme.space2, verticalSpacing: 1) {
+            ForEach(Self.tokens, id: \.token) { item in
+                GridRow {
+                    Text(item.token)
+                    Text(item.meaning)
+                }
+            }
+        }
+        .font(Theme.panelCaption)
+        .foregroundStyle(Theme.textMuted)
+        .padding(.top, 2)
+        .accessibilityElement(children: .combine)
     }
 }
 
@@ -575,13 +602,13 @@ private struct TemplateField: View {
             Text(title)
             TextField(title, text: model.setting(key))
                 .textFieldStyle(.roundedBorder)
-                .font(Theme.mono(12))
+                .font(Theme.bodySm)
                 .focused($focused)
                 .onChange(of: focused) { _, isFocused in model.isEditingText = isFocused }
                 .help(Self.tokensHelp)
             let preview = previewName(template)
             Text(preview)
-                .font(Theme.detailCondensed)
+                .font(Theme.panelCaption)
                 .foregroundStyle(Theme.textMuted)
                 .lineLimit(1)
                 .truncationMode(.middle)

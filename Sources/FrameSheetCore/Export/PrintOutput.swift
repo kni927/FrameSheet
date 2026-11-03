@@ -104,11 +104,11 @@ public enum PrintOutput {
             .appending(path: printURL.deletingPathExtension().lastPathComponent, directoryHint: .isDirectory)
     }
 
-    /// The background as saved: JPG has no alpha, so the colour is opaque
+    /// The background as saved: JPG has no alpha, so the color is opaque
     /// there (transparent becomes black).
-    public static func background(_ colour: RGBA, format: ImageFormat) -> RGBA {
-        guard format == .jpg else { return colour }
-        var opaque = colour
+    public static func background(_ color: RGBA, format: ImageFormat) -> RGBA {
+        guard format == .jpg else { return color }
+        var opaque = color
         opaque.alpha = 1
         return opaque
     }
@@ -120,7 +120,7 @@ public enum PrintOutput {
     ) -> String {
         let name = FileNaming.expand(
             template, movieFileName: movieFileName, sheetName: sheetName, frameNumber: frameNumber, fps: fps)
-        return name.trimmingCharacters(in: .whitespaces).isEmpty ? FileNaming.sanitise(sheetName) : name
+        return name.trimmingCharacters(in: .whitespaces).isEmpty ? FileNaming.sanitize(sheetName) : name
     }
 
     /// What a save of one sheet needs: its thumbs, the pixel size and the

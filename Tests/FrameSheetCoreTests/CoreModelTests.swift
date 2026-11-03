@@ -269,7 +269,7 @@ import Testing
         #expect(decoded.headerAlignment == .left)
         // An unknown value keeps the other settings and falls back to right.
         let unknown = try JSONDecoder().decode(
-            Settings.self, from: Data(#"{"headerAlignment":"centre","showHeader":true}"#.utf8))
+            Settings.self, from: Data(#"{"headerAlignment":"center","showHeader":true}"#.utf8))
         #expect(unknown.headerAlignment == .right)
         #expect(unknown.showHeader)
     }

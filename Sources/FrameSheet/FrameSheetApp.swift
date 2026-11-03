@@ -13,7 +13,7 @@ struct FrameSheetApp: App {
                 .environment(model)
                 .preferredColorScheme(.dark)
                 .frame(minWidth: 900, minHeight: 560)
-                .onAppear { delegate.model = model }
+                .onAppear { delegate.attach(model) }
                 .background(WindowReader { delegate.mainWindow = $0 })
         }
         .commands {
@@ -65,7 +65,9 @@ struct FrameSheetApp: App {
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
-    var model: AppModel?
+    private(set) var model: AppModel?
+    /// Files opened (Open With, the Dock icon) before the window was there.
+    private var pendingFiles: [URL] = []
     /// The main window; grid keys act only there, not in Settings.
     weak var mainWindow: NSWindow?
     private var keyMonitor: Any?
@@ -82,6 +84,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.model?.scrubModifiersChanged(ScrubModifiers(event.modifierFlags))
             return event
         }
+    }
+
+    func attach(_ model: AppModel) {
+        self.model = model
+        if !pendingFiles.isEmpty { model.openFiles(pendingFiles) }
+        pendingFiles = []
+    }
+
+    /// Open With and drops on the Dock icon: routed like a drop.
+    func application(_ application: NSApplication, open urls: [URL]) {
+        if let model { model.openFiles(urls) } else { pendingFiles += urls }
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
@@ -101,7 +114,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Grid keys (§8). Letter, number, arrow and Return keys do nothing while
     /// a text field has focus; ⌘ shortcuts go to the menus.
     private func handleKey(_ event: NSEvent) -> NSEvent? {
-        // Only the main window: open panels, the colour panel and alerts
+        // Only the main window: open panels, the color panel and alerts
         // keep their own keys.
         guard let model, NSApp.modalWindow == nil, !(event.window is NSPanel),
               mainWindow == nil || event.window === mainWindow

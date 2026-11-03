@@ -1,6 +1,6 @@
 import Foundation
 
-// Interval sheet operations (§5, §7). Behaviour follows MoviePrint v0.2.23
+// Interval sheet operations (§5, §7). Behavior follows MoviePrint v0.2.23
 // (MIT, docs/licenses/MoviePrint-LICENSE): `onAddThumbClick`,
 // `onExpandClick` and `onAddIntervalSheetClick` (app/containers/App.js),
 // `onInPointClick`/`onOutPointClick` (app/containers/VisibleThumbGrid.js),
@@ -47,7 +47,7 @@ extension Library {
     }
 
     /// Inserts a thumb before or after another one. Without a frame, takes
-    /// the frame midway to the visible neighbour on that side. Returns the new
+    /// the frame midway to the visible neighbor on that side. Returns the new
     /// thumb's id.
     @discardableResult
     public mutating func insertThumb(
@@ -60,7 +60,7 @@ extension Library {
             if let frame {
                 newFrame = frame
             } else {
-                let (left, right) = sheet.visibleNeighbours(of: thumb)
+                let (left, right) = sheet.visibleNeighbors(of: thumb)
                 switch position {
                 case .after:
                     newFrame = existing + Int(IntervalFrames.jsRound(Double(right - existing) / 2))
@@ -164,10 +164,10 @@ extension Library {
         recapture(ref, count: c * r, start: start, stop: stop, limitToRange: false)
     }
 
-    /// Optimise grid layout: columns = ceil(√n) of the visible thumbs.
-    public mutating func optimiseGrid(_ ref: SheetRef) {
+    /// Optimize grid layout: columns = ceil(√n) of the visible thumbs.
+    public mutating func optimizeGrid(_ ref: SheetRef) {
         withSheet(ref) { sheet, _ in
-            sheet.columnCount = GridLayout.optimisedColumns(thumbCount: sheet.visibleThumbs.count)
+            sheet.columnCount = GridLayout.optimizedColumns(thumbCount: sheet.visibleThumbs.count)
         }
     }
 
@@ -202,7 +202,7 @@ extension Library {
             limitToMaxValue: true)
         let new = Sheet(
             id: thumb, name: "Sequence \(start) - \(end)", type: .interval,
-            columnCount: GridLayout.optimisedColumns(thumbCount: frames.count), parentSheetId: ref.sheetId,
+            columnCount: GridLayout.optimizedColumns(thumbCount: frames.count), parentSheetId: ref.sheetId,
             thumbs: frames.enumerated().map { Thumb(frameNumber: $1, index: $0) })
         sheets[ref.fileId, default: []].append(new)
         if let i = files.firstIndex(where: { $0.id == ref.fileId }) { files[i].sheetCounter += 1 }
@@ -294,9 +294,9 @@ extension Sheet {
         for i in thumbs.indices { thumbs[i].index = i }
     }
 
-    /// Frames of the visible neighbours of a thumb; a thumb at either end is
-    /// its own neighbour on that side (MoviePrint's first/last-thumb rule).
-    public func visibleNeighbours(of thumb: UUID) -> (left: Int, right: Int) {
+    /// Frames of the visible neighbors of a thumb; a thumb at either end is
+    /// its own neighbor on that side (MoviePrint's first/last-thumb rule).
+    public func visibleNeighbors(of thumb: UUID) -> (left: Int, right: Int) {
         let visible = visibleThumbs
         guard let i = visible.firstIndex(where: { $0.id == thumb }) else {
             let own = thumbs.first { $0.id == thumb }?.frameNumber ?? 0

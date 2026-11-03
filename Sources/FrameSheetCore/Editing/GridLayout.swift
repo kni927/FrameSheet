@@ -1,8 +1,8 @@
 import Foundation
 
 public enum GridLayout {
-    /// Optimise grid layout: columns = ceil(√n), at least 1, at most 20.
-    public static func optimisedColumns(thumbCount: Int) -> Int {
+    /// Optimize grid layout: columns = ceil(√n), at least 1, at most 20.
+    public static func optimizedColumns(thumbCount: Int) -> Int {
         min(20, max(1, Int(Double(max(1, thumbCount)).squareRoot().rounded(.up))))
     }
 

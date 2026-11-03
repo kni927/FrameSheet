@@ -103,7 +103,7 @@ extension AppModel {
                 }
                 if settings.openFinderAfterSaving { NSWorkspace.shared.activateFileViewerSelecting([url]) }
             } catch is CancellationError {
-                showNotice("Saving cancelled.")
+                showNotice("Saving canceled.")
             } catch {
                 toast = "\(sheet.name) could not be saved: \(error.localizedDescription)"
             }
@@ -156,7 +156,7 @@ extension AppModel {
             }
         }
         guard failures < frames.count else { throw SaveError("No frame could be decoded.") }
-        // A retried thumb is labelled and placed on the timeline by the frame
+        // A retried thumb is labeled and placed on the timeline by the frame
         // it shows, as the window retargets it (decision 11).
         var thumbs = plan.thumbs
         for i in thumbs.indices {

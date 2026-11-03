@@ -31,7 +31,7 @@ private extension Library {
         #expect(library.frames(ref)[2] == 999)
     }
 
-    @Test func insertMidwayToNeighbour() throws {
+    @Test func insertMidwayToNeighbor() throws {
         var (library, ref) = fixture()
         let thumbs = library.thumbs(ref)
         // 67 → 133: after = 67 + round(66 / 2) = 100
@@ -52,11 +52,11 @@ private extension Library {
         #expect(library.frames(ref)[0] == 0)
     }
 
-    @Test func insertSkipsHiddenNeighbours() {
+    @Test func insertSkipsHiddenNeighbors() {
         var (library, ref) = fixture()
         let thumbs = library.thumbs(ref)
         library.setHidden(ref, thumbs: [thumbs[2].id], hidden: true)
-        // visible right neighbour of 67 is now 200: 67 + round(133 / 2) = 134
+        // visible right neighbor of 67 is now 200: 67 + round(133 / 2) = 134
         library.insertThumb(ref, relativeTo: thumbs[1].id, .after)
         #expect(library.frames(ref)[2] == 134)
     }
@@ -115,7 +115,7 @@ private extension Library {
         #expect(library.frames(ref) == [2, 3, 4, 5])
     }
 
-    @Test func columnsRowsAndOptimise() {
+    @Test func columnsRowsAndOptimize() {
         var (library, ref) = fixture()
         library.setColumns(ref, 30)
         #expect(library.sheet(ref.sheetId, of: ref.fileId)!.columnCount == 20)
@@ -124,11 +124,11 @@ private extension Library {
         #expect(library.frames(ref).first == 0)
         #expect(library.frames(ref).last == 999)
         #expect(library.sheet(ref.sheetId, of: ref.fileId)!.columnCount == 5)
-        library.optimiseGrid(ref)
+        library.optimizeGrid(ref)
         #expect(library.sheet(ref.sheetId, of: ref.fileId)!.columnCount == 4)  // ceil(√15)
-        #expect(GridLayout.optimisedColumns(thumbCount: 16) == 4)
-        #expect(GridLayout.optimisedColumns(thumbCount: 17) == 5)
-        #expect(GridLayout.optimisedColumns(thumbCount: 0) == 1)
+        #expect(GridLayout.optimizedColumns(thumbCount: 16) == 4)
+        #expect(GridLayout.optimizedColumns(thumbCount: 17) == 5)
+        #expect(GridLayout.optimizedColumns(thumbCount: 0) == 1)
         // Rows slider: columns follow from rows.
         #expect(GridLayout.columns(rows: 3, thumbCount: 15) == 5)
         #expect(GridLayout.columns(rows: 4, thumbCount: 15) == 4)
@@ -215,7 +215,7 @@ private extension Library {
             liveMaxX: 300, containerWidth: 410)
     }
 
-    @Test func betweenNeighbours() {
+    @Test func betweenNeighbors() {
         let m = mapping()
         #expect(m.frame(atX: 100, modifiers: []) == 400)
         #expect(m.frame(atX: 200, modifiers: []) == 500)

@@ -58,8 +58,8 @@ extension Sheet {
 
 extension ScrubMapping {
     /// Frames the keyboard scrub can step through: the same span the pointer
-    /// covers (Shift: left neighbour → thumb, Option: thumb → right
-    /// neighbour), extended to the movie start or end on the first or last
+    /// covers (Shift: left neighbor → thumb, Option: thumb → right
+    /// neighbor), extended to the movie start or end on the first or last
     /// thumb or with Control.
     public func keyboardRange(modifiers: ScrubModifiers) -> ClosedRange<Int> {
         var low = modifiers.contains(.option) ? thumbFrame : leftFrame
@@ -71,9 +71,9 @@ extension ScrubMapping {
 }
 
 /// Placement of the scrub overlay: a Cancel bar at the top, the live frame
-/// centred below it with its label above and the hint below, and the two
-/// neighbour images on either side. In a small container everything scales
-/// down together, so the neighbours keep at least `minSideRatio` of the live
+/// centered below it with its label above and the hint below, and the two
+/// neighbor images on either side. In a small container everything scales
+/// down together, so the neighbors keep at least `minSideRatio` of the live
 /// width, and the label and hint span the container's width rather than the
 /// live frame's.
 public struct ScrubLayout: Equatable, Sendable {
@@ -83,7 +83,7 @@ public struct ScrubLayout: Equatable, Sendable {
     /// Room below the live frame for the hint line.
     public static let hintHeight = 20.0
     public static let gap = 12.0
-    /// Neighbours are 0.6 of the live width when there is room, never less
+    /// Neighbors are 0.6 of the live width when there is room, never less
     /// than 0.4.
     public static let sideRatio = 0.6
     public static let minSideRatio = 0.4
@@ -102,7 +102,7 @@ public struct ScrubLayout: Equatable, Sendable {
         let margin = ScrubMapping.sideMargin
         let top = Self.cancelBarHeight + Self.labelHeight
         let usableHeight = max(1, containerHeight - top - Self.hintHeight - Self.gap * 2)
-        // Width left for the live frame once both neighbours get their
+        // Width left for the live frame once both neighbors get their
         // minimum share.
         let byWidth = (containerWidth - 2 * (margin + Self.gap)) / (1 + 2 * Self.minSideRatio)
         let liveWidth = max(1, min(containerWidth * 0.5, byWidth, usableHeight / ratio))

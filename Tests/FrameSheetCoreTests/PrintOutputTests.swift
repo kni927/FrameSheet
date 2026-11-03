@@ -141,8 +141,8 @@ import Testing
         return context.makeImage()!
     }
 
-    /// IHDR bit depth and colour type of a PNG (bytes 24 and 25).
-    private func ihdr(_ png: Data) -> (bitDepth: UInt8, colourType: UInt8) {
+    /// IHDR bit depth and color type of a PNG (bytes 24 and 25).
+    private func ihdr(_ png: Data) -> (bitDepth: UInt8, colorType: UInt8) {
         let bytes = [UInt8](png)
         return (bytes[24], bytes[25])
     }
@@ -163,10 +163,10 @@ import Testing
         #expect(wide.bitsPerComponent == 16)
         let png = try ImageEncoding.data(wide, format: .png, quality: 80)
         #expect(ihdr(png).bitDepth == 8)
-        #expect(ihdr(png).colourType == 6)  // RGBA
+        #expect(ihdr(png).colorType == 6)  // RGBA
         let opaque = try ImageEncoding.data(wideImage(width: 8, height: 4, alpha: false), format: .png, quality: 80)
         #expect(ihdr(opaque).bitDepth == 8)
-        #expect(ihdr(opaque).colourType == 2)  // RGB
+        #expect(ihdr(opaque).colorType == 2)  // RGB
         let normalized = try ImageEncoding.normalized(wide, format: .jpg)
         #expect(normalized.bitsPerComponent == 8)
         #expect(normalized.colorSpace?.name == CGColorSpace.sRGB)

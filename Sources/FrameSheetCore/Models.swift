@@ -113,7 +113,7 @@ public struct Face: Codable, Sendable, Equatable {
     public var confidence: Double
     /// Box height as a percentage of the frame height.
     public var size: Double
-    /// Normalised box (0–1), origin top left.
+    /// Normalized box (0–1), origin top left.
     public var x: Double
     public var y: Double
     public var width: Double
@@ -263,7 +263,7 @@ public enum FrameInfoFamily {
     }
 }
 
-/// sRGB colour with alpha, components 0–1.
+/// sRGB color with alpha, components 0–1.
 public struct RGBA: Codable, Sendable, Equatable, Hashable {
     public var red: Double
     public var green: Double

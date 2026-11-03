@@ -2,11 +2,11 @@ import AppKit
 import FrameSheetCore
 import SwiftUI
 
-// The kni Design System, Mocha (dark) theme: colour, type, spacing and radius
-// tokens. Colours are Catppuccin Mocha (MIT, docs/licenses/Catppuccin-LICENSE);
+// The kni Design System, Mocha (dark) theme: color, type, spacing and radius
+// tokens. Colors are Catppuccin Mocha (MIT, docs/licenses/Catppuccin-LICENSE);
 // fonts are the system's. Views use the token names, not the palette.
 enum Theme {
-    // MARK: Colour tokens
+    // MARK: Color tokens
 
     /// Main area background.
     static let base = Palette.base
@@ -26,7 +26,7 @@ enum Theme {
     /// Brand fill (mauve), used sparingly; text on it is `onAccent`.
     static let accent = Palette.mauve
     static let onAccent = Palette.crust
-    /// Accent-coloured text and icons on base, mantle and crust.
+    /// Accent-colored text and icons on base, mantle and crust.
     static let accentInk = Palette.mauve
     static let link = Palette.blue
     static let focus = Palette.lavender
@@ -94,8 +94,8 @@ enum Theme {
 
     // MARK: Frame info presets
 
-    /// Swatches for the frame info font and background colours (§6); the
-    /// colour picker and Transparent cover the rest.
+    /// Swatches for the frame info font and background colors (§6); the
+    /// color picker and Transparent cover the rest.
     static let frameInfoPresets: [(name: String, rgba: RGBA)] = [
         ("Crust", RGBA(hex: 0x11111B)), ("Text", RGBA(hex: 0xCDD6F4)),
         ("Mauve", RGBA(hex: 0xCBA6F7)), ("Yellow", RGBA(hex: 0xF9E2AF)),
@@ -145,7 +145,7 @@ extension Color {
 }
 
 extension RGBA {
-    /// sRGB components of a SwiftUI colour (from the colour picker).
+    /// sRGB components of a SwiftUI color (from the color picker).
     init(_ color: Color) {
         let ns = NSColor(color).usingColorSpace(.sRGB) ?? .black
         self.init(
