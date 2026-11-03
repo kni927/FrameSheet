@@ -259,6 +259,34 @@ extension Library {
         files[i].name = url.lastPathComponent
         files[i].folder = url.deletingLastPathComponent().path
     }
+
+    /// Fills in what the probe of a movie found, after an import, Locate or
+    /// Replace movie (MoviePrint's `updateFileDetails`, then its poster frame
+    /// and IN/OUT): duration, frame count, rate, size, codec, the poster at
+    /// the middle frame and IN/OUT over the whole movie. Sheets are kept and
+    /// thumbs keep their frame numbers, clamped to the last frame.
+    public mutating func applyProbe(_ fileId: UUID, info: MediaInfo) {
+        guard let i = files.firstIndex(where: { $0.id == fileId }) else { return }
+        files[i].duration = info.duration
+        files[i].frameCount = info.frameCount
+        files[i].fps = info.fps
+        files[i].width = info.width
+        files[i].height = info.height
+        files[i].size = info.size
+        files[i].fourCC = info.fourCC
+        files[i].posterFrame = info.frameCount / 2
+        files[i].inFrame = 0
+        files[i].outFrame = max(0, info.frameCount - 1)
+        guard info.frameCount > 0, let list = sheets[fileId] else { return }
+        let last = info.frameCount - 1
+        sheets[fileId] = list.map { sheet in
+            var sheet = sheet
+            for t in sheet.thumbs.indices {
+                sheet.thumbs[t].frameNumber = min(max(sheet.thumbs[t].frameNumber, 0), last)
+            }
+            return sheet
+        }
+    }
 }
 
 extension Sheet {

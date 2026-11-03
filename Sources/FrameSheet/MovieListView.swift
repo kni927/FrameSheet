@@ -87,7 +87,10 @@ private struct MovieRow: View {
                 .disabled(missing)
             if missing {
                 Button("Locate…") { model.locate(file.id) }
+                    .help("Find the moved movie")
             }
+            Button("Replace movie…") { model.replaceMovie(file.id) }
+                .help("Link this entry to another file, keeping its sheets")
             Divider()
             Button("Remove", role: .destructive) { model.removeMovie(file.id) }
         }

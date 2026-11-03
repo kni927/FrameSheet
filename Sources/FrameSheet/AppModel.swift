@@ -2,6 +2,7 @@ import AppKit
 import FrameSheetCore
 import Observation
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// A scrub in progress (§7): the thumb, its neighbours' frames and the frame
 /// under the pointer (or chosen with the arrow keys).
@@ -76,6 +77,9 @@ final class AppModel {
     let cache: ThumbnailCache
     private let store: LibraryStore?
     @ObservationIgnored private var backends: [UUID: any DecodeBackend] = [:]
+    /// The file each movie's backend and cached images came from; when undo
+    /// or redo puts another file under the entry, they are dropped.
+    @ObservationIgnored private var linkedURLs: [UUID: URL] = [:]
     @ObservationIgnored private var loading: Set<String> = []
     /// Frames that failed to decode; not retried automatically on redraw.
     @ObservationIgnored private var failed: Set<String> = []
@@ -195,12 +199,33 @@ final class AppModel {
 
     func undo() {
         cancelScrub()
-        if document.undo() { didChange() }
+        if document.undo() { refreshLinks(); didChange() }
     }
 
     func redo() {
         cancelScrub()
-        if document.redo() { didChange() }
+        if document.redo() { refreshLinks(); didChange() }
+    }
+
+    /// After undo or redo (of Replace movie, Clear movie list or an import):
+    /// drops backends and images that belong to another file than the entry
+    /// now names, checks again which movies are missing and loads posters.
+    private func refreshLinks() {
+        var relinked = false
+        for file in library.files {
+            if let linked = linkedURLs[file.id], linked != file.url {
+                backends[file.id] = nil
+                relinked = true
+            }
+            linkedURLs[file.id] = file.url
+            if FileManager.default.fileExists(atPath: file.url.path) {
+                missing.remove(file.id)
+            } else {
+                missing.insert(file.id)
+            }
+        }
+        if relinked { forgetImages() }
+        for file in library.files { loadPoster(file) }
     }
 
     private func didChange() {
@@ -253,12 +278,17 @@ final class AppModel {
     }
 
     func clearThumbnailCache() {
+        forgetImages()
+        for file in library.files { loadPoster(file) }
+        loadCurrentSheet()
+    }
+
+    /// Empties the cache and what is pinned or marked failed.
+    private func forgetImages() {
         cache.removeAll()
         pinned.removeAll()
         failed.removeAll()
         imageGeneration += 1
-        for file in library.files { loadPoster(file) }
-        loadCurrentSheet()
     }
 
     // MARK: - Adding and removing movies
@@ -282,7 +312,7 @@ final class AppModel {
                     continue
                 }
                 do {
-                    let backend = try await DecoderRouter.open(url, ffmpeg: await ffmpegTools())
+                    let backend = try await openMovie(url)
                     let info = backend.info
                     let file = MovieFile(
                         url: url, bookmark: Self.bookmark(for: url), duration: info.duration,
@@ -290,6 +320,7 @@ final class AppModel {
                         height: info.height, size: info.size, fourCC: info.fourCC)
                     added.append(file)
                     backends[file.id] = backend
+                    linkedURLs[file.id] = url
                 } catch {
                     toast = "\(url.lastPathComponent): \(error.localizedDescription)"
                 }
@@ -307,10 +338,19 @@ final class AppModel {
         }
     }
 
+    /// Opens a movie and probes it: the one path for Add movies, import,
+    /// Locate and Replace movie.
+    private func openMovie(_ url: URL) async throws -> any DecodeBackend {
+        try await DecoderRouter.open(url, ffmpeg: await ffmpegTools())
+    }
+
+    /// Clear movie list (and Option-drop): one undo step; undo brings the
+    /// movies back and `refreshLinks` checks them again.
     func clearList() {
         cancelScrub()
         edit { $0.removeAll() }
         backends = [:]
+        linkedURLs = [:]
         missing = []
         cache.removeAll()
         pinned.removeAll()
@@ -326,8 +366,8 @@ final class AppModel {
         NSWorkspace.shared.activateFileViewerSelecting([file.url])
     }
 
-    /// Locate: points a missing movie at a file the user picks, then opens
-    /// it again.
+    /// Locate: points a missing movie at a file the user picks, then probes
+    /// and opens it again.
     func locate(_ fileId: UUID) {
         guard let file = library.file(fileId) else { return }
         let panel = NSOpenPanel()
@@ -336,15 +376,134 @@ final class AppModel {
         panel.canChooseDirectories = false
         panel.directoryURL = file.url.deletingLastPathComponent()
         guard panel.runModal() == .OK, let url = panel.url else { return }
-        edit { $0.relink(fileId, to: url, bookmark: Self.bookmark(for: url)) }
-        backends[fileId] = nil
-        missing.remove(fileId)
-        cache.removeAll()
-        pinned.removeAll()
-        failed.removeAll()
-        imageGeneration += 1
-        if let relinked = library.file(fileId) { loadPoster(relinked) }
-        loadCurrentSheet()
+        relink(fileId, to: url)
+    }
+
+    /// Replace movie (MoviePrint's `onReplaceMovieListItemClick`): the entry
+    /// takes another file and keeps its sheets; the same as Locate in effect.
+    func replaceMovie(_ fileId: UUID) {
+        guard let file = library.file(fileId) else { return }
+        let panel = NSOpenPanel()
+        panel.message = "Replace \(file.name)"
+        panel.prompt = "Replace with"
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.directoryURL = file.url.deletingLastPathComponent()
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        relink(fileId, to: url)
+    }
+
+    /// Probes the new file, then relinks the entry and fills its probe data
+    /// as one undo step (thumb frames kept, clamped to the new length); the
+    /// cached thumbs are dropped and decoded again from the new file.
+    private func relink(_ fileId: UUID, to url: URL) {
+        Task {
+            let backend: any DecodeBackend
+            do {
+                backend = try await openMovie(url)
+            } catch {
+                toast = "\(url.lastPathComponent): \(error.localizedDescription)"
+                return
+            }
+            guard library.file(fileId) != nil else { return }
+            cancelScrub()
+            backends[fileId] = backend
+            linkedURLs[fileId] = url
+            missing.remove(fileId)
+            forgetImages()
+            edit { library in
+                library.relink(fileId, to: url, bookmark: Self.bookmark(for: url))
+                library.applyProbe(fileId, info: backend.info)
+            }
+            for file in library.files { loadPoster(file) }
+        }
+    }
+
+    // MARK: - Import (§12)
+
+    static let importExtensions: Set<String> = ["png", "json"]
+
+    /// More options → Import MoviePrint…
+    func presentImportPanel() {
+        let panel = NSOpenPanel()
+        panel.message = "Import a MoviePrint PNG with embedded data, or its JSON file"
+        panel.allowedContentTypes = [.png, .json]
+        panel.allowsMultipleSelection = true
+        panel.canChooseDirectories = false
+        guard panel.runModal() == .OK else { return }
+        importSheets(panel.urls)
+    }
+
+    /// Reads PNGs and JSON files from FrameSheet or MoviePrint 0.2.x: each
+    /// becomes a new movie entry with an interval sheet (MoviePrint's
+    /// `onImportMoviePrint`), all in one undo step. A movie that exists is
+    /// probed like Add movies; one that does not shows as missing, for
+    /// Locate.
+    func importSheets(_ urls: [URL]) {
+        Task {
+            var errors: [String] = []
+            var found: [(id: UUID, name: String, data: SheetExchange, backend: (any DecodeBackend)?, missing: Bool)] = []
+            for url in urls where url.isFileURL {
+                let name = url.lastPathComponent
+                let data: SheetExchange
+                do {
+                    data = try SheetExchange(fileData: try Data(contentsOf: url))
+                } catch {
+                    errors.append("\(name): \(Self.importMessage(error))")
+                    continue
+                }
+                guard let path = data.filePath, !path.isEmpty else {
+                    errors.append("\(name): \(Self.importMessage(SheetExchangeError.noFilePath))")
+                    continue
+                }
+                guard !(data.frameNumbers ?? []).isEmpty else {
+                    errors.append("\(name): shot sheets come with T05.")
+                    continue
+                }
+                let movie = URL(fileURLWithPath: path)
+                var backend: (any DecodeBackend)?
+                let exists = FileManager.default.fileExists(atPath: movie.path)
+                if exists {
+                    do {
+                        backend = try await openMovie(movie)
+                    } catch {
+                        errors.append("\(movie.lastPathComponent): \(error.localizedDescription)")
+                    }
+                }
+                found.append((UUID(), name, data, backend, !exists))
+            }
+            if !found.isEmpty {
+                cancelScrub()
+                for item in found {
+                    if let backend = item.backend {
+                        backends[item.id] = backend
+                        linkedURLs[item.id] = URL(fileURLWithPath: item.data.filePath ?? "")
+                    }
+                    if item.missing { missing.insert(item.id) }
+                }
+                edit { library in
+                    for item in found {
+                        guard (try? library.importSheet(item.data, fileId: item.id)) != nil else { continue }
+                        guard let backend = item.backend, let file = library.file(item.id) else { continue }
+                        library.relink(item.id, to: file.url, bookmark: Self.bookmark(for: file.url))
+                        library.applyProbe(item.id, info: backend.info)
+                    }
+                }
+                for item in found { if let file = library.file(item.id) { loadPoster(file) } }
+                showNotice(found.count == 1 ? "Imported \(found[0].name)" : "Imported \(found.count) sheets")
+            }
+            if !errors.isEmpty { toast = errors.joined(separator: "\n") }
+        }
+    }
+
+    private static func importMessage(_ error: any Error) -> String {
+        switch error {
+        case SheetExchangeError.noData: "no MoviePrint data found or embedded."
+        case SheetExchangeError.noFilePath: "the data names no movie file."
+        case SheetExchangeError.invalidJSON: "not a MoviePrint JSON file."
+        case PNGText.Error.invalidPNG: "the PNG could not be read."
+        default: error.localizedDescription
+        }
     }
 
     private static func bookmark(for url: URL) -> Data? {
@@ -721,8 +880,9 @@ final class AppModel {
     func backend(for file: MovieFile) async throws -> any DecodeBackend {
         if let backend = backends[file.id] { return backend }
         guard !missing.contains(file.id) else { throw DecodeError("Movie is missing") }
-        let backend = try await DecoderRouter.open(file.url, ffmpeg: await ffmpegTools())
+        let backend = try await openMovie(file.url)
         backends[file.id] = backend
+        linkedURLs[file.id] = file.url
         return backend
     }
 

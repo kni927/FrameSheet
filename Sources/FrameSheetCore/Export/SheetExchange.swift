@@ -402,14 +402,16 @@ extension Library {
     /// path and a `Sheet-N` sheet, interval/grid for a frame list or
     /// shot/timeline for scenes, and makes it current. The entry is a
     /// placeholder (no duration, size or frame count) until the app probes
-    /// the movie, or the owner locates a missing one. Rotation is ignored.
+    /// the movie (`applyProbe`), or the owner locates a missing one. A movie
+    /// already in the list still gets a new entry, as in MoviePrint.
+    /// Rotation is ignored. `fileId` is the new entry's id.
     @discardableResult
-    public mutating func importSheet(_ data: SheetExchange) throws -> SheetRef {
+    public mutating func importSheet(_ data: SheetExchange, fileId: UUID = UUID()) throws -> SheetRef {
         guard data.hasSheetData else { throw SheetExchangeError.noData }
         guard let path = data.filePath, !path.isEmpty else { throw SheetExchangeError.noFilePath }
         var file = MovieFile(
-            url: URL(fileURLWithPath: path), duration: 0, frameCount: 0, fps: 0, width: 0, height: 0,
-            size: 0, fourCC: "")
+            id: fileId, url: URL(fileURLWithPath: path), duration: 0, frameCount: 0, fps: 0, width: 0,
+            height: 0, size: 0, fourCC: "")
         if let transform = data.transform { file.transform = transform.movieTransform(keepRotation: false) }
         files.append(file)
 

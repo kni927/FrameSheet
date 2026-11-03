@@ -404,6 +404,81 @@ private func makePNG(width: Int = 2, height: Int = 1) throws -> Data {
         }
         #expect(library.files.isEmpty)
     }
+
+    /// The probe fills an imported placeholder; the frames stay as imported,
+    /// clamped to the last frame.
+    @Test func probeFillsImportedPlaceholder() throws {
+        var library = Library()
+        let id = UUID()
+        let ref = try library.importSheet(
+            SheetExchange(filePath: "/m/a.mov", columnCount: 3, frameNumbers: [0, 742, 1484, 9000]), fileId: id)
+        #expect(ref.fileId == id)
+        #expect(library.file(id)?.frameCount == 0)
+        let info = MediaInfo(
+            duration: 200, frameCount: 5000, fps: 25, width: 1920, height: 1080, fourCC: "avc1", size: 1234)
+        library.applyProbe(id, info: info)
+        let file = try #require(library.file(id))
+        #expect(file.duration == 200 && file.frameCount == 5000 && file.fps == 25)
+        #expect(file.width == 1920 && file.height == 1080 && file.fourCC == "avc1" && file.size == 1234)
+        #expect(file.posterFrame == 2500)
+        #expect(file.inFrame == 0 && file.outFrame == 4999)
+        let sheet = try #require(library.sheet(ref.sheetId, of: id))
+        #expect(sheet.thumbs.map(\.frameNumber) == [0, 742, 1484, 4999])
+        #expect(sheet.columnCount == 3)
+        #expect(sheet.name == "Sheet-1")
+    }
+
+    /// The same movie imported twice gets two entries, as in MoviePrint.
+    @Test func importSameMovieTwice() throws {
+        var library = Library()
+        let data = SheetExchange(filePath: "/m/a.mov", frameNumbers: [1, 2])
+        let first = try library.importSheet(data)
+        let second = try library.importSheet(data)
+        #expect(first.fileId != second.fileId)
+        #expect(library.files.map(\.url.path) == ["/m/a.mov", "/m/a.mov"])
+        #expect(library.currentFileId == second.fileId)
+    }
+
+    /// Replace movie: relink and probe as one undo step; sheets kept, frames
+    /// clamped; undo restores the old file and its data.
+    @Test func replaceMovieKeepsSheets() throws {
+        let file = MovieFile(
+            url: URL(fileURLWithPath: "/m/a.mov"), duration: 400, frameCount: 10000, fps: 25, width: 1920,
+            height: 1080, size: 99, fourCC: "hvc1")
+        var start = Library()
+        start.files = [file]
+        start.addSheet(to: file.id, type: .interval, thumbs: [100, 5000, 9999].enumerated().map {
+            Thumb(frameNumber: $1, index: $0)
+        })
+        var document = EditableLibrary(start)
+        let info = MediaInfo(
+            duration: 100, frameCount: 2500, fps: 25, width: 1280, height: 720, fourCC: "avc1", size: 7)
+        document.edit { library in
+            library.relink(file.id, to: URL(fileURLWithPath: "/n/b.mp4"), bookmark: nil)
+            library.applyProbe(file.id, info: info)
+        }
+        let replaced = try #require(document.library.file(file.id))
+        #expect(replaced.name == "b.mp4" && replaced.frameCount == 2500 && replaced.width == 1280)
+        #expect(document.library.sheets[file.id]?.count == 1)
+        #expect(document.library.sheets[file.id]?.first?.thumbs.map(\.frameNumber) == [100, 2499, 2499])
+        let undone = document.undo()
+        #expect(undone)
+        #expect(document.library == start)
+        #expect(!document.history.canUndo)
+    }
+
+    @Test func clearListAndUndo() throws {
+        var start = Library()
+        let ref = try start.importSheet(SheetExchange(filePath: "/m/a.mov", frameNumbers: [1, 2]))
+        var document = EditableLibrary(start)
+        document.edit { $0.removeAll() }
+        #expect(document.library.files.isEmpty && document.library.sheets.isEmpty)
+        #expect(document.library.currentFileId == nil)
+        let undone = document.undo()
+        #expect(undone)
+        #expect(document.library == start)
+        #expect(document.library.currentSheetId == ref.sheetId)
+    }
 }
 
 @Suite struct PrintHeaderTests {

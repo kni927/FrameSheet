@@ -7,6 +7,7 @@ import SwiftUI
 /// footer, owner 2026-11-03).
 struct ContentView: View {
     @Environment(AppModel.self) private var model
+    @State private var confirmingClear = false
 
     var body: some View {
         @Bindable var model = model
@@ -64,10 +65,12 @@ struct ContentView: View {
                     .buttonStyle(ToolbarIconStyle(grouped: true))
                     .help("Add movies (A)")
                     Menu {
-                        Button("Import MoviePrint…") {}.disabled(true)
+                        Button("Import MoviePrint…") { model.presentImportPanel() }
+                            .help("Import a sheet from a MoviePrint PNG or JSON file")
                         Divider()
-                        Button("Clear movie list", role: .destructive) { model.clearList() }
+                        Button("Clear movie list…", role: .destructive) { confirmingClear = true }
                             .disabled(model.library.files.isEmpty)
+                            .help("Remove all movies and their sheets")
                     } label: {
                         Label("More options", systemImage: "ellipsis.circle")
                     }
@@ -84,6 +87,14 @@ struct ContentView: View {
         .font(Theme.bodySm)
         .foregroundStyle(Theme.text)
         .overlay(alignment: .bottom) { Toast() }
+        .alert("Clear the movie list?", isPresented: $confirmingClear) {
+            Button("Clear", role: .destructive) { model.clearList() }
+                .help("Remove all movies and their sheets")
+            Button("Cancel", role: .cancel) {}
+                .help("Keep the movie list")
+        } message: {
+            Text("All movies and their sheets are removed. Undo brings them back.")
+        }
     }
 }
 
@@ -110,7 +121,12 @@ struct MainArea: View {
         .coordinateSpace(.named(MainArea.space))
         .onGeometryChange(for: CGSize.self) { $0.size } action: { model.mainAreaSize = $0 }
         .dropDestination(for: URL.self) { urls, _ in
-            model.addMovies(urls, clearFirst: NSEvent.modifierFlags.contains(.option))
+            // PNGs and JSON files are imported as sheets; the rest are
+            // added as movies (Option clears the list first).
+            let sheets = urls.filter { AppModel.importExtensions.contains($0.pathExtension.lowercased()) }
+            let movies = urls.filter { !AppModel.importExtensions.contains($0.pathExtension.lowercased()) }
+            if !movies.isEmpty { model.addMovies(movies, clearFirst: NSEvent.modifierFlags.contains(.option)) }
+            if !sheets.isEmpty { model.importSheets(sheets) }
             return true
         } isTargeted: { isDropTargeted = $0 }
     }
