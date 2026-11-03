@@ -40,3 +40,6 @@ xcuserdata/
 /.build/
 /tools/spike/.build/
 .swiftpm/
+
+# Local reference movies and prints (owner files, never committed)
+docs/reference/
