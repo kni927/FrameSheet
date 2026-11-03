@@ -344,3 +344,33 @@ guide layout, face grouping (Lv2) and age/gender (Lv3). Details are in
 The spike's full battery took about 1 h 40 min and mostly re-checked settings
 already chosen. Inside the sandbox VideoToolbox cannot decode and Vision sees
 no GPU, so every run needed a bypass dialog.
+
+### 23. v3 window layout and type after the legibility pass (2026-11-03)
+
+#### Decision
+The owner decided during T03b (in the TF's chat):
+- Type uses the system fonts (SF Pro, SF Mono, SF Pro Condensed) at the kni
+  Design System's sizes; the bundled IBM Plex is dropped.
+- The sheet toolbar sits in the window toolbar next to the title; Save
+  MoviePrint becomes a download button there, and MoviePrint's footer is not
+  reproduced.
+- App-wide settings (thumbnail cache, ffmpeg) move to a Settings window (⌘,);
+  the right panel keeps the per-sheet sections, divided by lines.
+- Still open: grid controls in the toolbar with no right panel at all.
+
+#### Rationale
+Side by side with MoviePrint the T03 UI was hard to read; system fonts render
+best on macOS and need no bundling.
+
+### 24. Sheets are named `Sheet-N`; the naming token is `[SN]` (2026-11-03)
+
+#### Decision
+New sheets are named `Sheet-1`, `Sheet-2`, … per movie (capital S), and the
+file-name token for the sheet name is `[SN]`, so the default file name is
+`[MN].[ME]-[SN]`. `[MPN]` stays accepted as an alias, and names in imported
+MoviePrint files are kept as they are. The Show player view button comes with
+the player view (T06), not earlier as a disabled control.
+
+#### Rationale
+"MoviePrint" is the original app's brand and means nothing to FrameSheet
+users.

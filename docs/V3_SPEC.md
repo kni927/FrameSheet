@@ -42,7 +42,8 @@ builds them.
   `secondsPerRow`, `parentSheetId`, thumbs, scenes.
 - **Thumb:** id, frame number, index, hidden, faces (per-frame face data).
 - **Scene:** id (= thumb id), start frame, length, mean colour, hidden.
-- Names `MoviePrint-N` from a per-file counter; expanded sheets "Shot #n" or
+- Names `Sheet-N` from a per-file counter (owner, 2026-11-03; MoviePrint's
+  `MoviePrint-N` meant nothing to users); expanded sheets "Shot #n" or
   "Sequence a - b".
 - **Settings:** global, persisted (§6).
 - **Undo/redo:** 50 steps over library and sheet edits, not persisted.
@@ -51,8 +52,9 @@ builds them.
 
 - **Header bar:** Add movies (key A; open panel); "more options": Import
   MoviePrint (JSON, or PNG with embedded data), Clear movie list.
-- **Footer:** Save MoviePrint (key M); menu: Open output location, Save All
-  MoviePrints.
+- **Save:** a download button in the window toolbar (owner, 2026-11-03;
+  MoviePrint's footer is not reproduced): Save MoviePrint (key M); its menu:
+  Open output location, Save All MoviePrints.
 - **Left sidebar — movie list** (key 1): per movie poster frame ("S" badge once
   shot-scanned), name, folder, duration (timecode), size, W×H. Movie menu:
   Edit rotation/cropping/aspect ratio, Open file location (Finder), Replace
@@ -61,11 +63,14 @@ builds them.
   menu: Rename (inline), Switch grid/timeline view (timeline disabled for
   faces), Convert to interval, Duplicate, Export JSON, Export EDL (shot sheets),
   Delete.
-- **Right sidebar — settings** (key 3), §6.
+- **Right sidebar — settings** (key 3), §6: the per-sheet and output
+  sections, divided by lines. App-wide settings (thumbnail cache, ffmpeg) are
+  in a Settings window (⌘,) (owner, 2026-11-03).
 - **Main area:** empty-state placeholder; grid view; timeline view. Drop
   overlay "ADD MOVIES TO LIST"; with Option held "CLEAR LIST AND ADD MOVIES".
   Accepts any file AVFoundation or ffmpeg can open as video.
-- **Floating toolbar:** Back to parent; Add shot-detection sheet; Add interval
+- **Sheet toolbar** (in the window toolbar, next to the title; owner,
+  2026-11-03): Back to parent; Add shot-detection sheet; Add interval
   sheet (presets 2×2 … 6×6); Add faces sheet (every 100th frame in IN–OUT /
   every 10th / these thumbs); Sort (Reverse, Frame number, Face count, Face
   size, Confidence; disabled for shot sheets); Filter (faces); Duplicate;
@@ -75,7 +80,7 @@ builds them.
   colours only); Optimise grid layout (columns = ceil(√n)).
 - Progress and errors as toasts; long scans show Cancel in the toast.
 - **Menus:** standard App, File, Edit (Undo/Redo), View (full screen, fit,
-  zoom), Window, Help. No Preferences window: settings live in the sidebar.
+  zoom), Window, Help; Settings… (⌘,) in the App menu.
 
 ## 5. Sheets
 
@@ -135,21 +140,22 @@ app icon (owner, 2026-11-01).
   only). Save options: Overwrite (off); Include individual thumbs (off); Embed
   frame numbers (PNG, on); Embed file path (PNG, on); Open Finder after saving
   (off). Thumb format JPG (default) / PNG, quality 95.
-- **Naming scheme** with live preview: MoviePrint `[MN].[ME]-[MPN]`; single
+- **Naming scheme** with live preview: sheet `[MN].[ME]-[SN]`; single
   thumb `[MN].[ME]-frame[FN]`; individual thumbs `[MN].[ME]-[FN]`. Tokens
-  `[MN]` movie name, `[ME]` extension, `[MPN]` sheet name, `[FN]` frame number
+  `[MN]` movie name, `[ME]` extension, `[SN]` sheet name (MoviePrint's
+  `[MPN]` is accepted as an alias), `[FN]` frame number
   (6 digits), `[TC]` timecode `HH_MM_SS_FF`. Warn when a thumb template lacks
   `[FN]` and `[TC]`. Replace `/\?%*:|"<>` with `-`; when not overwriting,
   append " edit N".
 - **Face detection:** confidence threshold 0–100 (70); size threshold 0–100
   (10, % of frame height); "takes effect on next scan".
-- **Thumbnail cache** (replaces MoviePrint's frame cache, whose per-frame
+- **Thumbnail cache** (Settings window; replaces MoviePrint's frame cache, whose per-frame
   images do not fit: 50 GB for a 2 h film at 240 px): memory limit for decoded
   display-size thumbnails, default 256 MB; Clear thumbnail cache.
 - **Experimental:** shot detection method Mean (default) / Histogram; detection
   chart (key F); automatic IN/OUT detection (off); input fields instead of
   sliders.
-- **ffmpeg:** found path and version; Choose… to set a path (§10).
+- **ffmpeg** (Settings window): found path and version; Choose… to set a path (§10).
 
 ## 7. Thumb and scene interactions
 
@@ -258,8 +264,10 @@ Alt and Ctrl become Option and Control.
 
 ## 11. Look
 
-- Content in the kni Design System (Catppuccin Mocha base): colour, type and
-  spacing tokens from the design system itself; dark appearance only.
+- Content in the kni Design System (Catppuccin Mocha base): colour, spacing
+  and radius tokens from the design system itself; dark appearance only.
+- Type: the system fonts (SF Pro, SF Mono, SF Pro Condensed) at the design
+  system's sizes, instead of its IBM Plex (owner, 2026-11-03).
 - Window chrome and toolbar: system Liquid Glass, tinted with the kni accent.
 - MoviePrint's layout and interactions are reproduced; its look is not.
 
