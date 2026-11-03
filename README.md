@@ -27,9 +27,20 @@ which you can edit:
 - **Drag a thumb** onto another to reorder; ⇧⌥←/→ move the selection.
 - The window toolbar adds interval sheets (2×2 … 6×6), duplicates the sheet,
   undoes and redoes, zooms (⌘− / ⌘0 / ⌘=, fit height, fit width), shows hidden
-  thumbs and the header, cycles the frame info, optimizes the grid, saves the
-  sheet (M) and toggles both sidebars (1, 3).
-- **Save sheet** writes the sheet as PNG or JPG (1024–16384 px or max) with an
+  thumbs and the header, cycles the thumb label, switches grid and timeline
+  view (G), shows mean colors only in the timeline, optimizes the grid, saves
+  the sheet (M) and toggles both sidebars (1, 3).
+- **Add shot-detection sheet** (toolbar) scans the movie once for shots and
+  streams the scenes into a shot sheet in timeline view (progress and Cancel
+  in the toast; the same button resumes a cancelled scan, and **Rescan for
+  Shots** in the movie's menu starts over). Scanned movies get an "S" on
+  their poster. The timeline lays scenes out in rows of a set movie time
+  (Minutes per row), as wide as they are long; click a scene to see it at
+  full width. A new threshold in the settings panel makes a new sheet from
+  the stored scan without scanning again. Interval sheets can be shown as a
+  timeline too.
+- **Save sheet** writes the sheet as PNG or JPG (1024–16384 px or max; the
+  height in timeline view) with an
   optional header (file name, folder, details, mini timeline). A PNG carries
   the frame list in MoviePrint-compatible text chunks. Options: folder, file
   name templates (`[MN]` `[ME]` `[SN]` `[FN]` `[TC]`), overwrite or " edit N",
@@ -42,8 +53,10 @@ which you can edit:
   first and can be undone.
 - The settings panel (3) sets columns (rearranges live), target rows and
   Replace (recaptures columns × rows thumbs), header, margins, corner radius,
-  frame info (font, size, colors, position, timecode format), output and file
-  names; each section opens with its chevron. The movie list (1) renames,
+  the timeline (minutes per row, natural flow, scene width ratio, min scene
+  width, shot threshold), the thumb label (frames, with the last frame
+  number, or a timecode format; font, size, colors, position), output and
+  file names; each section opens with its chevron. The movie list (1) renames,
   duplicates, deletes and exports sheets. The thumbnail cache and ffmpeg are
   in Settings (⌘,), with **Fetch exact frames with ffmpeg** (on by default):
   some files (open-GOP H.264) have frames AVFoundation cannot decode, and
@@ -51,7 +64,8 @@ which you can edit:
   frame with a marker.
 - ⌘Z / ⇧⌘Z undo and redo up to 50 edits.
 
-Shot detection, the player view and faces come in later versions.
+Scene editing in the timeline (cut, merge, expand, hide), EDL export, the
+player view and faces come in later versions.
 
 ## Requirements
 

@@ -30,7 +30,7 @@ struct SheetGridView: View {
                     Color.clear
                     // The print as it is saved; the interaction layer and
                     // the placeholders lie over it.
-                    PrintView(file: file, thumbs: thumbs, geometry: geometry, settings: settings) { thumb in
+                    PrintView(file: file, thumbs: thumbs, layout: .grid(geometry), settings: settings) { thumb in
                         model.image(file: file.id, frame: thumb.frameNumber, width: AppModel.thumbWidth)
                     }
                     ForEach(Array(thumbs.enumerated()), id: \.element.id) { index, thumb in
@@ -74,6 +74,96 @@ struct SheetGridView: View {
             file: file, columnCount: columns, thumbCount: thumbCount, settings: settings,
             containerWidth: max(1, size.width - padding * 2 - GridGeometry.minPrintWidthMargin),
             containerHeight: max(1, size.height - padding * 2), zoom: zoom))
+    }
+
+    /// Timeline layout of a sheet's scenes in an area of `size` (also used
+    /// by Fit height and Fit width).
+    static func timelineGeometry(
+        file: MovieFile, sheet: Sheet, scenes: [FrameSheetCore.Scene], settings: FrameSheetCore.Settings, size: CGSize,
+        zoom: Double, expandedIndex: Int?
+    ) -> TimelineGeometry {
+        TimelineGeometry(.init(
+            file: file, sheet: sheet, scenes: scenes, settings: settings,
+            containerWidth: max(1, size.width - padding * 2), containerHeight: max(1, size.height - padding * 2),
+            zoom: zoom, expandedIndex: expandedIndex))
+    }
+}
+
+/// Timeline view of a sheet (§6, §7, §10): the print's scene boxes laid
+/// out by `TimelineGeometry`, with a layer that selects a scene on click
+/// (the selected scene widens to full aspect width; a second click on it
+/// deselects) and names its frames in a tooltip. The scene interactions of
+/// §7 (Expand, Hide, Jump to cut, Scrub) come with T05 part 3.
+struct TimelineSheetView: View {
+    @Environment(AppModel.self) private var model
+    let file: MovieFile
+    let sheet: Sheet
+
+    var body: some View {
+        let settings = model.library.settings
+        let scenes = model.timelineScenes(of: sheet)
+        let padding = SheetGridView.padding
+        GeometryReader { proxy in
+            let geometry = model.timelineGeometry(file: file, sheet: sheet, size: proxy.size)
+            let size = geometry.contentSize
+            ScrollView([.horizontal, .vertical]) {
+                ZStack(alignment: .topLeading) {
+                    Color.clear
+                    PrintView(
+                        file: file, thumbs: sheet.thumbs, layout: .timeline(geometry, scenes: scenes),
+                        settings: settings
+                    ) { thumb in
+                        model.image(file: file.id, frame: thumb.frameNumber, width: AppModel.thumbWidth)
+                    }
+                    ForEach(Array(scenes.enumerated()), id: \.element.id) { index, scene in
+                        let frame = geometry.sceneFrames[index]
+                        SceneCell(
+                            file: file, scene: scene, size: frame.size,
+                            cornerRadius: min(geometry.borderRadius, frame.width / 2))
+                            .frame(width: frame.width, height: frame.height)
+                            .offset(x: frame.minX, y: frame.minY)
+                    }
+                }
+                .frame(width: size.width, height: size.height)
+                .padding(padding)
+                .frame(minWidth: proxy.size.width, minHeight: proxy.size.height)
+            }
+        }
+    }
+}
+
+/// The interaction layer of one timeline scene: tooltip, hover highlight,
+/// selection outline, click to select or deselect.
+private struct SceneCell: View {
+    @Environment(AppModel.self) private var model
+    let file: MovieFile
+    let scene: FrameSheetCore.Scene
+    let size: CGSize
+    let cornerRadius: Double
+    @State private var hovering = false
+
+    var body: some View {
+        let selected = model.selectedThumbId == scene.id
+        let end = scene.start + max(1, scene.length) - 1
+        Color.clear
+            .frame(width: size.width, height: size.height)
+            .contentShape(Rectangle())
+            .help("Frames \(scene.start)–\(end) · \(scene.length) frames · \(Timecode.string(frames: scene.start, fps: file.fps))")
+            .overlay {
+                if hovering && !selected {
+                    RoundedRectangle(cornerRadius: cornerRadius).fill(Theme.crust.opacity(0.2))
+                }
+            }
+            .overlay {
+                if selected {
+                    RoundedRectangle(cornerRadius: cornerRadius).strokeBorder(Theme.accent, lineWidth: 2)
+                }
+            }
+            .onHover { hovering = $0 }
+            .onTapGesture { model.selectedThumbId = selected ? nil : scene.id }
+            .accessibilityElement()
+            .accessibilityLabel("Scene, frames \(scene.start) to \(end)")
+            .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
     }
 }
 
@@ -123,7 +213,7 @@ private struct ThumbView: View {
             // stays while hovering and its tooltip can show.
             if let requested = model.nearestFrame(of: thumb) {
                 NearestFrameMarker(size: size)
-                    .help("Nearest decodable frame (frame \(requested) asked for; \(model.exactFrameHint))")
+                    .help("Nearest decodable frame (asked \(requested.formatted(.number.locale(Locale(identifier: "en_US")))))")
             }
         }
         .overlay {
@@ -168,12 +258,15 @@ private struct NearestFrameMarker: View {
     let size: CGSize
 
     var body: some View {
-        let unit = min(max(size.height * 0.09, 9), 16)
+        // Small and half transparent (owner, 2026-11-03): a hint, not a
+        // warning.
+        let unit = min(max(size.height * 0.06, 7), 11)
         Image(systemName: "arrow.uturn.backward")
             .font(.system(size: unit * 0.7, weight: .bold))
             .foregroundStyle(Theme.crust)
             .frame(width: unit * 1.4, height: unit * 1.4)
             .background(Circle().fill(Theme.warning))
+            .opacity(0.55)
             .padding(unit * 0.4)
             .contentShape(Rectangle())
             .accessibilityLabel("Nearest decodable frame")
@@ -228,15 +321,20 @@ private struct HoverOverlay: View {
                 }
             }
             Spacer(minLength: 0)
-            HStack {
-                OverlayButton(systemImage: "plus", help: "Insert before", report: { onHoverButton($0 ? .insertBefore : nil) }) {
-                    model.insertThumb(.before, relativeTo: thumb.id)
-                }
-                Spacer()
-                ScrubHandle(thumb: thumb)
-                Spacer()
-                OverlayButton(systemImage: "plus", help: "Insert after", report: { onHoverButton($0 ? .insertAfter : nil) }) {
-                    model.insertThumb(.after, relativeTo: thumb.id)
+            // Shot sheets keep one thumb per scene: inserting and scrubbing
+            // with insert would break that (their Jump to cut and scene
+            // scrub come with T05 part 3).
+            if sheet.type != .shot {
+                HStack {
+                    OverlayButton(systemImage: "plus", help: "Insert before", report: { onHoverButton($0 ? .insertBefore : nil) }) {
+                        model.insertThumb(.before, relativeTo: thumb.id)
+                    }
+                    Spacer()
+                    ScrubHandle(thumb: thumb)
+                    Spacer()
+                    OverlayButton(systemImage: "plus", help: "Insert after", report: { onHoverButton($0 ? .insertAfter : nil) }) {
+                        model.insertThumb(.after, relativeTo: thumb.id)
+                    }
                 }
             }
             Spacer(minLength: 0)

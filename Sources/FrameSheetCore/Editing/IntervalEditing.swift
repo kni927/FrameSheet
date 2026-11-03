@@ -194,7 +194,10 @@ extension Library {
         guard let file = file(ref.fileId), let parent = sheet(ref.sheetId, of: ref.fileId) else { return nil }
         let child = SheetRef(fileId: ref.fileId, sheetId: thumb)
         if sheet(thumb, of: ref.fileId) != nil { return child }
-        guard let scene = SceneList.intervalScenes(of: parent).first(where: { $0.id == thumb }) else { return nil }
+        // A shot sheet's own scene, else the interval sheet's artificial one.
+        let scenes = parent.type == .shot
+            ? SceneList.timelineScenes(of: parent, includeHidden: true) : SceneList.intervalScenes(of: parent)
+        guard let scene = scenes.first(where: { $0.id == thumb }) else { return nil }
         let start = scene.start
         let end = scene.start + scene.length - 1
         let frames = IntervalFrames.frameNumbers(

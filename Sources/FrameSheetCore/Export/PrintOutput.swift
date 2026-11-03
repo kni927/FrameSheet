@@ -123,16 +123,40 @@ public enum PrintOutput {
         return name.trimmingCharacters(in: .whitespaces).isEmpty ? FileNaming.sanitize(sheetName) : name
     }
 
+    /// The pixel height a timeline print is saved at (§6: the size is the
+    /// height in timeline view): the chosen step, or "max", held so the
+    /// width (height × multiplier) stays within 16384 too.
+    public static func timelineHeight(selected: Int, useMax: Bool, widthMultiplier: Double) -> Int {
+        let largest = widthMultiplier > 1
+            ? max(1, Int((Double(OutputSize.limit) / widthMultiplier).rounded(.down))) : OutputSize.limit
+        return useMax ? largest : min(OutputSize.snapped(selected), largest)
+    }
+
     /// What a save of one sheet needs: its thumbs, the pixel size and the
     /// layout at that size, and the decode width.
     public struct Plan: Sendable {
         public var thumbs: [Thumb]
         public var width: Int
         public var height: Int
-        public var geometry: GridGeometry
+        public var layout: PrintLayout
         public var decodeWidth: Int
 
         public init(file: MovieFile, sheet: Sheet, settings: Settings) {
+            if sheet.view == .timeline, sheet.type != .faces {
+                let scenes = SceneList.timelineScenes(of: sheet, includeHidden: settings.showHiddenThumbs)
+                let byId = Dictionary(sheet.thumbs.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+                thumbs = scenes.compactMap { byId[$0.id] }
+                let multiplier = TimelineLayout.widthMultiplier(sceneWidthRatio: settings.timelineSceneWidthRatio)
+                height = PrintOutput.timelineHeight(
+                    selected: settings.outputSize, useMax: settings.outputSizeMax, widthMultiplier: multiplier)
+                let geometry = TimelineGeometry(TimelineGeometry.Input(
+                    file: file, sheet: sheet, scenes: scenes, settings: settings,
+                    containerWidth: .greatestFiniteMagnitude, containerHeight: Double(height)))
+                width = max(1, Int(geometry.printWidth.rounded()))
+                layout = .timeline(geometry, scenes: scenes)
+                decodeWidth = PrintOutput.decodeWidth(thumbWidth: geometry.fullWidth, movieWidth: file.width)
+                return
+            }
             thumbs = PrintOutput.printThumbs(of: sheet, settings: settings)
             let input = GridGeometry.Input(
                 file: file, columnCount: sheet.columnCount, thumbCount: thumbs.count, settings: settings,
@@ -141,11 +165,29 @@ public enum PrintOutput {
             width = PrintOutput.width(
                 selected: settings.outputSize, useMax: settings.outputSizeMax, printAspectRatioInv: ratio)
             height = PrintOutput.height(width: width, printAspectRatioInv: ratio)
-            geometry = PrintOutput.geometry(input, width: width)
+            let geometry = PrintOutput.geometry(input, width: width)
+            layout = .grid(geometry)
             decodeWidth = PrintOutput.decodeWidth(thumbWidth: geometry.thumbWidth, movieWidth: file.width)
         }
     }
 }
+
+/// The layout a print is drawn with: the grid, or the timeline with the
+/// scenes its boxes stand for (in `sceneFrames` order).
+public enum PrintLayout: Sendable, Equatable {
+    case grid(GridGeometry)
+    case timeline(TimelineGeometry, scenes: [Scene])
+
+    /// The print's size as saved.
+    public var contentSize: CGSize {
+        switch self {
+        case .grid(let geometry): geometry.printContentSize
+        case .timeline(let geometry, _): CGSize(width: geometry.printWidth, height: geometry.printHeight)
+        }
+    }
+}
+
+extension GridGeometry: PrintFit {}
 
 public enum ImageEncodingError: Error, Equatable {
     case encodingFailed

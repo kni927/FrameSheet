@@ -214,6 +214,21 @@ public enum TimecodeFormat: String, Codable, Sendable, CaseIterable {
     }
 }
 
+/// How the frame info shows a frame number (owner, 2026-11-03): the
+/// 4-digit frame alone, or with the movie's last frame number after a
+/// slash ("9920 / 17604"), so the label tells how far into the movie the
+/// thumb is.
+public enum FrameNumberFormat: String, Codable, Sendable, CaseIterable {
+    case frame, frameOfLast
+
+    public var label: String {
+        switch self {
+        case .frame: "9920"
+        case .frameOfLast: "9920 / 17604"
+        }
+    }
+}
+
 /// Where the frame info sits on a thumb (MoviePrint `FRAMEINFO_POSITION`).
 public enum FrameInfoPosition: String, Codable, Sendable, CaseIterable {
     case topLeft, topCenter, topRight, centerCenter, bottomLeft, bottomCenter, bottomRight
@@ -359,6 +374,8 @@ public struct Settings: Codable, Sendable, Equatable {
     public var frameInfoMarginsLinked = true
     /// The timecode shown with frame info Timecode.
     public var frameInfoTimecodeFormat: TimecodeFormat = .hoursMinutesSecondsFrames
+    /// The frame number shown with frame info Frames.
+    public var frameInfoFrameFormat: FrameNumberFormat = .frame
     public var thumbnailCacheMB = Defaults.thumbnailCacheMB
     /// User-chosen ffmpeg path (§10); nil means discover it.
     public var ffmpegPath: String?
@@ -379,6 +396,9 @@ public struct Settings: Codable, Sendable, Equatable {
     public var timelineSceneWidthRatio = Defaults.timelineSceneWidthRatio
     /// Minimum scene width in frames (the slider shows 0–10 s).
     public var timelineMinSceneLength = Defaults.timelineMinSceneLength
+    /// Timeline scenes show their frame over the mean color; off shows the
+    /// mean colors only (toolbar Toggle images, MoviePrint `defaultShowImages`).
+    public var timelineShowImages = true
 
     // Output (§6), MoviePrint's defaults (`app/utils/constants.js`).
     /// Folder path for saved prints; nil means the Desktop.
@@ -422,10 +442,10 @@ public struct Settings: Codable, Sendable, Equatable {
         case cornerRadius, showHiddenThumbs, frameInfo, thumbnailCacheMB, ffmpegPath
         case exactFramesWithFFmpeg
         case shotDetectionMethod, shotDetectionThreshold, automaticInOut
-        case timelineNaturalFlow, timelineSceneWidthRatio, timelineMinSceneLength
+        case timelineNaturalFlow, timelineSceneWidthRatio, timelineMinSceneLength, timelineShowImages
         case frameInfoColor, frameInfoBackground, frameInfoPosition, frameInfoSize
         case frameInfoFontFamily, frameInfoMarginHorizontal, frameInfoMarginVertical, frameInfoMarginsLinked
-        case frameInfoTimecodeFormat
+        case frameInfoTimecodeFormat, frameInfoFrameFormat
         case outputFolder, outputSameFolderAsMovie, outputSize, outputSizeMax, outputFormat, outputQuality
         case outputBackground, overwrite, includeIndividualThumbs, embedFrameNumbers, embedFilePath
         case openFinderAfterSaving, thumbFormat, thumbQuality
@@ -472,6 +492,8 @@ public struct Settings: Codable, Sendable, Equatable {
             ?? d.timelineSceneWidthRatio
         timelineMinSceneLength = (try? c.decodeIfPresent(Int.self, forKey: .timelineMinSceneLength))
             ?? d.timelineMinSceneLength
+        timelineShowImages = (try? c.decodeIfPresent(Bool.self, forKey: .timelineShowImages))
+            ?? d.timelineShowImages
         frameInfoColor = try c.decodeIfPresent(RGBA.self, forKey: .frameInfoColor) ?? d.frameInfoColor
         frameInfoBackground = try c.decodeIfPresent(RGBA.self, forKey: .frameInfoBackground) ?? d.frameInfoBackground
         frameInfoPosition = try c.decodeIfPresent(FrameInfoPosition.self, forKey: .frameInfoPosition) ?? d.frameInfoPosition
@@ -489,6 +511,8 @@ public struct Settings: Codable, Sendable, Equatable {
             ?? d.frameInfoMarginsLinked
         frameInfoTimecodeFormat = (try? c.decodeIfPresent(TimecodeFormat.self, forKey: .frameInfoTimecodeFormat))
             ?? d.frameInfoTimecodeFormat
+        frameInfoFrameFormat = (try? c.decodeIfPresent(FrameNumberFormat.self, forKey: .frameInfoFrameFormat))
+            ?? d.frameInfoFrameFormat
         outputFolder = try c.decodeIfPresent(String.self, forKey: .outputFolder)
         outputSameFolderAsMovie = try c.decodeIfPresent(Bool.self, forKey: .outputSameFolderAsMovie)
             ?? d.outputSameFolderAsMovie

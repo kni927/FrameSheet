@@ -143,6 +143,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         switch event.charactersIgnoringModifiers?.lowercased() {
         case "a": model.presentOpenPanel()
         case "m": model.saveSheet()
+        case "g":
+            guard let ref = model.currentRef else { return event }
+            model.toggleView(ref)
         case "1": model.showMovieList.toggle()
         case "3": model.showSettings.toggle()
         default: return event

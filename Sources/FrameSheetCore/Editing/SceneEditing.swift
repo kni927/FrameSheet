@@ -88,7 +88,49 @@ extension SceneList {
     }
 }
 
+extension SceneList {
+    /// The scenes a sheet shows in timeline view: a shot sheet's own scenes
+    /// (a scene counts as hidden when it or its thumb is; hidden ones only
+    /// with `includeHidden`), or an interval sheet's artificial scenes split
+    /// at the midpoints between visible thumbs. Faces sheets have none.
+    public static func timelineScenes(of sheet: Sheet, includeHidden: Bool) -> [Scene] {
+        switch sheet.type {
+        case .shot:
+            let hiddenThumbs = Set(sheet.thumbs.filter(\.hidden).map(\.id))
+            return sheet.scenes.compactMap { scene in
+                var scene = scene
+                scene.hidden = scene.hidden || hiddenThumbs.contains(scene.id)
+                return includeHidden || !scene.hidden ? scene : nil
+            }
+        case .interval:
+            return intervalScenes(of: sheet)
+        case .faces:
+            return []
+        }
+    }
+}
+
 extension Library {
+    /// Grid or timeline view; faces sheets stay in grid view (§4).
+    public mutating func setView(_ ref: SheetRef, _ view: SheetView) {
+        withSheet(ref) { sheet, _ in
+            guard view == .grid || sheet.type != .faces else { return }
+            sheet.view = view
+        }
+    }
+
+    /// Convert to interval: a type change only (§5); the thumbs stay, and
+    /// the timeline view splits scenes at their midpoints from then on.
+    public mutating func convertToInterval(_ ref: SheetRef) {
+        withSheet(ref) { sheet, _ in sheet.type = .interval }
+    }
+
+    /// Minutes per row of a sheet's timeline, 10–1800 s.
+    public mutating func setSecondsPerRow(_ ref: SheetRef, _ seconds: Double) {
+        let range = TimelineLayout.secondsPerRowRange
+        withSheet(ref) { sheet, _ in sheet.secondsPerRow = min(max(seconds, range.lowerBound), range.upperBound) }
+    }
+
     /// Adds a shot sheet built from a scene list; it opens in timeline view.
     @discardableResult
     public mutating func addShotSheet(to fileId: UUID, scenes spans: [SceneSpan]) -> Sheet? {

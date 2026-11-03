@@ -92,6 +92,11 @@ private struct MovieRow: View {
             }
             Button("Replace movie…") { model.replaceMovie(file.id) }
                 .help("Link this entry to another file, keeping its sheets")
+            // Add shot-detection sheet uses (or resumes) the stored scan;
+            // this one starts over.
+            Button("Rescan for Shots") { model.rescan(file.id) }
+                .disabled(missing || model.isScanning || model.scanCacheState(file.id) == .none)
+                .help("Scan for shots again from the first frame")
             Divider()
             Button("Remove", role: .destructive) { model.removeMovie(file.id) }
         }
@@ -122,6 +127,19 @@ private struct Poster: View {
         }
         .frame(width: width, height: width * ratio)
         .clipShape(RoundedRectangle(cornerRadius: Theme.radiusSm))
+        .overlay(alignment: .bottomTrailing) {
+            // "S" once shot-scanned (§4).
+            if file.scanState == .scanned {
+                Text("S")
+                    .font(Theme.condensed(10, weight: .bold))
+                    .foregroundStyle(Theme.onAccent)
+                    .frame(width: 14, height: 14)
+                    .background(Theme.accent, in: RoundedRectangle(cornerRadius: 3))
+                    .padding(3)
+                    .help("Scanned for shots")
+                    .accessibilityLabel("Scanned for shots")
+            }
+        }
     }
 }
 
@@ -137,7 +155,7 @@ private struct SheetRow: View {
         let selected = model.library.currentSheetId == sheet.id
         let ref = SheetRef(fileId: file.id, sheetId: sheet.id)
         HStack(spacing: Theme.space2) {
-            Image(systemName: sheet.view == .grid ? "square.grid.3x3" : "barcode")
+            Image(systemName: model.isTimeline(sheet) ? "barcode" : "square.grid.3x3")
                 .foregroundStyle(selected ? Theme.accentInk : Theme.textMuted)
             if isRenaming {
                 TextField("Name", text: $draft)
@@ -179,9 +197,10 @@ private struct SheetRow: View {
         .onTapGesture { model.select(sheet: sheet.id, of: file.id) }
         .contextMenu {
             Button("Rename") { startRenaming() }
-            // Come with the timeline view and shot sheets (T05).
-            Button("Switch View") {}.disabled(true)
-            Button("Convert to Interval") {}.disabled(true)
+            Button(sheet.view == .grid ? "Switch to Timeline View" : "Switch to Grid View") { model.toggleView(ref) }
+                .disabled(sheet.type == .faces)
+            Button("Convert to Interval") { model.convertToInterval(ref) }
+                .disabled(sheet.type == .interval)
             Button("Duplicate") { model.duplicateSheet(ref) }
             Button("Export JSON") { model.exportJSON(ref) }
             Divider()

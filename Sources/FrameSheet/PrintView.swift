@@ -1,22 +1,33 @@
 import FrameSheetCore
 import SwiftUI
 
-/// The print of a grid sheet (§5.1, §5.2): background, header and thumbs
-/// with their frame info, laid out by `GridGeometry`. The window draws it
-/// under its interaction layer and Save Sheet renders it offscreen
-/// with `ImageRenderer`, so both show the same print. It reads nothing from
-/// the environment; images come from `image`.
+/// The print of a sheet: background, header and thumbs with their frame
+/// info laid out by `GridGeometry` (§5.1, §5.2), or the timeline's scene
+/// boxes laid out by `TimelineGeometry` (§6, §10). The window draws it under
+/// its interaction layer and Save Sheet renders it offscreen with
+/// `ImageRenderer`, so both show the same print. It reads nothing from the
+/// environment; images come from `image`.
 struct PrintView: View {
     let file: MovieFile
-    /// The thumbs in print order; hidden ones are drawn dimmed.
+    /// Grid: the thumbs in print order; hidden ones are drawn dimmed.
+    /// Timeline: the thumbs of the scenes (a scene's thumb has its id).
     let thumbs: [Thumb]
-    let geometry: GridGeometry
+    let layout: PrintLayout
     let settings: FrameSheetCore.Settings
     let image: (Thumb) -> CGImage?
 
     var body: some View {
+        switch layout {
+        case .grid(let geometry):
+            grid(geometry)
+        case .timeline(let geometry, let scenes):
+            timeline(geometry, scenes: scenes)
+        }
+    }
+
+    private func grid(_ geometry: GridGeometry) -> some View {
         let size = geometry.printContentSize
-        ZStack(alignment: .topLeading) {
+        return ZStack(alignment: .topLeading) {
             Color(PrintOutput.background(settings.outputBackground, format: settings.outputFormat))
             if settings.showHeader {
                 let frame = geometry.headerFrame
@@ -36,6 +47,65 @@ struct PrintView: View {
             }
         }
         .frame(width: size.width, height: size.height, alignment: .topLeading)
+    }
+
+    /// The timeline (MoviePrint `SceneGrid`/`Scene`): one box per scene,
+    /// its mean color under the scene's frame (unless Toggle images shows
+    /// colors only), the frame info of its thumb, dimmed when hidden.
+    private func timeline(_ geometry: TimelineGeometry, scenes: [FrameSheetCore.Scene]) -> some View {
+        let size = geometry.contentSize
+        let byId = Dictionary(thumbs.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        return ZStack(alignment: .topLeading) {
+            Color(PrintOutput.background(settings.outputBackground, format: settings.outputFormat))
+            ForEach(Array(scenes.enumerated()), id: \.element.id) { index, scene in
+                let frame = geometry.sceneFrames[index]
+                let thumb = byId[scene.id]
+                PrintScene(
+                    file: file, scene: scene, thumb: thumb,
+                    image: settings.timelineShowImages ? thumb.flatMap(image) : nil, settings: settings,
+                    size: frame.size, cornerRadius: min(geometry.borderRadius, frame.width / 2))
+                    .frame(width: frame.width, height: frame.height)
+                    .offset(x: frame.minX, y: frame.minY)
+            }
+        }
+        .frame(width: size.width, height: size.height, alignment: .topLeading)
+    }
+}
+
+/// One scene box of the timeline: the mean color, the frame filling the
+/// box's height and centered (cropped at the sides), and its frame info.
+private struct PrintScene: View {
+    let file: MovieFile
+    let scene: FrameSheetCore.Scene
+    let thumb: Thumb?
+    let image: CGImage?
+    let settings: FrameSheetCore.Settings
+    let size: CGSize
+    let cornerRadius: Double
+
+    var body: some View {
+        let color = scene.colorRGB.count == 3
+            ? Color(.sRGB, red: Double(scene.colorRGB[0]) / 255, green: Double(scene.colorRGB[1]) / 255,
+                    blue: Double(scene.colorRGB[2]) / 255)
+            : Theme.surface
+        ZStack {
+            color
+            if let image {
+                Image(decorative: image, scale: 1)
+                    .resizable()
+                    .interpolation(.high)
+                    .aspectRatio(contentMode: .fill)
+                    .frame(width: size.width, height: size.height)
+            }
+        }
+        .frame(width: size.width, height: size.height)
+        .overlay {
+            if let thumb {
+                FrameInfoLabel(file: file, thumb: thumb, settings: settings, thumbHeight: size.height)
+            }
+        }
+        .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
+        .opacity(scene.hidden ? 0.3 : 1)
     }
 }
 
@@ -67,7 +137,8 @@ private struct PrintThumb: View {
     }
 }
 
-/// The frame number or timecode on a thumb, per the frame info settings.
+/// The frame number or timecode on a thumb or scene, per the Thumb label
+/// settings; the window and the saved print both draw it.
 private struct FrameInfoLabel: View {
     let file: MovieFile
     let thumb: Thumb
@@ -77,7 +148,8 @@ private struct FrameInfoLabel: View {
     var body: some View {
         if let text = FrameInfoText.text(
             settings.frameInfo, frame: thumb.frameNumber, fps: file.fps,
-            timecodeFormat: settings.frameInfoTimecodeFormat) {
+            timecodeFormat: settings.frameInfoTimecodeFormat, frameFormat: settings.frameInfoFrameFormat,
+            frameCount: file.frameCount) {
             let size = max(1, FrameInfoText.fontSize(size: settings.frameInfoSize, thumbHeight: thumbHeight))
             Text(text)
                 .font(font(settings.frameInfoFontFamily, size: size))

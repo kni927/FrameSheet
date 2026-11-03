@@ -51,6 +51,9 @@ final class AppModel {
     var notice: String?
     /// A save in progress, shown in the toast with Cancel.
     var progress: SaveProgress?
+    /// The shot scan in progress (one at a time), shown in the toast with
+    /// Cancel; its scenes stream into `scanJob.sheetId`.
+    var scanJob: ScanJob?
     var showMovieList = true
     var showSettings = true
     /// Missing movie files by id (checked on launch and on open).
@@ -99,6 +102,11 @@ final class AppModel {
     @ObservationIgnored var saveJob: Task<Void, Never>?
     @ObservationIgnored private var discovery: Task<Void, Never>?
     @ObservationIgnored private var columnsAtDragStart: Int?
+    @ObservationIgnored private var secondsPerRowAtDragStart: Double?
+    @ObservationIgnored var scanTask: Task<Void, Never>?
+    /// Complete scans read from the scan cache, by movie id (§10).
+    @ObservationIgnored var scanData: [UUID: ScanData] = [:]
+    let scanStore: ScanCacheStore?
     /// Target rows set by the Rows slider for one sheet at one column count;
     /// not persisted, and void once the sheet or its columns change.
     private var rowsTarget: (sheetId: UUID, columns: Int, rows: Int)?
@@ -140,6 +148,7 @@ final class AppModel {
         var missing: Set<UUID> = []
         for i in loaded.files.indices { Self.resolveBookmark(at: i, in: &loaded, missing: &missing) }
         self.store = store
+        scanStore = (try? ScanCacheStore.defaultDirectory()).map(ScanCacheStore.init)
         self.missing = missing
         document = EditableLibrary(loaded)
         cache = ThumbnailCache(limitMB: loaded.settings.thumbnailCacheMB)
@@ -176,6 +185,9 @@ final class AppModel {
     func image(file: UUID, frame: Int, width: Int) -> CGImage? {
         _ = imageGeneration
         if let image = cachedImage(file: file, frame: frame, width: width) { return image }
+        // The sheet a scan fills shows mean colors until the scan ends: each
+        // thumb decoded meanwhile would make the scan reopen its reader.
+        if isStreamingSheetShown, file == library.currentFileId, width == Self.thumbWidth { return nil }
         // NSCache may have evicted it (cost limit or memory pressure): decode
         // it again, outside the view update that asked for it.
         let key = Self.loadingKey(file, frame, width)
@@ -396,7 +408,7 @@ final class AppModel {
         setFFmpegPath(url.path)
     }
 
-    private func ffmpegTools() async -> FFmpegTools? {
+    func ffmpegTools() async -> FFmpegTools? {
         await discovery?.value
         return ffmpeg?.tools
     }
@@ -459,10 +471,18 @@ final class AppModel {
                 do {
                     let backend = try await openMovie(url)
                     let info = backend.info
-                    let file = MovieFile(
+                    var file = MovieFile(
                         url: url, bookmark: Self.bookmark(for: url), duration: info.duration,
                         frameCount: info.frameCount, fps: info.fps, width: info.width,
                         height: info.height, size: info.size, fourCC: info.fourCC)
+                    // Experimental (§10): IN/OUT from the first and last
+                    // frames, before the default sheet is made between them.
+                    if library.settings.automaticInOut,
+                       let points = try? await AutoInOut.detect(url, ffmpeg: await ffmpegTools()),
+                       points.inFrame < points.outFrame {
+                        file.inFrame = points.inFrame
+                        file.outFrame = points.outFrame
+                    }
                     added.append(file)
                     backends[file.id] = backend
                     linkedURLs[file.id] = url
@@ -563,9 +583,13 @@ final class AppModel {
             linkedURLs[fileId] = url
             missing.remove(fileId)
             forgetImages()
+            // The stored scan was of the old file.
+            scanStore?.delete(fileId)
+            scanData[fileId] = nil
             edit { library in
                 library.relink(fileId, to: url, bookmark: Self.bookmark(for: url))
                 library.applyProbe(fileId, info: backend.info)
+                if let i = library.files.firstIndex(where: { $0.id == fileId }) { library.files[i].scanState = .none }
             }
             for file in library.files { loadPoster(file) }
         }
@@ -845,25 +869,84 @@ final class AppModel {
     func zoom(in zoomIn: Bool) { zoom = GridLayout.zoom(from: zoom, in: zoomIn) }
     func zoomToFit() { zoom = 1 }
 
-    /// Layout of the current sheet in the main area at the current zoom;
-    /// nil while no sheet is shown or the area is not laid out yet.
-    var currentGridGeometry: GridGeometry? {
+    /// Layout of the current sheet in the main area at the current zoom, in
+    /// grid or timeline view; nil while no sheet is shown or the area is not
+    /// laid out yet.
+    var currentFit: (any PrintFit)? {
         guard let file = currentFile, let sheet = currentSheet,
               mainAreaSize.width > 0, mainAreaSize.height > 0
         else { return nil }
+        if isTimeline(sheet) {
+            return timelineGeometry(file: file, sheet: sheet, size: mainAreaSize)
+        }
         return SheetGridView.geometry(
             file: file, columns: sheet.columnCount, thumbCount: gridCellCount(of: sheet),
             settings: library.settings, size: mainAreaSize, zoom: zoom)
     }
 
-    /// The print's height fills the grid area (it may scroll sideways).
+    /// The print's height fills the main area (it may scroll sideways).
     func zoomToFitHeight() {
-        if let geometry = currentGridGeometry { zoom = Self.clampedZoom(geometry.zoomFillingHeight) }
+        if let fit = currentFit { zoom = Self.clampedZoom(fit.zoomFillingHeight) }
     }
 
-    /// The print's width fills the grid area (it may scroll up and down).
+    /// The print's width fills the main area (it may scroll up and down).
     func zoomToFitWidth() {
-        if let geometry = currentGridGeometry { zoom = Self.clampedZoom(geometry.zoomFillingWidth) }
+        if let fit = currentFit { zoom = Self.clampedZoom(fit.zoomFillingWidth) }
+    }
+
+    // MARK: - Timeline (§6, §10)
+
+    /// The sheet is drawn as a timeline (faces sheets stay grids).
+    func isTimeline(_ sheet: Sheet) -> Bool { sheet.view == .timeline && sheet.type != .faces }
+
+    /// The scenes a sheet shows in timeline view, hidden ones with Show
+    /// hidden thumbs.
+    func timelineScenes(of sheet: Sheet) -> [FrameSheetCore.Scene] {
+        SceneList.timelineScenes(of: sheet, includeHidden: library.settings.showHiddenThumbs)
+    }
+
+    /// The timeline layout of a sheet in an area of `size` at the current
+    /// zoom; the selected scene is drawn at full aspect width.
+    func timelineGeometry(file: MovieFile, sheet: Sheet, size: CGSize) -> TimelineGeometry {
+        let scenes = timelineScenes(of: sheet)
+        let selected = selectedThumbId.flatMap { id in scenes.firstIndex { $0.id == id } }
+        return SheetGridView.timelineGeometry(
+            file: file, sheet: sheet, scenes: scenes, settings: library.settings, size: size, zoom: zoom,
+            expandedIndex: selected)
+    }
+
+    /// Grid ↔ timeline (sheet menu, toolbar, key G); faces sheets stay grids.
+    func toggleView(_ ref: SheetRef) {
+        guard let sheet = library.sheet(ref.sheetId, of: ref.fileId) else { return }
+        cancelScrub()
+        edit { $0.setView(ref, sheet.view == .grid ? .timeline : .grid) }
+    }
+
+    func convertToInterval(_ ref: SheetRef) {
+        edit { $0.convertToInterval(ref) }
+    }
+
+    /// Minutes per row slider: live while dragging, one undo step when
+    /// released.
+    func setSecondsPerRowLive(_ seconds: Double, editing: Bool) {
+        guard let ref = currentRef, let sheet = currentSheet else { return }
+        if editing {
+            if secondsPerRowAtDragStart == nil { secondsPerRowAtDragStart = sheet.secondsPerRow }
+            update { $0.setSecondsPerRow(ref, seconds) }
+        } else {
+            edit { $0.setSecondsPerRow(ref, seconds) }
+        }
+    }
+
+    func endSecondsPerRowDrag() {
+        guard let start = secondsPerRowAtDragStart, let ref = currentRef, let sheet = currentSheet else {
+            secondsPerRowAtDragStart = nil
+            return
+        }
+        secondsPerRowAtDragStart = nil
+        let final = sheet.secondsPerRow
+        update { $0.setSecondsPerRow(ref, start) }
+        edit { $0.setSecondsPerRow(ref, final) }
     }
 
     private static func clampedZoom(_ zoom: Double) -> Double {
@@ -935,7 +1018,9 @@ final class AppModel {
     /// Starts a scrub of `thumb`; `keyboard` scrubs step with the arrows and
     /// keep the action the modifiers chose at the start.
     func beginScrub(_ thumb: UUID, keyboard: Bool, modifiers: ScrubModifiers, x: Double = 0, y: Double = 0) {
-        guard let ref = currentRef, let sheet = currentSheet, let file = currentFile,
+        // Shot sheets scrub inside the scene (T05 part 3); the interval scrub
+        // would insert thumbs without scenes.
+        guard let ref = currentRef, let sheet = currentSheet, let file = currentFile, sheet.type != .shot,
               let own = sheet.thumbs.first(where: { $0.id == thumb })
         else { return }
         let (left, right) = sheet.visibleNeighbors(of: thumb)
@@ -1134,9 +1219,9 @@ final class AppModel {
         pinned = pinned.filter { keep.contains($0.key) }
     }
 
-    private func loadCurrentSheet() {
+    func loadCurrentSheet() {
         prunePinned()
-        guard let file = currentFile, let sheet = currentSheet else { return }
+        guard let file = currentFile, let sheet = currentSheet, !isStreamingSheetShown else { return }
         load(frames: sheet.thumbs.map(\.frameNumber), of: file, width: Self.thumbWidth, sheetId: sheet.id)
     }
 

@@ -2,10 +2,12 @@ import AppKit
 import FrameSheetCore
 import SwiftUI
 
-/// Right sidebar (§6), grid parts: stats and columns of the current sheet,
-/// styling with the header, frame info, output and the naming scheme. The
-/// thumbnail cache and ffmpeg live in the Settings window; face, timeline
-/// and experimental sections come with their TASKs.
+/// Right sidebar (§6): the grid section (stats, columns, rows) or, for a
+/// sheet in timeline view, the timeline section (stats, minutes per row,
+/// natural flow, shot detection threshold); styling, the thumb label,
+/// output, the naming scheme and the experimental options. The thumbnail
+/// cache and ffmpeg live in the Settings window; face settings come with
+/// their TASK.
 struct SettingsPanel: View {
     @Environment(AppModel.self) private var model
 
@@ -13,12 +15,17 @@ struct SettingsPanel: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
                 if let sheet = model.currentSheet {
-                    GridSection(sheet: sheet)
+                    if model.isTimeline(sheet) {
+                        TimelineSection(sheet: sheet)
+                    } else {
+                        GridSection(sheet: sheet)
+                    }
                 }
                 StylingSection()
                 FrameInfoSection()
                 OutputSection()
                 NamingSection()
+                ExperimentalSection()
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
@@ -46,11 +53,13 @@ private struct LabeledSlider: View {
     var unit = ""
     var help: String?
     var onEditingChanged: (Bool) -> Void = { _ in }
+    /// The value as shown; whole numbers with `unit` by default.
+    var format: ((Double) -> String)?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
             PanelRow(title) {
-                Text("\(Int(value.rounded()))\(unit)")
+                Text(format?(value) ?? "\(Int(value.rounded()))\(unit)")
                     .font(Theme.mono(12))
                     .foregroundStyle(Theme.textMuted)
             }
@@ -158,34 +167,19 @@ private struct StylingSection: View {
 
     var body: some View {
         let showHeader = model.library.settings.showHeader
-        // Show header always; the rest under More (owner, 2026-11-03).
+        let timeline = model.currentSheet.map(model.isTimeline) ?? false
+        // Show header always (grid view; the timeline print has no header);
+        // the rest under More (owner, 2026-11-03).
         PanelSection(title: "Styling", expandedKey: "styling") {
-            SwitchRow(
-                title: "Show header", isOn: model.setting(\.showHeader),
-                help: "File name, details and timeline above the thumbs")
-        } more: {
-            VStack(alignment: .leading, spacing: Theme.space2) {
-                SwitchRow(title: "File path", isOn: model.setting(\.showPathInHeader), help: "Movie's folder in the header")
+            if timeline {
+                TimelineStylingRows()
+            } else {
                 SwitchRow(
-                    title: "File details", isOn: model.setting(\.showDetailsInHeader),
-                    help: "Duration, fps, size, file size and codec in the header")
-                SwitchRow(
-                    title: "Timeline", isOn: model.setting(\.showTimelineInHeader),
-                    help: "Mini timeline with the thumbs' positions in the header")
-                PanelRow("Alignment") {
-                    Picker("Alignment", selection: model.setting(\.headerAlignment)) {
-                        ForEach(HeaderAlignment.allCases, id: \.self) { alignment in
-                            Text(alignment.label).tag(alignment)
-                        }
-                    }
-                    .pickerStyle(.segmented)
-                    .labelsHidden()
-                    .fixedSize()
-                    .help("Header text at the right or left")
-                }
+                    title: "Show header", isOn: model.setting(\.showHeader),
+                    help: "File name, details and timeline above the thumbs")
             }
-            .padding(.leading, Theme.space4)
-            .disabled(!showHeader)
+        } more: {
+            if !timeline { headerRows(enabled: showHeader) }
             MarginRows(
                 horizontal: \.marginHorizontal, vertical: \.marginVertical, linkedKey: \.marginsLinked,
                 range: 0...20, horizontalHelp: "Space between columns", verticalHelp: "Space between rows")
@@ -194,6 +188,32 @@ private struct StylingSection: View {
                 help: "Corner radius, % of thumb width (0 = square)")
             SwitchRow(title: "Show hidden thumbs", isOn: model.setting(\.showHiddenThumbs), help: "Show hidden thumbs dimmed")
         }
+    }
+
+    /// The header's parts (grid view).
+    private func headerRows(enabled: Bool) -> some View {
+        VStack(alignment: .leading, spacing: Theme.space2) {
+            SwitchRow(title: "File path", isOn: model.setting(\.showPathInHeader), help: "Movie's folder in the header")
+            SwitchRow(
+                title: "File details", isOn: model.setting(\.showDetailsInHeader),
+                help: "Duration, fps, size, file size and codec in the header")
+            SwitchRow(
+                title: "Timeline", isOn: model.setting(\.showTimelineInHeader),
+                help: "Mini timeline with the thumbs' positions in the header")
+            PanelRow("Alignment") {
+                Picker("Alignment", selection: model.setting(\.headerAlignment)) {
+                    ForEach(HeaderAlignment.allCases, id: \.self) { alignment in
+                        Text(alignment.label).tag(alignment)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .fixedSize()
+                .help("Header text at the right or left")
+            }
+        }
+        .padding(.leading, Theme.space4)
+        .disabled(!enabled)
     }
 }
 
@@ -257,9 +277,12 @@ private struct FrameInfoSection: View {
     @Environment(AppModel.self) private var model
 
     var body: some View {
-        // The mode always; the rest under More (owner, 2026-11-03).
-        PanelSection(title: "Frame info", expandedKey: "frameInfo") {
-            Picker("Frame info", selection: model.setting(\.frameInfo)) {
+        let mode = model.library.settings.frameInfo
+        // The mode and its format always; the rest under More (owner,
+        // 2026-11-03). Named "Thumb label" in the panel (owner, 2026-11-03);
+        // the settings keep their `frameInfo` names.
+        PanelSection(title: "Thumb label", expandedKey: "frameInfo") {
+            Picker("Thumb label", selection: model.setting(\.frameInfo)) {
                 Text("Frames").tag(FrameInfo.frames)
                 Text("Timecode").tag(FrameInfo.timecode)
                 Text("Hide").tag(FrameInfo.hidden)
@@ -267,17 +290,29 @@ private struct FrameInfoSection: View {
             .pickerStyle(.segmented)
             .labelsHidden()
             .help("Frame number, timecode or none")
-        } more: {
-            PanelRow("Timecode") {
-                Picker("Timecode", selection: model.setting(\.frameInfoTimecodeFormat)) {
-                    ForEach(TimecodeFormat.allCases, id: \.self) { format in
-                        Text(format.label).tag(format)
+            PanelRow("Format") {
+                if mode == .timecode {
+                    Picker("Format", selection: model.setting(\.frameInfoTimecodeFormat)) {
+                        ForEach(TimecodeFormat.allCases, id: \.self) { format in
+                            Text(format.label).tag(format)
+                        }
                     }
+                    .labelsHidden()
+                    .fixedSize()
+                    .help("Timecode format on thumbs (file names keep HH_MM_SS_FF)")
+                } else {
+                    Picker("Format", selection: model.setting(\.frameInfoFrameFormat)) {
+                        ForEach(FrameNumberFormat.allCases, id: \.self) { format in
+                            Text(format.label).tag(format)
+                        }
+                    }
+                    .labelsHidden()
+                    .fixedSize()
+                    .help("Frame number, or with the movie's last frame number")
+                    .disabled(mode == .hidden)
                 }
-                .labelsHidden()
-                .fixedSize()
-                .help("Timecode format on thumbs (file names keep HH_MM_SS_FF)")
             }
+        } more: {
             PanelRow("Font") {
                 FontFamilyPicker(selection: model.setting(\.frameInfoFontFamily))
             }
@@ -490,8 +525,11 @@ private struct SizeRows: View {
 
     var body: some View {
         let settings = model.library.settings
-        let label = model.currentSavePlan.map { "\($0.width) px (× \($0.height) px)" }
-            ?? (settings.outputSizeMax ? "max" : "\(settings.outputSize) px")
+        // In timeline view the size is the print's height (§6).
+        let timeline = model.currentSheet.map(model.isTimeline) ?? false
+        let label = model.currentSavePlan.map {
+            timeline ? "\($0.height) px high (× \($0.width) px)" : "\($0.width) px (× \($0.height) px)"
+        } ?? (settings.outputSizeMax ? "max" : "\(settings.outputSize) px")
         VStack(alignment: .leading, spacing: 2) {
             PanelRow("Size") {
                 Text(label)
@@ -508,7 +546,9 @@ private struct SizeRows: View {
                 )
                 .controlSize(.small)
                 .disabled(settings.outputSizeMax)
-                .help("Width of the saved print (limited so neither side exceeds 16384 px)")
+                .help(timeline
+                      ? "Height of the saved timeline (limited so neither side exceeds 16384 px)"
+                      : "Width of the saved print (limited so neither side exceeds 16384 px)")
                 Toggle("max", isOn: model.setting(\.outputSizeMax))
                     .toggleStyle(.checkbox)
                     .controlSize(.small)
@@ -542,13 +582,12 @@ private struct NamingSection: View {
 
     var body: some View {
         let settings = model.library.settings
-        // Everything under More (owner, 2026-11-03).
+        // The sheet template always; the rest under More (owner, 2026-11-03).
         PanelSection(title: "Naming scheme", expandedKey: "naming") {
-            EmptyView()
-        } more: {
             TemplateField(
                 title: "Sheet", key: \.sheetNameTemplate, isThumb: false,
                 fileExtension: settings.outputFormat.fileExtension)
+        } more: {
             TemplateField(
                 title: "Single thumb", key: \.singleThumbNameTemplate, isThumb: true,
                 fileExtension: settings.thumbFormat.fileExtension)
@@ -632,5 +671,140 @@ private struct TemplateField: View {
             template: template, movieFileName: file?.name ?? "movie.mp4", sheetName: sheet?.name ?? "Sheet-1",
             frameNumber: frame, fps: (file?.fps ?? 0) > 0 ? file!.fps : 25)
         return "\(name).\(fileExtension)"
+    }
+}
+
+/// Timeline view (§6): the stats line, minutes per row (per sheet), natural
+/// flow (shot sheets), and the shot detection threshold with Add new sheet,
+/// which rebuilds the scenes from the stored scan.
+private struct TimelineSection: View {
+    @Environment(AppModel.self) private var model
+    let sheet: Sheet
+    @State private var isDragging = false
+
+    var body: some View {
+        let file = model.currentFile
+        let shots = model.timelineScenes(of: sheet).count
+        let frameCount = file?.frameCount ?? 0
+        let fps = file?.fps ?? 25
+        let stats = TimelineLayout.stats(shots: shots, frameCount: frameCount, fps: fps)
+        let line = TimelineLayout.statsLine(shots: shots, frameCount: frameCount, fps: fps)
+        let scanned = file.map { model.scanCacheState($0.id) == .complete } ?? false
+        PanelSection(title: "Timeline") {
+            HStack(spacing: 0) {
+                TextStat(value: "\(shots)", label: shots == 1 ? "shot" : "shots")
+                TextStat(value: "~\(stats.minutes)", label: stats.minutes == 1 ? "minute" : "minutes")
+                TextStat(value: "\(stats.cutsPerMinute)", label: "cut/min")
+            }
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(line)
+            .help(line)
+            .padding(.bottom, Theme.space1)
+            LabeledSlider(
+                title: "Minutes per row",
+                value: Binding(
+                    get: { sheet.secondsPerRow },
+                    set: { model.setSecondsPerRowLive($0.rounded(), editing: isDragging) }),
+                range: TimelineLayout.secondsPerRowRange,
+                help: "Movie time per row of this sheet",
+                onEditingChanged: { editing in
+                    isDragging = editing
+                    if !editing { model.endSecondsPerRowDrag() }
+                },
+                format: { Self.secondsLabel($0) })
+            SwitchRow(
+                title: "Natural flow", isOn: model.setting(\.timelineNaturalFlow),
+                help: "Shot sheets: wrap scenes by width instead of by time")
+                .disabled(sheet.type != .shot)
+            LabeledSlider(
+                title: "Shot threshold", value: model.setting(\.shotDetectionThreshold),
+                range: Defaults.shotDetectionThresholdRange, step: 0.5,
+                help: "Lower finds more shots", format: { String(format: "%.1f", $0) })
+            HStack {
+                Spacer(minLength: 0)
+                Button("Add new sheet") { model.addShotSheetFromCache() }
+                    .controlSize(.small)
+                    .disabled(!scanned || model.isScanning)
+                    .help(scanned
+                          ? "New shot sheet at this threshold, from the stored scan"
+                          : "Scan the movie first (Add shot-detection sheet)")
+            }
+        }
+    }
+
+    /// "120 s (2 min)".
+    static func secondsLabel(_ seconds: Double) -> String {
+        let s = Int(seconds.rounded())
+        guard s >= 60 else { return "\(s) s" }
+        let minutes = Double(s) / 60
+        let text = minutes == minutes.rounded() ? "\(Int(minutes))" : String(format: "%.1f", minutes)
+        return "\(s) s (\(text) min)"
+    }
+}
+
+/// A large value over a small muted label, one of equal columns.
+private struct TextStat: View {
+    let value: String
+    let label: String
+
+    var body: some View {
+        VStack(spacing: 0) {
+            Text(value)
+                .font(Theme.statValue)
+                .foregroundStyle(Theme.text)
+            Text(label)
+                .font(Theme.panelCaption)
+                .foregroundStyle(Theme.textMuted)
+        }
+        .frame(maxWidth: .infinity)
+    }
+}
+
+/// Styling rows of the timeline view (§6): scene width ratio (print width
+/// = height × multiplier) and the minimum scene width, set in seconds and
+/// stored as frames of the current movie.
+private struct TimelineStylingRows: View {
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        let fps = model.currentFile?.fps ?? 25
+        LabeledSlider(
+            title: "Scene width ratio", value: model.setting(\.timelineSceneWidthRatio), range: 0...100,
+            help: "Width of the timeline relative to its height",
+            format: { String(format: "× %.2f", TimelineLayout.widthMultiplier(sceneWidthRatio: $0)) })
+        LabeledSlider(
+            title: "Min scene width",
+            value: Binding(
+                get: { TimelineLayout.minSceneSeconds(frames: model.library.settings.timelineMinSceneLength, fps: fps) },
+                set: { v in
+                    model.updateSettings { $0.timelineMinSceneLength = TimelineLayout.minSceneFrames(seconds: v, fps: fps) }
+                }),
+            range: TimelineLayout.minSceneSecondsRange, unit: " s",
+            help: "Short scenes are drawn at least this long")
+    }
+}
+
+/// Experimental (§6): the shot detection method and automatic IN/OUT.
+private struct ExperimentalSection: View {
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        PanelSection(title: "Experimental", expandedKey: "experimental") {
+            EmptyView()
+        } more: {
+            PanelRow("Shot detection") {
+                Picker("Shot detection", selection: model.setting(\.shotDetectionMethod)) {
+                    ForEach(ShotDetectionMethod.allCases, id: \.self) { method in
+                        Text(method.label).tag(method)
+                    }
+                }
+                .labelsHidden()
+                .fixedSize()
+                .help("Method of the next scan (a new method scans again)")
+            }
+            SwitchRow(
+                title: "Automatic IN/OUT", isOn: model.setting(\.automaticInOut),
+                help: "Skip dark frames at the start and end of movies added from now on")
+        }
     }
 }

@@ -179,7 +179,7 @@ extension AppModel {
         try await Task.sleep(for: .milliseconds(50))
         let decoded = images
         images.removeAll()
-        let content = PrintView(file: file, thumbs: thumbs, geometry: plan.geometry, settings: settings) {
+        let content = PrintView(file: file, thumbs: thumbs, layout: plan.layout, settings: settings) {
             decoded[$0.frameNumber]
         }
         .frame(width: CGFloat(plan.width), height: CGFloat(plan.height), alignment: .topLeading)

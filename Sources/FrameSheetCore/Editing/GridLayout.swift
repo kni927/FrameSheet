@@ -35,13 +35,20 @@ public enum GridLayout {
 }
 
 public enum FrameInfoText {
-    /// The label on a thumb: 4-digit frame number, timecode in
-    /// `timecodeFormat` (HH:MM:SS:FF by default), or nothing.
+    /// The label on a thumb: the 4-digit frame number (with
+    /// `frameOfLast`, followed by " / " and the movie's last frame number,
+    /// frame count − 1), the timecode in `timecodeFormat` (HH:MM:SS:FF by
+    /// default), or nothing. The window and the saved print both draw it.
     public static func text(
-        _ mode: FrameInfo, frame: Int, fps: Double, timecodeFormat: TimecodeFormat = .hoursMinutesSecondsFrames
+        _ mode: FrameInfo, frame: Int, fps: Double, timecodeFormat: TimecodeFormat = .hoursMinutesSecondsFrames,
+        frameFormat: FrameNumberFormat = .frame, frameCount: Int = 0
     ) -> String? {
         switch mode {
-        case .frames: String(format: "%04d", max(0, frame))
+        case .frames:
+            switch frameFormat {
+            case .frame: String(format: "%04d", max(0, frame))
+            case .frameOfLast: String(format: "%04d / %04d", max(0, frame), max(0, frameCount - 1))
+            }
         case .timecode: Timecode.string(frames: frame, fps: fps, format: timecodeFormat)
         case .hidden: nil
         }

@@ -2,12 +2,12 @@ import FrameSheetCore
 import SwiftUI
 
 /// The sheet tools in the window toolbar next to the title (§4's floating
-/// toolbar, moved there by the owner, 2026-11-03), the parts that work on
-/// interval sheets: back to parent, add interval sheet, duplicate, undo and
-/// redo, zoom (with
-/// Fit height and Fit width when they would change the fit), show hidden
-/// thumbs, show header, cycle frame info, optimize grid layout, Save
-/// Sheet with its menu, then the right panel toggle. Disabled while no sheet is shown (not the toggle). Each group is
+/// toolbar, moved there by the owner, 2026-11-03): back to parent, add
+/// interval sheet, add shot-detection sheet, duplicate, undo and redo, zoom
+/// (with Fit height and Fit width when they would change the fit), show
+/// hidden thumbs, show header, cycle the thumb label, grid/timeline, toggle
+/// images (timeline), optimize grid layout, Save Sheet with its menu, then
+/// the right panel toggle. Disabled while no sheet is shown (not the toggle). Each group is
 /// one `ToolbarIconGroup` in a single toolbar item, so its icons touch; the
 /// items have no glass background, and each control has its own tooltip
 /// (`toolbarHelp`).
@@ -18,7 +18,8 @@ struct SheetToolbar: ToolbarContent {
     var body: some ToolbarContent {
         let settings = model.library.settings
         let noSheet = sheet == nil
-        let geometry = noSheet ? nil : model.currentGridGeometry
+        let geometry = noSheet ? nil : model.currentFit
+        let timeline = sheet.map(model.isTimeline) ?? false
         ToolbarItem(placement: .navigation) {
             ToolbarIconGroup {
                 Button {
@@ -41,6 +42,14 @@ struct SheetToolbar: ToolbarContent {
                 .buttonStyle(ToolbarIconStyle(grouped: true))
                 .toolbarHelp("Add interval sheet")
                 .disabled(noSheet)
+                Button {
+                    model.addShotDetectionSheet()
+                } label: {
+                    Label("Add shot-detection sheet", systemImage: "barcode.viewfinder")
+                }
+                .buttonStyle(ToolbarIconStyle(grouped: true))
+                .toolbarHelp(shotSheetHelp)
+                .disabled(noSheet || model.isScanning)
                 Button {
                     if let ref = model.currentRef { model.duplicateSheet(ref) }
                 } label: {
@@ -140,7 +149,7 @@ struct SheetToolbar: ToolbarContent {
                     .buttonStyle(ToolbarIconStyle(selected: settings.showHeader, grouped: true))
                     .accessibilityAddTraits(settings.showHeader ? .isSelected : [])
                     .toolbarHelp("Show header")
-                    .disabled(noSheet)
+                    .disabled(noSheet || timeline)
                     Button {
                         model.cycleFrameInfo()
                     } label: {
@@ -149,8 +158,25 @@ struct SheetToolbar: ToolbarContent {
                             systemImage: settings.frameInfo == .hidden ? "123.rectangle" : "123.rectangle.fill")
                     }
                     .buttonStyle(ToolbarIconStyle(grouped: true))
-                    .toolbarHelp("Frame info: \(frameInfoName(settings.frameInfo)) (click cycles)")
+                    .toolbarHelp("Thumb label: \(frameInfoName(settings.frameInfo)) (click cycles)")
                     .disabled(noSheet)
+                    Button {
+                        if let ref = model.currentRef { model.toggleView(ref) }
+                    } label: {
+                        Label(timeline ? "Grid view" : "Timeline view", systemImage: timeline ? "square.grid.2x2" : "barcode")
+                    }
+                    .buttonStyle(ToolbarIconStyle(grouped: true))
+                    .toolbarHelp(timeline ? "Grid view (G)" : "Timeline view (G)")
+                    .disabled(noSheet || sheet?.type == .faces)
+                    Button {
+                        model.updateSettings { $0.timelineShowImages.toggle() }
+                    } label: {
+                        Label("Toggle images", systemImage: settings.timelineShowImages ? "photo" : "paintpalette")
+                    }
+                    .buttonStyle(ToolbarIconStyle(selected: !settings.timelineShowImages, grouped: true))
+                    .accessibilityAddTraits(!settings.timelineShowImages ? .isSelected : [])
+                    .toolbarHelp(settings.timelineShowImages ? "Show mean colors only" : "Show images")
+                    .disabled(noSheet || !timeline)
                     Button {
                         model.optimizeGrid()
                     } label: {
@@ -158,7 +184,7 @@ struct SheetToolbar: ToolbarContent {
                     }
                     .buttonStyle(ToolbarIconStyle(grouped: true))
                     .toolbarHelp("Optimize grid layout")
-                    .disabled(noSheet)
+                    .disabled(noSheet || timeline)
                 }
                 // Save (decision 23): the download button, and a menu with
                 // the output location (Save All comes with T08).
@@ -192,6 +218,16 @@ struct SheetToolbar: ToolbarContent {
             }
         }
         .sharedBackgroundVisibility(.hidden)
+    }
+
+    /// Add shot-detection sheet: what it will do for the current movie.
+    private var shotSheetHelp: String {
+        guard let id = model.library.currentFileId else { return "Add shot-detection sheet" }
+        switch model.scanCacheState(id) {
+        case .complete: return "Add shot-detection sheet (from the stored scan)"
+        case .partial: return "Add shot-detection sheet (resumes the scan)"
+        case .none: return "Add shot-detection sheet (scans the movie)"
+        }
     }
 
     private func frameInfoName(_ mode: FrameInfo) -> String {

@@ -108,7 +108,11 @@ struct MainArea: View {
         ZStack(alignment: .top) {
             Theme.base
             if let file = model.currentFile, let sheet = model.currentSheet {
-                SheetGridView(file: file, sheet: sheet)
+                if model.isTimeline(sheet) {
+                    TimelineSheetView(file: file, sheet: sheet)
+                } else {
+                    SheetGridView(file: file, sheet: sheet)
+                }
             } else {
                 EmptyState()
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -168,6 +172,25 @@ private struct Toast: View {
 
     var body: some View {
         VStack(spacing: Theme.space2) {
+            if let scan = model.scanJob {
+                ToastCard {
+                    if let fraction = scan.fraction {
+                        ProgressView(value: fraction)
+                            .progressViewStyle(.linear)
+                            .frame(width: 120)
+                    } else {
+                        ProgressView()
+                            .progressViewStyle(.linear)
+                            .frame(width: 120)
+                    }
+                    Text(scan.message)
+                        .foregroundStyle(Theme.text)
+                        .monospacedDigit()
+                    Button("Cancel") { model.cancelScan() }
+                        .controlSize(.small)
+                        .help("Stop shot detection; it can resume later")
+                }
+            }
             if let progress = model.progress {
                 ToastCard {
                     ProgressView(value: progress.fraction)

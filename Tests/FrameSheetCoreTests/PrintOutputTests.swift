@@ -76,8 +76,9 @@ import Testing
         let all = PrintOutput.Plan(file: file(), sheet: sheet, settings: settings)
         #expect(all.thumbs.count == 16)
         #expect(all.width == 16384)
-        #expect(abs(all.geometry.printContentSize.width - 16384) < 1e-6)
-        #expect(all.height == PrintOutput.height(width: 16384, printAspectRatioInv: all.geometry.printAspectRatioInv))
+        guard case .grid(let geometry) = all.layout else { Issue.record("grid layout expected"); return }
+        #expect(abs(geometry.printContentSize.width - 16384) < 1e-6)
+        #expect(all.height == PrintOutput.height(width: 16384, printAspectRatioInv: geometry.printAspectRatioInv))
         // Thumbs about 4000 px wide: decoded at the movie's 1920.
         #expect(all.decodeWidth == 1920)
     }
