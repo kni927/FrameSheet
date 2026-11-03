@@ -42,7 +42,8 @@ builds them.
   `secondsPerRow`, `parentSheetId`, thumbs, scenes.
 - **Thumb:** id, frame number, index, hidden, faces (per-frame face data).
 - **Scene:** id (= thumb id), start frame, length, mean colour, hidden.
-- Names `MoviePrint-N` from a per-file counter; expanded sheets "Shot #n" or
+- Names `Sheet-N` from a per-file counter (owner, 2026-11-03; MoviePrint's
+  `MoviePrint-N` meant nothing to users); expanded sheets "Shot #n" or
   "Sequence a - b".
 - **Settings:** global, persisted (§6).
 - **Undo/redo:** 50 steps over library and sheet edits, not persisted.
@@ -139,9 +140,10 @@ app icon (owner, 2026-11-01).
   only). Save options: Overwrite (off); Include individual thumbs (off); Embed
   frame numbers (PNG, on); Embed file path (PNG, on); Open Finder after saving
   (off). Thumb format JPG (default) / PNG, quality 95.
-- **Naming scheme** with live preview: MoviePrint `[MN].[ME]-[MPN]`; single
+- **Naming scheme** with live preview: sheet `[MN].[ME]-[SN]`; single
   thumb `[MN].[ME]-frame[FN]`; individual thumbs `[MN].[ME]-[FN]`. Tokens
-  `[MN]` movie name, `[ME]` extension, `[MPN]` sheet name, `[FN]` frame number
+  `[MN]` movie name, `[ME]` extension, `[SN]` sheet name (MoviePrint's
+  `[MPN]` is accepted as an alias), `[FN]` frame number
   (6 digits), `[TC]` timecode `HH_MM_SS_FF`. Warn when a thumb template lacks
   `[FN]` and `[TC]`. Replace `/\?%*:|"<>` with `-`; when not overwriting,
   append " edit N".

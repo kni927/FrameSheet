@@ -361,3 +361,16 @@ The owner decided during T03b (in the TF's chat):
 #### Rationale
 Side by side with MoviePrint the T03 UI was hard to read; system fonts render
 best on macOS and need no bundling.
+
+### 24. Sheets are named `Sheet-N`; the naming token is `[SN]` (2026-11-03)
+
+#### Decision
+New sheets are named `Sheet-1`, `Sheet-2`, … per movie (capital S), and the
+file-name token for the sheet name is `[SN]`, so the default file name is
+`[MN].[ME]-[SN]`. `[MPN]` stays accepted as an alias, and names in imported
+MoviePrint files are kept as they are. The Show player view button comes with
+the player view (T06), not earlier as a disabled control.
+
+#### Rationale
+"MoviePrint" is the original app's brand and means nothing to FrameSheet
+users.
