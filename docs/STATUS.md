@@ -11,7 +11,7 @@ Updated: 2026-11-03
 
 FrameSheet: macOS contact-sheet app, v2.3.1 released. v3 is a rebuild that
 reproduces MoviePrint v0.2.23 for Apple Silicon: decisions 14–22 in
-`docs/DECISIONS.md`, target behaviour in `docs/V3_SPEC.md`.
+`docs/DECISIONS.md`, target behavior in `docs/V3_SPEC.md`.
 
 ## Next
 
