@@ -501,6 +501,9 @@ actor DecodeGate {
     /// them go first).
     var hasWaiters: Bool { !waiters.isEmpty }
 
+    /// For reports of a stuck decode (tests).
+    var stateDescription: String { "\(busy ? "held" : "free"), \(waiters.count) waiting" }
+
     func release() {
         if waiters.isEmpty {
             busy = false

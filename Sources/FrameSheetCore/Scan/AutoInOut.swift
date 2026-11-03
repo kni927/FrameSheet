@@ -10,11 +10,13 @@ import Foundation
 // whose mean V (frame scaled to a quarter) reaches 20, and the frames from
 // last frame − that length to the last frame; then it takes the first frame
 // (from the start, and from the end) whose mean is above 20, or else the
-// brightest frame.
+// brightest frame. The threshold is a setting here (Brightness threshold,
+// default 20; owner, 2026-11-03).
 
 public enum AutoInOut {
     public static let searchLength = 300
-    public static let threshold = 20.0
+    /// MoviePrint's threshold, the default of the setting.
+    public static let defaultThreshold = Defaults.automaticInOutThreshold
     /// Frames are measured at this fraction of the movie's size.
     public static let scale = 0.25
 
@@ -30,11 +32,12 @@ public enum AutoInOut {
 
     /// MoviePrint's reduction of the measured means. `inMeans` runs from the
     /// start (as far as it was read), `outMeans` in frame order up to
-    /// `lastFrame`. A frame above the threshold wins from either end;
+    /// `lastFrame`. A frame above `threshold` wins from either end;
     /// otherwise the brightest frame does, a later frame winning a tie for
     /// IN and an earlier one for OUT (the order MoviePrint reduces in).
     public static func points(
-        inMeans: [(frame: Int, mean: Double)], outMeans: [(frame: Int, mean: Double)], lastFrame: Int
+        inMeans: [(frame: Int, mean: Double)], outMeans: [(frame: Int, mean: Double)], lastFrame: Int,
+        threshold: Double = defaultThreshold
     ) -> (inFrame: Int, outFrame: Int) {
         func reduce(_ means: some Sequence<(frame: Int, mean: Double)>, initial: Int) -> Int {
             var brightest = (frame: initial, mean: 0.0)
@@ -52,17 +55,20 @@ public enum AutoInOut {
     /// Detects IN and OUT for a movie, decoding the searched frames
     /// sequentially under the DecodeGate (AVFoundation, or ffmpeg for files
     /// routed there). A range that cannot be read keeps its end of the movie.
-    public static func detect(_ url: URL, ffmpeg: FFmpegTools?) async throws -> (inFrame: Int, outFrame: Int) {
+    public static func detect(
+        _ url: URL, ffmpeg: FFmpegTools?, threshold: Double = defaultThreshold
+    ) async throws -> (inFrame: Int, outFrame: Int) {
         let source = try await ScanSource.open(url, ffmpeg: ffmpeg)
         let frameCount = source.info.frameCount
         guard let ranges = searchRanges(frameCount: frameCount) else { return (0, max(0, frameCount - 1)) }
         await DecodeGate.shared.acquire()
         do {
-            let inMeans = (try? await means(source, ranges.in.lowerBound, ranges.in.upperBound - 1, stopAtThreshold: true)) ?? []
-            let outMeans = (try? await means(source, ranges.out.lowerBound, ranges.out.upperBound, stopAtThreshold: false)) ?? []
+            let inMeans = (try? await means(
+                source, ranges.in.lowerBound, ranges.in.upperBound - 1, stopAt: threshold)) ?? []
+            let outMeans = (try? await means(source, ranges.out.lowerBound, ranges.out.upperBound, stopAt: nil)) ?? []
             try Task.checkCancellation()
             await DecodeGate.shared.release()
-            return points(inMeans: inMeans, outMeans: outMeans, lastFrame: frameCount - 1)
+            return points(inMeans: inMeans, outMeans: outMeans, lastFrame: frameCount - 1, threshold: threshold)
         } catch {
             await DecodeGate.shared.release()
             throw error
@@ -74,18 +80,20 @@ public enum AutoInOut {
     /// Automatic IN/OUT on). Returns false, leaving the entry as it was, when
     /// the detection gives no range (OUT not after IN).
     @discardableResult
-    public static func apply(to file: inout MovieFile, ffmpeg: FFmpegTools?) async throws -> Bool {
-        let points = try await detect(file.url, ffmpeg: ffmpeg)
+    public static func apply(
+        to file: inout MovieFile, ffmpeg: FFmpegTools?, threshold: Double = defaultThreshold
+    ) async throws -> Bool {
+        let points = try await detect(file.url, ffmpeg: ffmpeg, threshold: threshold)
         guard points.inFrame < points.outFrame else { return false }
         file.inFrame = points.inFrame
         file.outFrame = points.outFrame
         return true
     }
 
-    /// Mean V of frames `first`…`last`, in order; with `stopAtThreshold`
-    /// the first frame at or above the threshold is the last one read.
+    /// Mean V of frames `first`…`last`, in order; with `stopAt` the first
+    /// frame at or above that threshold is the last one read.
     private static func means(
-        _ source: ScanSource, _ first: Int, _ last: Int, stopAtThreshold: Bool
+        _ source: ScanSource, _ first: Int, _ last: Int, stopAt: Double?
     ) async throws -> [(frame: Int, mean: Double)] {
         let size = ScanGeometry.fit(
             width: Int((Double(source.info.width) * scale).rounded()),
@@ -128,7 +136,7 @@ public enum AutoInOut {
                     base: base, width: CVPixelBufferGetWidth(buffer), height: CVPixelBufferGetHeight(buffer),
                     bytesPerRow: CVPixelBufferGetBytesPerRow(buffer)))
                 result.append((frame, mean))
-                if stopAtThreshold, mean >= threshold { break }
+                if let stopAt, mean >= stopAt { break }
             }
         case .ffmpeg(let tools):
             let count = last - first + 1
@@ -150,7 +158,7 @@ public enum AutoInOut {
                         BGRAFrame(base: buffer, width: size.width, height: size.height, bytesPerRow: size.width * 4))
                     result.append((frame, mean))
                     frame += 1
-                    if stopAtThreshold, mean >= threshold { break }
+                    if let stopAt, mean >= stopAt { break }
                 }
             } catch {
                 pipe.terminate()

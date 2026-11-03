@@ -88,7 +88,7 @@ import VideoToolbox
 /// it). Frame n of each clip shows n in binary as six black or white
 /// stripes (bit 0 on the left), which survive scaling and color
 /// conversion, so the decoded image tells which frame came back.
-@Suite(.serialized) struct DecodeIntegrationTests {
+@Suite(.serialized, .timeLimit(.minutes(1))) struct DecodeIntegrationTests {
     static let tools: FFmpegTools? = {
         let semaphore = DispatchSemaphore(value: 0)
         nonisolated(unsafe) var found: FFmpegTools?
@@ -136,6 +136,10 @@ import VideoToolbox
     }
 
     private func check(_ clip: URL, expect kind: DecoderKind) async throws {
+        try await withDeadline("decoding \(clip.lastPathComponent)") { try await checkFrames(clip, expect: kind) }
+    }
+
+    private func checkFrames(_ clip: URL, expect kind: DecoderKind) async throws {
         let backend = try await DecoderRouter.open(clip, ffmpeg: Self.tools)
         #expect(backend.kind == kind)
         #expect(backend.info.width == 320)

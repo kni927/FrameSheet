@@ -208,7 +208,7 @@ extension AppModel {
         return data
     }
 
-    /// Experimental → Apply to current sheet: detects IN and OUT for the
+    /// Grid → Automatic IN/OUT → Apply: detects IN and OUT for the
     /// current movie (sequentially, through the DecodeGate like every
     /// decode) and recaptures the current interval sheet's thumbs between
     /// them, with the movie's IN and OUT, as one undo step.
@@ -221,11 +221,12 @@ extension AppModel {
         }
         // The entry may have followed its bookmark.
         let url = library.file(file.id)?.url ?? file.url
+        let threshold = library.settings.automaticInOutThreshold
         isDetectingInOut = true
         Task {
             defer { isDetectingInOut = false }
             do {
-                let points = try await AutoInOut.detect(url, ffmpeg: await ffmpegTools())
+                let points = try await AutoInOut.detect(url, ffmpeg: await ffmpegTools(), threshold: threshold)
                 guard points.inFrame < points.outFrame else {
                     showNotice("No IN/OUT found in \(file.name).")
                     return

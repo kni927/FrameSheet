@@ -196,6 +196,10 @@ public enum Defaults {
     /// Thumb label maximum, in points per 1000 points of print width.
     public static let frameInfoMaxSize = 25.0
     public static let frameInfoMaxSizeRange = 4.0...100.0
+    /// Automatic IN/OUT: frames with a mean V below this count as black
+    /// (MoviePrint `IN_OUT_POINT_SEARCH_THRESHOLD`).
+    public static let automaticInOutThreshold = 20.0
+    public static let automaticInOutThresholdRange = 0.0...255.0
 }
 
 public enum FrameInfo: String, Codable, Sendable, CaseIterable {
@@ -398,6 +402,9 @@ public struct Settings: Codable, Sendable, Equatable {
     public var shotDetectionThreshold = Defaults.shotDetectionThreshold
     /// Experimental: detect IN/OUT from the first and last frames.
     public var automaticInOut = false
+    /// Automatic IN/OUT: the mean V (0–255) below which a frame counts as
+    /// black.
+    public var automaticInOutThreshold = Defaults.automaticInOutThreshold
     /// Shot sheets in timeline view wrap by width.
     public var timelineNaturalFlow = false
     /// Scene width ratio 0–100.
@@ -449,7 +456,7 @@ public struct Settings: Codable, Sendable, Equatable {
         case showHeader, showPathInHeader, showDetailsInHeader, showTimelineInHeader, headerAlignment
         case cornerRadius, showHiddenThumbs, frameInfo, thumbnailCacheMB, ffmpegPath
         case exactFramesWithFFmpeg
-        case shotDetectionMethod, shotDetectionThreshold, automaticInOut
+        case shotDetectionMethod, shotDetectionThreshold, automaticInOut, automaticInOutThreshold
         case timelineNaturalFlow, timelineSceneWidthRatio, timelineMinSceneLength, timelineShowImages
         case frameInfoColor, frameInfoBackground, frameInfoPosition, frameInfoSize, frameInfoMaxSize
         case frameInfoFontFamily, frameInfoMarginHorizontal, frameInfoMarginVertical, frameInfoMarginsLinked
@@ -494,6 +501,10 @@ public struct Settings: Codable, Sendable, Equatable {
             (try? c.decodeIfPresent(Double.self, forKey: .shotDetectionThreshold)) ?? d.shotDetectionThreshold,
             range.lowerBound), range.upperBound)
         automaticInOut = (try? c.decodeIfPresent(Bool.self, forKey: .automaticInOut)) ?? d.automaticInOut
+        let inOutRange = Defaults.automaticInOutThresholdRange
+        automaticInOutThreshold = min(max(
+            (try? c.decodeIfPresent(Double.self, forKey: .automaticInOutThreshold)) ?? d.automaticInOutThreshold,
+            inOutRange.lowerBound), inOutRange.upperBound)
         timelineNaturalFlow = (try? c.decodeIfPresent(Bool.self, forKey: .timelineNaturalFlow))
             ?? d.timelineNaturalFlow
         timelineSceneWidthRatio = (try? c.decodeIfPresent(Double.self, forKey: .timelineSceneWidthRatio))

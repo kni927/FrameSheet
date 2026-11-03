@@ -39,11 +39,16 @@ public enum ProcessRunner {
         private var started = false
         private var cancelled = false
         private var timedOut = false
+        /// Left when the process has exited. Awaited instead of
+        /// `waitUntilExit`, which is not always woken when the process
+        /// exits after it started waiting (see `RawVideoPipe.finish`).
+        private let exited = DispatchGroup()
 
         init(executable: URL, arguments: [String]) {
             process.executableURL = executable
             process.arguments = arguments
             process.standardInput = FileHandle.nullDevice
+            process.terminationHandler = { [exited] _ in exited.leave() }
         }
 
         func run(timeout: Duration?) throws -> ProcessResult {
@@ -57,9 +62,11 @@ public enum ProcessRunner {
                 lock.unlock()
                 throw CancellationError()
             }
+            exited.enter()
             do {
                 try process.run()
             } catch {
+                exited.leave()
                 lock.unlock()
                 throw error
             }
@@ -88,7 +95,7 @@ public enum ProcessRunner {
             }
             let outputData = out.fileHandleForReading.readDataToEndOfFile()
             group.wait()
-            process.waitUntilExit()
+            exited.wait()
 
             lock.lock()
             let wasCancelled = cancelled

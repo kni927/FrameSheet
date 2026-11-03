@@ -99,7 +99,8 @@ private struct GridSection: View {
         let targetRows = model.targetRows(of: sheet)
         let pending = model.hasRowsTarget(sheet)
         let newCount = columns * targetRows
-        PanelSection(title: "Grid") {
+        // Automatic IN/OUT under More (owner, 2026-11-03).
+        PanelSection(title: "Grid", expandedKey: "grid") {
             // The stats (§6) as numbers over labels; no "×" or "=", since
             // hidden thumbs make columns × rows differ from the count. A
             // pending target shows its rows and columns × rows.
@@ -139,6 +140,35 @@ private struct GridSection: View {
                 .disabled(newCount == count)
                 .help("Replace \(count) thumbs with \(columns) × \(targetRows) = \(newCount); ⌘Z undoes")
             }
+        } more: {
+            AutomaticInOutRows()
+        }
+    }
+}
+
+/// Automatic IN/OUT (§10): the switch for movies added from now on, the
+/// brightness threshold, and Apply for the movie shown now.
+private struct AutomaticInOutRows: View {
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        SwitchRow(
+            title: "Automatic IN/OUT", isOn: model.setting(\.automaticInOut),
+            help: "Skip dark frames at the start and end of movies added from now on")
+        LabeledSlider(
+            title: "Brightness threshold", value: model.setting(\.automaticInOutThreshold),
+            range: Defaults.automaticInOutThresholdRange,
+            help: "Frames darker than this count as black at the start and end")
+        // The switch acts on movies added later; Apply runs the same
+        // detection on the movie shown now.
+        HStack {
+            Spacer(minLength: 0)
+            Button(model.isDetectingInOut ? "Detecting…" : "Apply") {
+                model.applyAutomaticInOut()
+            }
+            .controlSize(.small)
+            .disabled(model.isDetectingInOut || model.currentSheet?.type != .interval)
+            .help("Apply IN/OUT to the current sheet")
         }
     }
 }
@@ -588,14 +618,16 @@ private struct NamingSection: View {
         // The sheet template always; the rest under More (owner, 2026-11-03).
         PanelSection(title: "Naming scheme", expandedKey: "naming") {
             TemplateField(
-                title: "Sheet", key: \.sheetNameTemplate, isThumb: false,
-                fileExtension: settings.outputFormat.fileExtension)
+                title: "Sheet", key: \.sheetNameTemplate, presets: FileNaming.sheetTemplatePresets,
+                isThumb: false, fileExtension: settings.outputFormat.fileExtension)
         } more: {
             TemplateField(
-                title: "Single thumb", key: \.singleThumbNameTemplate, isThumb: true,
+                title: "Single thumb", key: \.singleThumbNameTemplate,
+                presets: FileNaming.singleThumbTemplatePresets, isThumb: true,
                 fileExtension: settings.thumbFormat.fileExtension)
             TemplateField(
-                title: "Each thumb", key: \.individualThumbNameTemplate, isThumb: true,
+                title: "Each thumb", key: \.individualThumbNameTemplate,
+                presets: FileNaming.individualThumbTemplatePresets, isThumb: true,
                 fileExtension: settings.thumbFormat.fileExtension)
             TokenLegend()
         }
@@ -661,28 +693,61 @@ private struct TokenLegend: View {
     }
 }
 
+/// One template: a menu of presets with Custom… at the bottom (owner,
+/// 2026-11-03). A stored template that matches a preset shows it; any other
+/// shows Custom… and the text field. Choosing Custom… only shows the field,
+/// so the stored template changes only when a preset is chosen or the field
+/// is edited.
 private struct TemplateField: View {
     @Environment(AppModel.self) private var model
     let title: String
     let key: WritableKeyPath<FrameSheetCore.Settings, String>
+    let presets: [String]
     /// Thumb templates show a frame and warn without a frame token.
     let isThumb: Bool
     let fileExtension: String
     @FocusState private var focused: Bool
+    /// Custom… chosen for a template that matches a preset.
+    @State private var customChosen = false
 
     static let tokensHelp = "[MN] movie name, [ME] extension, [SN] sheet name, [FN] frame number, [TC] timecode"
+    /// The menu tag of Custom…; no template holds a NUL.
+    static let customTag = "\u{0}custom"
 
     var body: some View {
         let template = model.library.settings[keyPath: key]
+        let isCustom = customChosen || !presets.contains(template)
         VStack(alignment: .leading, spacing: 2) {
-            Text(title)
-            TextField(title, text: model.setting(key))
-                .textFieldStyle(.roundedBorder)
-                .font(Theme.bodySm)
-                .focused($focused)
-                .onChange(of: focused) { _, isFocused in model.isEditingText = isFocused }
-                .modifier(FocusOnlyWhenClicked(focused: $focused))
-                .help(Self.tokensHelp)
+            PanelRow(title) {
+                Picker(title, selection: Binding(
+                    get: { isCustom ? Self.customTag : template },
+                    set: { choice in
+                        if choice == Self.customTag {
+                            customChosen = true
+                        } else {
+                            customChosen = false
+                            if choice != template { model.updateSettings { $0[keyPath: key] = choice } }
+                        }
+                    })) {
+                    ForEach(presets, id: \.self) { preset in
+                        Text(preset).tag(preset)
+                    }
+                    Divider()
+                    Text("Custom…").tag(Self.customTag)
+                }
+                .labelsHidden()
+                .fixedSize()
+                .help("\(title) file name")
+            }
+            if isCustom {
+                TextField(title, text: model.setting(key))
+                    .textFieldStyle(.roundedBorder)
+                    .font(Theme.bodySm)
+                    .focused($focused)
+                    .onChange(of: focused) { _, isFocused in model.isEditingText = isFocused }
+                    .modifier(FocusOnlyWhenClicked(focused: $focused))
+                    .help(Self.tokensHelp)
+            }
             let preview = previewName(template)
             Text(preview)
                 .font(Theme.panelCaption)
@@ -821,7 +886,8 @@ private struct TimelineStylingRows: View {
     }
 }
 
-/// Experimental (§6): the shot detection method and automatic IN/OUT.
+/// Experimental (§6): the shot detection method. Automatic IN/OUT moved
+/// to the Grid section (owner, 2026-11-03).
 private struct ExperimentalSection: View {
     @Environment(AppModel.self) private var model
 
@@ -838,20 +904,6 @@ private struct ExperimentalSection: View {
                 .labelsHidden()
                 .fixedSize()
                 .help("Method of the next scan (a new method scans again)")
-            }
-            SwitchRow(
-                title: "Automatic IN/OUT", isOn: model.setting(\.automaticInOut),
-                help: "Skip dark frames at the start and end of movies added from now on")
-            // The switch acts on movies added later; this applies the same
-            // detection to the movie shown now.
-            HStack {
-                Spacer(minLength: 0)
-                Button(model.isDetectingInOut ? "Detecting…" : "Apply to current sheet") {
-                    model.applyAutomaticInOut()
-                }
-                .controlSize(.small)
-                .disabled(model.isDetectingInOut || model.currentSheet?.type != .interval)
-                .help("Detect IN/OUT now and recapture this sheet between them")
             }
         }
     }

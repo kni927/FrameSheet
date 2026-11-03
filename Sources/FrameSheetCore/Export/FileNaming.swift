@@ -10,6 +10,12 @@ public enum FileNaming {
     public static let defaultSingleThumbTemplate = "[MN].[ME]-frame[FN]"
     public static let defaultIndividualThumbTemplate = "[MN].[ME]-[FN]"
 
+    /// The templates the Naming scheme menus offer, the default first; any
+    /// other template is Custom (owner, 2026-11-03).
+    public static let sheetTemplatePresets = [defaultSheetTemplate, "[MN]-[SN]", "[SN]", "[MN]"]
+    public static let singleThumbTemplatePresets = [defaultSingleThumbTemplate, "[MN]-[FN]", "[MN]-[TC]", "[FN]"]
+    public static let individualThumbTemplatePresets = [defaultIndividualThumbTemplate, "[MN]-[FN]", "[FN]", "[TC]"]
+
     /// Characters a file name may not hold; each becomes "-".
     static let invalidCharacters: Set<Character> = ["/", "\\", "?", "%", "*", ":", "|", "\"", "<", ">"]
 

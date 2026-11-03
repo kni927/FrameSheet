@@ -58,7 +58,7 @@ final class AppModel {
     /// when it ends. Thumb views and controls read this, not `scanJob`, so
     /// the progress updates redraw only the toast.
     var streamingSheet: SheetRef?
-    /// Automatic IN/OUT → Apply to current sheet is detecting.
+    /// Automatic IN/OUT → Apply is detecting.
     var isDetectingInOut = false
     var showMovieList = true
     var showSettings = true
@@ -496,7 +496,9 @@ final class AppModel {
                     // frames, before the default sheet is made between them.
                     if library.settings.automaticInOut {
                         do {
-                            try await AutoInOut.apply(to: &file, ffmpeg: await ffmpegTools())
+                            try await AutoInOut.apply(
+                                to: &file, ffmpeg: await ffmpegTools(),
+                                threshold: library.settings.automaticInOutThreshold)
                         } catch {
                             toast = "\(url.lastPathComponent): automatic IN/OUT failed: \(error.localizedDescription)"
                         }

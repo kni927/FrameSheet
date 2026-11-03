@@ -361,6 +361,32 @@ private func starts(_ spans: [SceneSpan]) -> [Int] { spans.map(\.start) }
         let empty = AutoInOut.points(inMeans: [], outMeans: [], lastFrame: 9)
         #expect(empty.inFrame == 0 && empty.outFrame == 9)
     }
+
+    /// A synthetic fade: mean V rises 4 per frame from black at the start
+    /// and falls the same way to black at the end. A higher brightness
+    /// threshold counts more of the fade as black, so IN comes later and
+    /// OUT earlier.
+    @Test func higherThresholdMovesInLater() {
+        let inMeans = (0..<30).map { (frame: $0, mean: Double($0) * 4) }
+        let outMeans = (70...99).map { (frame: $0, mean: Double(99 - $0) * 4) }
+        let standard = AutoInOut.points(inMeans: inMeans, outMeans: outMeans, lastFrame: 99)
+        #expect(standard.inFrame == 6 && standard.outFrame == 93)
+        let higher = AutoInOut.points(inMeans: inMeans, outMeans: outMeans, lastFrame: 99, threshold: 60)
+        #expect(higher.inFrame == 16 && higher.outFrame == 83)
+        let zero = AutoInOut.points(inMeans: inMeans, outMeans: outMeans, lastFrame: 99, threshold: 0)
+        #expect(zero.inFrame == 1 && zero.outFrame == 98)
+    }
+
+    @Test func thresholdSettingDefaultsAndClamps() throws {
+        #expect(Settings().automaticInOutThreshold == 20)
+        let decoder = JSONDecoder()
+        let missing = try decoder.decode(Settings.self, from: Data("{}".utf8))
+        #expect(missing.automaticInOutThreshold == 20)
+        let high = try decoder.decode(Settings.self, from: Data(#"{"automaticInOutThreshold": 400}"#.utf8))
+        #expect(high.automaticInOutThreshold == 255)
+        let wrong = try decoder.decode(Settings.self, from: Data(#"{"automaticInOutThreshold": "x"}"#.utf8))
+        #expect(wrong.automaticInOutThreshold == 20)
+    }
 }
 
 @Suite struct ScanCacheTests {
@@ -444,6 +470,31 @@ private final class Locked<T: Sendable>: Sendable {
     init(_ value: T) { self.value = Mutex(value) }
     func get() -> T { value.withLock { $0 } }
     func set(_ new: T) { value.withLock { $0 = new } }
+}
+
+/// Runs `body` under a deadline that holds even when the body ignores
+/// cancellation: Swift Testing's time limit cancels a test and then waits
+/// for it to return, so a decode stuck in AVFoundation, ffmpeg or at the
+/// DecodeGate would block the suite for hours. Past `limit` the process
+/// stops with the step and the gate's state (a crash report keeps the
+/// threads' stacks).
+func withDeadline<T>(
+    _ step: String, limit: Duration = .seconds(30), _ body: () async throws -> T
+) async rethrows -> T {
+    let watchdog = DispatchWorkItem {
+        let gate = Locked("did not answer")
+        let answered = DispatchSemaphore(value: 0)
+        Task.detached {
+            gate.set(await DecodeGate.shared.stateDescription)
+            answered.signal()
+        }
+        _ = answered.wait(timeout: .now() + 2)
+        fatalError("Hang: \(step) took over \(limit) (DecodeGate: \(gate.get()))")
+    }
+    let seconds = Double(limit.components.seconds) + Double(limit.components.attoseconds) / 1e18
+    DispatchQueue.global().asyncAfter(deadline: .now() + seconds, execute: watchdog)
+    defer { watchdog.cancel() }
+    return try await body()
 }
 
 /// Records what a scan's frame hook sees.
@@ -535,21 +586,24 @@ private func brightestQuadrant(_ image: CGImage) -> Int {
         var resumedAt: Int?
     }
 
+    /// The scan's events, under a deadline (a hang stops the run).
     private func scan(_ request: ScanRequest) async -> Result {
-        var result = Result()
-        for await event in ShotScanner.scan(request) {
-            result.events.append(event)
-            switch event {
-            case .started(let decoder, _, let resumedAt):
-                result.decoder = decoder
-                result.resumedAt = resumedAt
-            case .finished(let data): result.data = data
-            case .cancelled(let data): result.cancelled = data
-            case .failed(let message): result.failure = message
-            default: break
+        await withDeadline("scan of \(request.url.lastPathComponent)") {
+            var result = Result()
+            for await event in ShotScanner.scan(request) {
+                result.events.append(event)
+                switch event {
+                case .started(let decoder, _, let resumedAt):
+                    result.decoder = decoder
+                    result.resumedAt = resumedAt
+                case .finished(let data): result.data = data
+                case .cancelled(let data): result.cancelled = data
+                case .failed(let message): result.failure = message
+                default: break
+                }
             }
+            return result
         }
-        return result
     }
 
     private func request(
@@ -632,6 +686,73 @@ private func brightestQuadrant(_ image: CGImage) -> Int {
             #expect(cached.data == a)
         }
     }
+
+    /// The cancel and resume paths many times over on both decoders, each
+    /// step under a deadline: stopping after a frame count, cancelling the
+    /// consuming task (the app's Cancel) and cancelling while a thumb
+    /// request waits at the gate. After each cancel the gate must come free
+    /// and the resumed scan must finish with the right cuts.
+    @Test(.enabled(if: ShotScanIntegrationTests.tools != nil)) func cancelAndResumeRepeatedly() async throws {
+        let dir = FileManager.default.temporaryDirectory.appending(path: "FrameSheetScans-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let store = ScanCacheStore(directory: dir)
+        let mp4 = try await Self.makeClip("cuts.mp4", filter: Self.segments)
+        let mkv = try await Self.makeClip("cuts.mkv", filter: Self.segments)
+        let thumbs = try await DecoderRouter.open(mp4, ffmpeg: Self.tools)
+        for iteration in 0..<Self.repeats {
+            for clip in [mp4, mkv] {
+                let mode = iteration % 3
+                let step = "iteration \(iteration), \(clip.lastPathComponent), mode \(mode)"
+                let stopAt = 5 + (iteration * 7) % 100
+                let consumer = Locked<Task<Void, Never>?>(nil)
+                let observer = RecordingObserver(trigger: stopAt) {
+                    switch mode {
+                    case 1:
+                        consumer.get()?.cancel()
+                    case 2:
+                        // Cancelled once the thumb is through: the scan is
+                        // pausing for it or reopening its reader.
+                        Task {
+                            _ = try? await thumbs.frame(3, maxWidth: 160)
+                            consumer.get()?.cancel()
+                        }
+                        for _ in 0..<500 where !(await DecodeGate.shared.hasWaiters) {
+                            try? await Task.sleep(for: .milliseconds(1))
+                        }
+                    default:
+                        break
+                    }
+                }
+                var first = request(clip, store: store, observer: observer)
+                first.yieldCheckFrames = 4
+                first.minimumRunBeforeYield = .zero
+                if mode == 0 { first.stopAfterFrames = stopAt + 1 }
+                let firstRequest = first
+                await withDeadline("\(step): cancelled scan") {
+                    let task = Task { _ = await scan(firstRequest) }
+                    consumer.set(task)
+                    await task.value
+                }
+                // The cancelled scan lets the gate go (it may still be
+                // storing its partial result).
+                await withDeadline("\(step): gate after cancel") {
+                    await DecodeGate.shared.acquire()
+                    await DecodeGate.shared.release()
+                }
+                var second = first
+                second.stopAfterFrames = nil
+                second.observer = nil
+                let resumed = await withDeadline("\(step): resumed scan") { await scan(second) }
+                #expect(resumed.failure == nil, "\(step): \(resumed.failure ?? "")")
+                try checkCuts(resumed.data)
+                store.delete(first.fileId)
+            }
+        }
+    }
+
+    /// Three rounds of the three modes (about 10 s); raised to 30 it
+    /// caught the ffmpeg exit hang in `RawVideoPipe.finish` in one run.
+    static let repeats = 9
 
     /// A thumb requested during the scan is decoded before the scan ends:
     /// the scan closes its reader, lets the request through the gate and

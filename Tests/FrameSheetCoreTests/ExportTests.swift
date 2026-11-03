@@ -63,6 +63,16 @@ import Testing
         #expect(!FileNaming.templateLacksFrameToken(FileNaming.defaultIndividualThumbTemplate))
         #expect(!FileNaming.templateLacksFrameToken("[MN]-[TC]"))
     }
+
+    @Test func presetsStartWithTheDefaults() {
+        #expect(FileNaming.sheetTemplatePresets.first == FileNaming.defaultSheetTemplate)
+        #expect(FileNaming.singleThumbTemplatePresets.first == FileNaming.defaultSingleThumbTemplate)
+        #expect(FileNaming.individualThumbTemplatePresets.first == FileNaming.defaultIndividualThumbTemplate)
+        // Every thumb preset names each thumb apart.
+        for preset in FileNaming.singleThumbTemplatePresets + FileNaming.individualThumbTemplatePresets {
+            #expect(!FileNaming.templateLacksFrameToken(preset), "\(preset)")
+        }
+    }
 }
 
 @Suite struct IncomingFilesTests {

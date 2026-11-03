@@ -14,6 +14,11 @@ final class RawVideoPipe: @unchecked Sendable {
     private let lock = NSLock()
     private var errorData = Data()
     private let errorsDone = DispatchGroup()
+    /// Left when the process has exited (its termination handler).
+    private let exited = DispatchGroup()
+
+    /// How long `finish` waits after closing the pipe before killing ffmpeg.
+    static let exitGrace: DispatchTimeInterval = .seconds(5)
 
     init(executable: URL, arguments: [String]) {
         process.executableURL = executable
@@ -21,10 +26,17 @@ final class RawVideoPipe: @unchecked Sendable {
         process.standardInput = FileHandle.nullDevice
         process.standardOutput = output
         process.standardError = errors
+        process.terminationHandler = { [exited] _ in exited.leave() }
     }
 
     func start() throws {
-        try process.run()
+        exited.enter()
+        do {
+            try process.run()
+        } catch {
+            exited.leave()
+            throw error
+        }
         errorsDone.enter()
         let handle = errors.fileHandleForReading
         DispatchQueue.global(qos: .utility).async { [self] in
@@ -74,13 +86,23 @@ final class RawVideoPipe: @unchecked Sendable {
 
     /// Waits for ffmpeg to exit; returns its status and the error lines.
     /// Closes the read end first: ffmpeg blocked writing to a full pipe
-    /// does not act on SIGTERM (the write restarts), but exits on EPIPE.
+    /// does not act on SIGTERM (the write restarts), but exits on EPIPE;
+    /// one that still runs after `exitGrace` is killed.
+    ///
+    /// The exit is awaited through the termination handler, not
+    /// `waitUntilExit`: that sleeps in this thread's run loop and, when the
+    /// process exits after it started waiting (as after a cancel), was not
+    /// always woken, which left the scan holding the DecodeGate for good
+    /// (the hang in `cancelledScanResumes`, 2026-11-03).
     func finish() async -> (status: Int32, errors: String) {
         await withCheckedContinuation { continuation in
             // On the read queue, so no read is in progress.
             queue.async { [self] in
                 try? output.fileHandleForReading.close()
-                process.waitUntilExit()
+                if exited.wait(timeout: .now() + Self.exitGrace) == .timedOut, process.isRunning {
+                    kill(process.processIdentifier, SIGKILL)
+                    exited.wait()
+                }
                 errorsDone.wait()
                 let text = lock.withLock { String(decoding: errorData, as: UTF8.self) }
                 continuation.resume(returning: (process.terminationStatus, text))

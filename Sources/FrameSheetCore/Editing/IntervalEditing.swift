@@ -133,7 +133,7 @@ extension Library {
         recapture(ref, count: sheet.visibleThumbs.count, start: lowest, stop: frame, limitToRange: true)
     }
 
-    /// Automatic IN/OUT → Apply to current sheet: stores the movie's IN and
+    /// Automatic IN/OUT → Apply: stores the movie's IN and
     /// OUT (clamped to the movie) and, on an interval sheet, recaptures as
     /// many thumbs as it shows between them (all 16 of the default count
     /// when none is visible).
