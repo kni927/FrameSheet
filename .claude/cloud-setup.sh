@@ -11,7 +11,7 @@
 # because plugins load before the hook runs.
 # The repositories are already cloned when it runs, but GitHub is not yet
 # reachable. kni927/dotfiles docs/CLOUD_ENVIRONMENTS.md explains each part.
-version=2026-11-01.9
+version=2026-11-03.1
 refresh=0; [ "${1:-}" = --refresh ] && refresh=1
 
 if [ $refresh = 0 ]; then
@@ -229,6 +229,182 @@ if __name__ == "__main__":
 PY
 chmod 755 ~/.claude/hooks/notation-display
 
+# work-timer: a verbatim copy of kni927/dotfiles
+# dot_local/bin/claude-hooks/executable_work-timer (change it there and copy it
+# here). Logs each turn's elapsed time and the time spent on dialogs.
+cat > ~/.claude/hooks/work-timer <<'PY'
+#!/usr/bin/env python3
+"""Hook: measure a session's working time apart from time spent waiting on the owner.
+
+Registered on UserPromptSubmit, PreToolUse, PostToolUse, PostToolUseFailure
+and Stop. A turn runs from the prompt to Stop; time between turns is the
+owner's and is never counted. Inside a turn, a tool call that waited on a
+permission dialog shows up as a gap: PostToolUse's `duration_ms` excludes the
+time spent in permission prompts, so the wait is
+(PostToolUse time - PreToolUse time) - duration_ms. Overlapping waits
+(parallel calls, subagents) are merged so no second is counted twice.
+
+Each finished turn appends one JSON line to the log, with any `Estimate:`
+or `Took:` line of the turn's last reply, so estimates can be compared with
+the measured time. Prints nothing and
+always exits 0, so it never changes a decision or blocks a turn.
+
+    work-timer --report [--since ISO-TIME] [--session ID | --cwd DIR]
+
+sums the logged turns: elapsed, waited on the owner, and working time.
+"""
+
+import json
+import os
+import sys
+import time
+from datetime import datetime
+from pathlib import Path
+
+HOME = Path.home()
+MAC_LOGS = HOME / "Library" / "Logs"
+LOG = (MAC_LOGS if MAC_LOGS.is_dir() else HOME / ".claude") / "claude-work-time.log"
+STATE_DIR = HOME / ".claude" / "work-timer"
+MIN_WAIT = 1.0  # seconds; smaller gaps are hook overhead, not a dialog
+
+
+def iso(t):
+    return datetime.fromtimestamp(t).astimezone().isoformat(timespec="seconds")
+
+
+def merged_length(intervals):
+    total, end = 0.0, None
+    for a, b in sorted(intervals):
+        if end is None or a > end:
+            total += b - a
+            end = b
+        elif b > end:
+            total += b - end
+            end = b
+    return total
+
+
+def load(path):
+    try:
+        return json.loads(path.read_text())
+    except (OSError, ValueError):
+        return None
+
+
+def tagged_lines(text):
+    return [l.strip() for l in (text or "").splitlines()
+            if l.strip().startswith(("Estimate:", "Took:"))][:4]
+
+
+def close_turn(state, end, session_id, how, reply=None):
+    waits = state.get("waits", [])
+    line = {
+        "time": iso(end),
+        "session_id": session_id,
+        "cwd": state.get("cwd"),
+        "start": iso(state["start"]),
+        "elapsed_s": round(end - state["start"]),
+        "waited_s": round(merged_length(waits)),
+        "dialogs": len(waits),
+        "end": how,
+    }
+    tags = tagged_lines(reply)
+    if tags:
+        line["lines"] = tags
+    LOG.parent.mkdir(parents=True, exist_ok=True)
+    with LOG.open("a", encoding="utf-8") as f:
+        f.write(json.dumps(line, ensure_ascii=False) + "\n")
+
+
+def hook():
+    try:
+        data = json.loads(sys.stdin.read())
+    except ValueError:
+        return
+    now = time.time()
+    event = data.get("hook_event_name")
+    session_id = data.get("session_id") or "unknown"
+    STATE_DIR.mkdir(parents=True, exist_ok=True)
+    path = STATE_DIR / f"{session_id}.json"
+    state = load(path)
+
+    if event == "UserPromptSubmit":
+        if state:  # the last turn never reached Stop (interrupted)
+            close_turn(state, state.get("last", state["start"]), session_id, "interrupted")
+        state = {"start": now, "last": now, "cwd": data.get("cwd"), "pre": {}, "waits": []}
+    elif state is None:
+        # A turn that did not start with a prompt (a message from another
+        # session, a scheduled task): start it at the first event we see.
+        state = {"start": now, "last": now, "cwd": data.get("cwd"), "pre": {}, "waits": []}
+
+    if event == "PreToolUse" and data.get("tool_use_id"):
+        state["pre"][data["tool_use_id"]] = now
+    elif event in ("PostToolUse", "PostToolUseFailure"):
+        started = state["pre"].pop(data.get("tool_use_id"), None)
+        duration = (data.get("duration_ms") or 0) / 1000
+        if started is not None and (now - started) - duration >= MIN_WAIT:
+            state["waits"].append([started, now - duration])
+
+    state["last"] = now
+    if event == "Stop":
+        close_turn(state, now, session_id, "stop", data.get("last_assistant_message"))
+        path.unlink(missing_ok=True)
+    else:
+        path.write_text(json.dumps(state))
+
+
+def report(args):
+    since = session = cwd = None
+    it = iter(args)
+    for a in it:
+        if a == "--since":
+            since = datetime.fromisoformat(next(it)).astimezone()
+        elif a == "--session":
+            session = next(it)
+        elif a == "--cwd":
+            cwd = os.path.realpath(next(it))
+    elapsed = waited = dialogs = turns = 0
+    try:
+        lines = LOG.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        lines = []
+    for raw in lines:
+        try:
+            t = json.loads(raw)
+        except ValueError:
+            continue
+        if session and t.get("session_id") != session:
+            continue
+        if cwd and os.path.realpath(t.get("cwd") or "") != cwd:
+            continue
+        if since and datetime.fromisoformat(t["start"]) < since:
+            continue
+        turns += 1
+        elapsed += t.get("elapsed_s", 0)
+        waited += t.get("waited_s", 0)
+        dialogs += t.get("dialogs", 0)
+
+    def mins(s):
+        return f"{round(s / 60)} min" if s >= 60 else f"{s} s"
+
+    print(
+        f"turns {turns}, elapsed {mins(elapsed)}, waited on the owner {mins(waited)} "
+        f"({dialogs} dialogs), working {mins(elapsed - waited)}"
+    )
+
+
+if __name__ == "__main__":
+    try:
+        if sys.argv[1:2] == ["--report"]:
+            report(sys.argv[2:])
+        else:
+            hook()
+    except Exception:  # a hook must never break the session
+        pass
+    sys.exit(0)
+PY
+chmod 755 ~/.claude/hooks/work-timer
+
 # pre-commit for public repositories, a verbatim copy of kni927/dotfiles
 # dot_config/git/public-hooks/executable_pre-commit (change it there and copy it
 # here). Clones whose AGENTS.md has "## Public Repository" use it; a clone added
@@ -402,6 +578,15 @@ for event, hook in [
     groups = d.setdefault("hooks", {}).setdefault(event, [])
     if not any(hook in g.get("hooks", []) for g in groups):
         groups.append({"hooks": [hook]})
+timer = os.path.expanduser("~/.claude/hooks/work-timer")
+for event, matcher in [("UserPromptSubmit", None), ("PreToolUse", "*"), ("PostToolUse", "*"),
+                       ("PostToolUseFailure", "*"), ("Stop", None)]:
+    groups = d.setdefault("hooks", {}).setdefault(event, [])
+    groups[:] = [g for g in groups if timer not in json.dumps(g)]
+    entry = {"hooks": [{"type": "command", "command": timer, "timeout": 5}]}
+    if matcher:
+        entry = {"matcher": matcher, **entry}
+    groups.append(entry)
 os.makedirs(os.path.dirname(p), exist_ok=True)
 json.dump(d, open(p, "w"), indent=2)
 PY
