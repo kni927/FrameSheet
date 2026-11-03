@@ -217,9 +217,9 @@ private struct ToolbarIconBody: View {
     var body: some View {
         configuration.label
             .labelStyle(.iconOnly)
-            .font(.system(size: 14))
+            .font(.system(size: 16))
             .foregroundStyle(isEnabled ? Theme.text : Theme.textMuted.opacity(0.5))
-            .frame(minWidth: 28, minHeight: 24)
+            .frame(minWidth: 30, minHeight: 26)
             .padding(.horizontal, 2)
             .background(background, in: RoundedRectangle(cornerRadius: Theme.radiusSm))
             .contentShape(RoundedRectangle(cornerRadius: Theme.radiusSm))

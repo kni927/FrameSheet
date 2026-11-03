@@ -16,6 +16,8 @@ struct ContentView: View {
         )) {
             MovieListView()
                 .navigationSplitViewColumnWidth(min: 240, ideal: 280, max: 380)
+                // Our own toggle sits after the app name instead.
+                .toolbar(removing: .sidebarToggle)
         } detail: {
             MainArea()
         }
@@ -30,13 +32,26 @@ struct ContentView: View {
         // 2026-11-03), so the window title is not shown twice.
         .toolbar(removing: .title)
         .toolbar {
+            // The app name, then the movie list toggle, then a gap before
+            // the icon groups (owner, 2026-11-03).
             ToolbarItem(placement: .navigation) {
-                Text("FrameSheet")
-                    .font(Theme.sans(15, medium: true))
-                    .foregroundStyle(Theme.text)
-                    .padding(.horizontal, Theme.space1)
-                    .fixedSize()
-                    .accessibilityAddTraits(.isHeader)
+                HStack(spacing: Theme.space1) {
+                    Text("FrameSheet")
+                        .font(Theme.sans(15, medium: true))
+                        .foregroundStyle(Theme.text)
+                        .fixedSize()
+                        .accessibilityAddTraits(.isHeader)
+                    Button {
+                        model.showMovieList.toggle()
+                    } label: {
+                        Label(model.showMovieList ? "Hide movie list" : "Show movie list", systemImage: "sidebar.left")
+                    }
+                    .buttonStyle(ToolbarIconStyle(selected: model.showMovieList))
+                    .accessibilityAddTraits(model.showMovieList ? .isSelected : [])
+                    .help(model.showMovieList ? "Hide movie list (1)" : "Show movie list (1)")
+                }
+                .padding(.leading, Theme.space3)
+                .padding(.trailing, Theme.space4)
             }
             .sharedBackgroundVisibility(.hidden)
             ToolbarItemGroup(placement: .navigation) {
@@ -62,20 +77,6 @@ struct ContentView: View {
             }
             .sharedBackgroundVisibility(.hidden)
             SheetToolbar(model: model, sheet: model.currentSheet)
-            // While the panel is shown its own toolbar part carries the
-            // button, at the panel's leading edge.
-            if !model.showSettings {
-                ToolbarItem(placement: .primaryAction) {
-                    Button {
-                        model.showSettings = true
-                    } label: {
-                        Label("Show panel", systemImage: "sidebar.right")
-                    }
-                    .buttonStyle(ToolbarIconStyle())
-                    .help("Show panel (3)")
-                }
-                .sharedBackgroundVisibility(.hidden)
-            }
         }
         .tint(Theme.accent)
         .font(Theme.bodySm)

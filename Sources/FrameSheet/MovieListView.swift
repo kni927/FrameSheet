@@ -51,6 +51,7 @@ private struct MovieRow: View {
                     .truncationMode(.middle)
                     .help(file.folder)
                 if missing {
+                    // In place of the detail line.
                     Label("Movie is missing", systemImage: "exclamationmark.triangle")
                         .foregroundStyle(Theme.danger)
                     Button("Locate…") { model.locate(file.id) }
@@ -58,11 +59,11 @@ private struct MovieRow: View {
                         .help("Find the moved movie")
                         .padding(.top, 2)
                 } else {
-                    Text(Timecode.string(frames: file.frameCount, fps: file.fps))
-                        .font(Theme.mono(12))
-                    Text("\(ByteCountFormatter.string(fromByteCount: file.size, countStyle: .file)) · \(file.width)×\(file.height)")
+                    Text(details)
+                        .monospacedDigit()
                         .lineLimit(1)
                         .minimumScaleFactor(0.85)
+                        .help(details)
                 }
             }
             .font(Theme.caption)
@@ -83,6 +84,14 @@ private struct MovieRow: View {
             Divider()
             Button("Remove", role: .destructive) { model.removeMovie(file.id) }
         }
+    }
+}
+
+extension MovieRow {
+    /// Duration · width×height · size, on one line.
+    fileprivate var details: String {
+        let size = ByteCountFormatter.string(fromByteCount: file.size, countStyle: .file)
+        return "\(Timecode.string(seconds: file.duration)) · \(file.width)×\(file.height) · \(size)"
     }
 }
 

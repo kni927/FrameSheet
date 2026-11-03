@@ -23,22 +23,34 @@ struct SettingsPanel: View {
         .background(Theme.crust)
         .font(Theme.bodySm)
         .foregroundStyle(Theme.text)
-        // The panel is a full-height inspector column; its hide button sits
-        // in the panel's part of the window toolbar, at its leading edge.
-        // While the panel is hidden the main toolbar shows the button.
+        // The panel is a full-height inspector column. Its toggle sits at the
+        // far right of the panel's part of the window toolbar; that part
+        // stays in the toolbar while the panel is hidden, so the one button
+        // both shows and hides it.
         .toolbar {
+            ToolbarSpacer(.flexible)
             ToolbarItem {
-                Button {
-                    model.showSettings = false
-                } label: {
-                    Label("Hide panel", systemImage: "sidebar.right")
-                }
-                .buttonStyle(ToolbarIconStyle())
-                .help("Hide panel (3)")
+                PanelToggle()
             }
             .sharedBackgroundVisibility(.hidden)
-            ToolbarSpacer(.flexible)
         }
+    }
+}
+
+/// Shows or hides the right panel (key 3).
+private struct PanelToggle: View {
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        let shown = model.showSettings
+        Button {
+            model.showSettings.toggle()
+        } label: {
+            Label(shown ? "Hide panel" : "Show panel", systemImage: "sidebar.right")
+        }
+        .buttonStyle(ToolbarIconStyle(selected: shown))
+        .accessibilityAddTraits(shown ? .isSelected : [])
+        .help(shown ? "Hide panel (3)" : "Show panel (3)")
     }
 }
 
@@ -96,20 +108,19 @@ private struct GridSection: View {
     @Environment(AppModel.self) private var model
     let sheet: Sheet
     @State private var isDragging = false
-    /// The Rows slider's value while it is dragged; applied on release.
-    @State private var rowsDraft: Double?
     @State private var isDraggingRows = false
 
     var body: some View {
         let count = sheet.visibleThumbs.count
         let rows = GridLayout.rows(columns: sheet.columnCount, thumbCount: count)
+        let draft = model.rowsDraft
         PanelSection(title: "Grid") {
             // The stats (§6) as numbers over labels; no "×" or "=", since
             // hidden thumbs make columns × rows differ from the count.
             HStack(spacing: 0) {
                 Stat(value: sheet.columnCount, label: "columns")
-                Stat(value: rowsDraft.map { Int($0.rounded()) } ?? rows, label: "rows")
-                Stat(value: rowsDraft.map { sheet.columnCount * Int($0.rounded()) } ?? count, label: "count")
+                Stat(value: draft ?? rows, label: "rows")
+                Stat(value: draft.map { sheet.columnCount * $0 } ?? count, label: "count")
             }
             .padding(.bottom, Theme.space1)
             LabeledSlider(
@@ -125,32 +136,15 @@ private struct GridSection: View {
             LabeledSlider(
                 title: "Rows",
                 value: Binding(
-                    get: { rowsDraft ?? Double(max(1, rows)) },
-                    set: { value in
-                        rowsDraft = value
-                        // Keyboard or accessibility changes come without a
-                        // drag: apply them at once.
-                        if !isDraggingRows { commitRows() }
-                    }),
+                    get: { Double(draft ?? max(1, rows)) },
+                    set: { model.setRowsLive(Int($0.rounded()), editing: isDraggingRows) }),
                 range: 1...20,
-                help: "Recaptures columns × rows thumbs between the first and last visible frames, replacing the thumbs (⌘Z undoes)"
+                help: "Recaptures columns × rows thumbs between the first and last visible frames (⌘Z undoes)"
             ) { editing in
                 isDraggingRows = editing
-                if !editing { commitRows() }
+                if !editing { model.endRowsDrag() }
             }
         }
-        .onChange(of: sheet.id) { rowsDraft = nil }
-    }
-
-    /// One recapture (one undo step) when the Rows slider is released on a
-    /// new value.
-    private func commitRows() {
-        guard let draft = rowsDraft else { return }
-        rowsDraft = nil
-        let rows = Int(draft.rounded())
-        guard rows != GridLayout.rows(columns: sheet.columnCount, thumbCount: sheet.visibleThumbs.count)
-        else { return }
-        model.applyThumbCount(columns: sheet.columnCount, rows: rows)
     }
 }
 
@@ -178,7 +172,9 @@ private struct StylingSection: View {
 
     var body: some View {
         PanelSection(title: "Styling") {
-            MarginRows()
+            MarginRows(
+                horizontal: \.marginHorizontal, vertical: \.marginVertical, linkedKey: \.marginsLinked,
+                range: 0...20, horizontalHelp: "Space between columns", verticalHelp: "Space between rows")
             LabeledSlider(
                 title: "Corner radius", value: model.setting(\.cornerRadius), range: 0...20, unit: " %",
                 help: "Corner radius, % of thumb width (0 = square)")
@@ -187,28 +183,33 @@ private struct StylingSection: View {
     }
 }
 
-/// Horizontal and vertical grid margins with a link that moves them
-/// together.
+/// Horizontal and vertical margins with a link that moves them together;
+/// used for the grid margins and the frame info margins.
 private struct MarginRows: View {
     @Environment(AppModel.self) private var model
+    let horizontal: WritableKeyPath<FrameSheetCore.Settings, Double>
+    let vertical: WritableKeyPath<FrameSheetCore.Settings, Double>
+    let linkedKey: WritableKeyPath<FrameSheetCore.Settings, Bool>
+    let range: ClosedRange<Double>
+    let horizontalHelp: String
+    let verticalHelp: String
 
     var body: some View {
-        let settings = model.library.settings
-        let linked = settings.marginsLinked
+        let linked = model.library.settings[keyPath: linkedKey]
         HStack(alignment: .center, spacing: Theme.space2) {
             VStack(alignment: .leading, spacing: Theme.space2) {
                 LabeledSlider(
-                    title: "Horizontal margin", value: margin(\.marginHorizontal, other: \.marginVertical),
-                    range: 0...20, help: "Space between columns")
+                    title: "Horizontal margin", value: margin(horizontal, other: vertical),
+                    range: range, help: horizontalHelp)
                 LabeledSlider(
-                    title: "Vertical margin", value: margin(\.marginVertical, other: \.marginHorizontal),
-                    range: 0...20, help: "Space between rows")
+                    title: "Vertical margin", value: margin(vertical, other: horizontal),
+                    range: range, help: verticalHelp)
             }
             Button {
                 model.updateSettings { s in
-                    s.marginsLinked.toggle()
+                    s[keyPath: linkedKey].toggle()
                     // Linking aligns the vertical margin to the horizontal one.
-                    if s.marginsLinked { s.marginVertical = s.marginHorizontal }
+                    if s[keyPath: linkedKey] { s[keyPath: vertical] = s[keyPath: horizontal] }
                 }
             } label: {
                 Image(systemName: linked ? "link" : "link.badge.plus")
@@ -232,7 +233,7 @@ private struct MarginRows: View {
             set: { value in
                 model.updateSettings { s in
                     s[keyPath: key] = value
-                    if s.marginsLinked { s[keyPath: other] = value }
+                    if s[keyPath: linkedKey] { s[keyPath: other] = value }
                 }
             })
     }
@@ -275,9 +276,11 @@ private struct FrameInfoSection: View {
                 .fixedSize()
                 .help("Where on the thumb")
             }
-            LabeledSlider(
-                title: "Margin", value: model.setting(\.frameInfoMargin), range: 0...50,
-                help: "Distance from the thumb edge")
+            MarginRows(
+                horizontal: \.frameInfoMarginHorizontal, vertical: \.frameInfoMarginVertical,
+                linkedKey: \.frameInfoMarginsLinked, range: 0...50,
+                horizontalHelp: "Distance from the left or right edge",
+                verticalHelp: "Distance from the top or bottom edge")
         }
     }
 }

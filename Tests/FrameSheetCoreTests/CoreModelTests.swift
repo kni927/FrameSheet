@@ -197,25 +197,32 @@ import Testing
         #expect(abs(settings.borderRadiusRatio - GridGeometry.borderRadiusRatio) < 1e-12)
         #expect(settings.thumbnailCacheMB == 256)
         #expect(settings.frameInfoFontFamily == FrameInfoFamily.systemMono)
+        #expect(settings.frameInfoMarginHorizontal == 0)
+        #expect(settings.frameInfoMarginVertical == 0)
+        #expect(settings.frameInfoMarginsLinked)
         // An unknown former frame info font falls back to the default.
         let unknown = try JSONDecoder().decode(Settings.self, from: Data(#"{"frameInfoFont":"serif"}"#.utf8))
         #expect(unknown.frameInfoFontFamily == FrameInfoFamily.systemMono)
     }
 
     @Test func settingsMigratesFormerKeys() throws {
-        let json = #"{"marginSlider":10,"roundedCorners":false,"frameInfoFont":"condensed"}"#
+        let json = #"{"marginSlider":10,"roundedCorners":false,"frameInfoFont":"condensed","frameInfoMargin":6}"#
         let old = try JSONDecoder().decode(Settings.self, from: Data(json.utf8))
         #expect(old.marginHorizontal == 10)
         #expect(old.marginVertical == 10)
+        #expect(old.frameInfoMarginHorizontal == 6)
+        #expect(old.frameInfoMarginVertical == 6)
         #expect(old.cornerRadius == 0)
         #expect(old.frameInfoFontFamily == FrameInfoFamily.systemCondensed)
         let rounded = try JSONDecoder().decode(Settings.self, from: Data(#"{"roundedCorners":true}"#.utf8))
         #expect(rounded.cornerRadius == 4)
         // New keys win over former ones.
-        let both = #"{"marginSlider":10,"marginVertical":2,"frameInfoFontFamily":"Helvetica Neue"}"#
+        let both = #"{"marginSlider":10,"marginVertical":2,"frameInfoFontFamily":"Helvetica Neue","frameInfoMargin":6,"frameInfoMarginVertical":3}"#
         let new = try JSONDecoder().decode(Settings.self, from: Data(both.utf8))
         #expect(new.marginHorizontal == 10)
         #expect(new.marginVertical == 2)
+        #expect(new.frameInfoMarginHorizontal == 6)
+        #expect(new.frameInfoMarginVertical == 3)
         #expect(new.frameInfoFontFamily == "Helvetica Neue")
         // Round trip.
         var settings = Settings()
@@ -223,6 +230,9 @@ import Testing
         settings.marginsLinked = false
         settings.cornerRadius = 12
         settings.frameInfoFontFamily = "Menlo"
+        settings.frameInfoMarginHorizontal = 8
+        settings.frameInfoMarginVertical = 5
+        settings.frameInfoMarginsLinked = false
         let data = try JSONEncoder().encode(settings)
         #expect(try JSONDecoder().decode(Settings.self, from: data) == settings)
     }

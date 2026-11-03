@@ -15,13 +15,17 @@ struct SheetGridView: View {
         let settings = model.library.settings
         let thumbs = model.shownThumbs(of: sheet)
         let dimmed = hoverButton.map { Sheet.affectedThumbs($0.button, of: $0.thumb, in: thumbs) } ?? []
+        // While the Rows slider is dragged the grid is laid out for the new
+        // count at once; cells without a thumb yet are drawn empty.
+        let cellCount = model.rowsDraft.map { sheet.columnCount * $0 } ?? thumbs.count
+        let shown = Array(thumbs.prefix(cellCount))
         GeometryReader { proxy in
             let padding = Theme.space4
             let top = padding
             let geometry = GridGeometry(.init(
                 movieWidth: Double(file.width), movieHeight: Double(file.height),
                 aspectRatioInv: file.transform.aspectRatioInv, columnCount: sheet.columnCount,
-                thumbCount: thumbs.count,
+                thumbCount: cellCount,
                 containerWidth: max(1, proxy.size.width - padding * 2 - GridGeometry.minPrintWidthMargin),
                 containerHeight: max(1, proxy.size.height - padding - top),
                 zoom: model.zoom, marginRatioHorizontal: settings.marginRatioHorizontal,
@@ -33,7 +37,7 @@ struct SheetGridView: View {
             ScrollView([.horizontal, .vertical]) {
                 ZStack(alignment: .topLeading) {
                     Color.clear
-                    ForEach(Array(thumbs.enumerated()), id: \.element.id) { index, thumb in
+                    ForEach(Array(shown.enumerated()), id: \.element.id) { index, thumb in
                         let frame = geometry.thumbFrame(at: index)
                         ThumbView(
                             file: file, sheet: sheet, thumb: thumb, size: frame.size,
@@ -41,6 +45,13 @@ struct SheetGridView: View {
                             onHoverButton: { button in
                                 hoverButton = button.map { (thumb.id, $0) }
                             })
+                            .frame(width: frame.width, height: frame.height)
+                            .offset(x: frame.minX, y: frame.minY)
+                    }
+                    ForEach(shown.count..<max(shown.count, cellCount), id: \.self) { index in
+                        let frame = geometry.thumbFrame(at: index)
+                        RoundedRectangle(cornerRadius: geometry.borderRadius)
+                            .fill(Theme.surface)
                             .frame(width: frame.width, height: frame.height)
                             .offset(x: frame.minX, y: frame.minY)
                     }
@@ -67,10 +78,8 @@ private struct ThumbView: View {
     @State private var hovering = false
     @State private var isDropTarget = false
 
-    /// Below this width the hover overlay is hidden; below `compactWidth` it
-    /// is drawn at 0.7 (§7).
+    /// Below this width the hover overlay is hidden (§7).
     static let minOverlayWidth: CGFloat = 100
-    static let compactWidth: CGFloat = 160
 
     var body: some View {
         let selected = model.selectedThumbId == thumb.id
@@ -96,9 +105,7 @@ private struct ThumbView: View {
         .opacity(thumb.hidden ? 0.3 : 1)
         .overlay {
             if showOverlay {
-                HoverOverlay(
-                    file: file, sheet: sheet, thumb: thumb, compact: size.width < Self.compactWidth,
-                    onHoverButton: onHoverButton)
+                HoverOverlay(file: file, sheet: sheet, thumb: thumb, size: size, onHoverButton: onHoverButton)
             }
         }
         .overlay {
@@ -145,7 +152,8 @@ private struct FrameInfoLabel: View {
                 .padding(.horizontal, size * 0.3)
                 .padding(.vertical, size * 0.1)
                 .background(Color(settings.frameInfoBackground))
-                .padding(settings.frameInfoMargin)
+                .padding(.horizontal, settings.frameInfoMarginHorizontal)
+                .padding(.vertical, settings.frameInfoMarginVertical)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: alignment(settings.frameInfoPosition))
                 .allowsHitTesting(false)
         }
@@ -185,8 +193,14 @@ private struct HoverOverlay: View {
     let file: MovieFile
     let sheet: Sheet
     let thumb: Thumb
-    let compact: Bool
+    let size: CGSize
     let onHoverButton: (HoverButton?) -> Void
+
+    /// Font size of the overlay's text and icons: relative to the thumb
+    /// (height, and width so a row still fits), within 9–24 pt.
+    static func unit(for size: CGSize) -> CGFloat {
+        min(max(min(size.height * 0.11, size.width * 0.065), 9), 24)
+    }
 
     var body: some View {
         let isInterval = sheet.type == .interval
@@ -235,8 +249,8 @@ private struct HoverOverlay: View {
                 }
             }
         }
-        .padding(Theme.space1)
-        .environment(\.overlayScale, compact ? 0.7 : 1)
+        .padding(Self.unit(for: size) * 0.3)
+        .environment(\.overlayUnit, Self.unit(for: size))
     }
 
     /// Option at the moment of the click: the click event carries it.
@@ -250,14 +264,17 @@ private struct HoverOverlay: View {
 }
 
 /// Text and icon style of the hover overlay: condensed semibold white, half
-/// opaque until the pointer is over it. White is outside the kni tokens, an
-/// exception the owner approved for legibility on any frame.
+/// opaque until the pointer is over it, then solid and slightly larger.
+/// White is outside the kni tokens, an exception the owner approved for
+/// legibility on any frame.
 private struct OverlayLabel: ViewModifier {
     let active: Bool
     func body(content: Content) -> some View {
         content
             .foregroundStyle(Color.white.opacity(active ? 1 : 0.5))
             .shadow(color: Theme.crust.opacity(0.8), radius: 2, y: 1)
+            .scaleEffect(active ? 1.1 : 1)
+            .animation(.easeOut(duration: 0.12), value: active)
     }
 }
 
@@ -268,21 +285,21 @@ private struct OverlayButton: View {
     /// Tells the grid which hover button the pointer is over (dimming).
     var report: (Bool) -> Void = { _ in }
     let action: () -> Void
-    @Environment(\.overlayScale) private var scale
+    @Environment(\.overlayUnit) private var unit
     @State private var hovering = false
 
     var body: some View {
         Button(action: action) {
             Group {
                 if let title {
-                    Text(title).font(Theme.condensed(15 * scale, weight: .semibold))
+                    Text(title).font(Theme.condensed(unit, weight: .semibold))
                 } else if let systemImage {
-                    Image(systemName: systemImage).font(.system(size: 15 * scale, weight: .semibold))
+                    Image(systemName: systemImage).font(.system(size: unit, weight: .semibold))
                 }
             }
             .modifier(OverlayLabel(active: hovering))
-            .padding(.horizontal, Theme.space1 * scale)
-            .frame(minWidth: 26 * scale, minHeight: 24 * scale)
+            .padding(.horizontal, unit * 0.3)
+            .frame(minWidth: unit * 1.7, minHeight: unit * 1.6)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -301,14 +318,15 @@ private struct OverlayButton: View {
 private struct ScrubHandle: View {
     @Environment(AppModel.self) private var model
     let thumb: Thumb
-    @Environment(\.overlayScale) private var scale
+    @Environment(\.overlayUnit) private var unit
     @State private var hovering = false
 
     var body: some View {
+        // Clearly larger than the other buttons: the main control.
         Text("‹|›")
-            .font(Theme.condensed(20 * scale, weight: .semibold))
+            .font(Theme.condensed(unit * 1.9, weight: .semibold))
             .modifier(OverlayLabel(active: hovering || model.scrub?.thumbId == thumb.id))
-            .frame(width: 44 * scale, height: 28 * scale)
+            .frame(width: unit * 3.6, height: unit * 2.4)
             .contentShape(Rectangle())
             .onHover { hovering = $0 }
             .help("Scrub (⇧ before, ⌥ after, ⌃ ends)")
@@ -347,6 +365,6 @@ extension ScrubModifiers {
 }
 
 extension EnvironmentValues {
-    /// 0.7 for the compact hover overlay on narrow thumbs.
-    @Entry var overlayScale: CGFloat = 1
+    /// Font size of the hover overlay, from `HoverOverlay.unit(for:)`.
+    @Entry var overlayUnit: CGFloat = 15
 }

@@ -289,8 +289,12 @@ public struct Settings: Codable, Sendable, Equatable {
     public var frameInfoFontFamily = FrameInfoFamily.systemMono
     /// 1–100, relative to the thumb height.
     public var frameInfoSize: Double = 10
-    /// 0–50.
-    public var frameInfoMargin: Double = 0
+    /// Distance from the thumb edge, 0–50, left/right and top/bottom.
+    /// Older files have one `frameInfoMargin`, which seeds both.
+    public var frameInfoMarginHorizontal: Double = 0
+    public var frameInfoMarginVertical: Double = 0
+    /// The frame info margin sliders move together.
+    public var frameInfoMarginsLinked = true
     public var thumbnailCacheMB = Defaults.thumbnailCacheMB
     /// User-chosen ffmpeg path (§10); nil means discover it.
     public var ffmpegPath: String?
@@ -305,13 +309,13 @@ public struct Settings: Codable, Sendable, Equatable {
         case marginHorizontal, marginVertical, marginsLinked
         case showHeader, showPathInHeader, showDetailsInHeader, showTimelineInHeader
         case cornerRadius, showHiddenThumbs, frameInfo, thumbnailCacheMB, ffmpegPath
-        case frameInfoColor, frameInfoBackground, frameInfoPosition, frameInfoSize, frameInfoMargin
-        case frameInfoFontFamily
+        case frameInfoColor, frameInfoBackground, frameInfoPosition, frameInfoSize
+        case frameInfoFontFamily, frameInfoMarginHorizontal, frameInfoMarginVertical, frameInfoMarginsLinked
     }
 
     /// Keys of earlier versions, read only to migrate them.
     private enum LegacyKeys: String, CodingKey {
-        case marginSlider, roundedCorners, frameInfoFont
+        case marginSlider, roundedCorners, frameInfoFont, frameInfoMargin
     }
 
     public init(from decoder: any Decoder) throws {
@@ -341,7 +345,13 @@ public struct Settings: Codable, Sendable, Equatable {
         frameInfoFontFamily = (try? c.decodeIfPresent(String.self, forKey: .frameInfoFontFamily))
             ?? oldFont ?? d.frameInfoFontFamily
         frameInfoSize = try c.decodeIfPresent(Double.self, forKey: .frameInfoSize) ?? d.frameInfoSize
-        frameInfoMargin = try c.decodeIfPresent(Double.self, forKey: .frameInfoMargin) ?? d.frameInfoMargin
+        let oldInfoMargin = try? legacy.decodeIfPresent(Double.self, forKey: .frameInfoMargin)
+        frameInfoMarginHorizontal = try c.decodeIfPresent(Double.self, forKey: .frameInfoMarginHorizontal)
+            ?? oldInfoMargin ?? d.frameInfoMarginHorizontal
+        frameInfoMarginVertical = try c.decodeIfPresent(Double.self, forKey: .frameInfoMarginVertical)
+            ?? oldInfoMargin ?? d.frameInfoMarginVertical
+        frameInfoMarginsLinked = try c.decodeIfPresent(Bool.self, forKey: .frameInfoMarginsLinked)
+            ?? d.frameInfoMarginsLinked
     }
 }
 
