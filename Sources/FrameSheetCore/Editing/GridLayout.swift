@@ -6,11 +6,15 @@ public enum GridLayout {
         min(20, max(1, Int(Double(max(1, thumbCount)).squareRoot().rounded(.up))))
     }
 
+    /// Rows needed for `thumbCount` thumbs in `columns` columns.
+    public static func rows(columns: Int, thumbCount: Int) -> Int {
+        let c = max(1, columns)
+        return (max(0, thumbCount) + c - 1) / c
+    }
+
     /// Settings stats line for the grid view: "C Columns × R Rows = count".
     public static func statsLine(columns: Int, thumbCount: Int) -> String {
-        let c = max(1, columns)
-        let rows = (thumbCount + c - 1) / c
-        return "\(c) Columns × \(rows) Rows = \(thumbCount)"
+        "\(max(1, columns)) Columns × \(rows(columns: columns, thumbCount: thumbCount)) Rows = \(thumbCount)"
     }
 
     /// Zoom step after `zoom` in `GridGeometry.zoomSteps`, in or out.

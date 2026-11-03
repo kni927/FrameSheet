@@ -206,6 +206,34 @@ public enum FrameInfoPosition: String, Codable, Sendable, CaseIterable {
     }
 }
 
+/// Font family of the frame info on thumbs: one of the three system
+/// designs (stored as sentinels) or the name of an installed family.
+public enum FrameInfoFamily {
+    public static let system = ".System"
+    public static let systemCondensed = ".SystemCondensed"
+    public static let systemMono = ".SystemMono"
+    /// The system designs with their menu labels, listed before the
+    /// installed families.
+    public static let systemFamilies: [(family: String, label: String)] = [
+        (system, "System"), (systemCondensed, "System Condensed"), (systemMono, "System Mono"),
+    ]
+
+    public static func isSystem(_ family: String) -> Bool {
+        systemFamilies.contains { $0.family == family }
+    }
+
+    /// The family for a value of the former `frameInfoFont` setting
+    /// (sans, condensed or mono).
+    public static func migrated(fromFont font: String) -> String? {
+        switch font {
+        case "sans": system
+        case "condensed": systemCondensed
+        case "mono": systemMono
+        default: nil
+        }
+    }
+}
+
 /// sRGB colour with alpha, components 0–1.
 public struct RGBA: Codable, Sendable, Equatable, Hashable {
     public var red: Double
@@ -233,14 +261,22 @@ public struct RGBA: Codable, Sendable, Equatable, Hashable {
 /// kept with MoviePrint's defaults so later TASKs read them from here.
 /// Decoding tolerates missing keys so older library files keep loading.
 public struct Settings: Codable, Sendable, Equatable {
-    /// Grid margin slider 0–20; margin ratio = value / 200 (MoviePrint
-    /// `DEFAULT_MARGIN_SLIDER_FACTOR`).
-    public var marginSlider: Double = 4
+    /// Grid margin sliders 0–20, horizontal (between columns, left and
+    /// right) and vertical (between rows, top and bottom); margin ratio =
+    /// value / 200 (MoviePrint `DEFAULT_MARGIN_SLIDER_FACTOR`). Older files
+    /// have one `marginSlider`, which seeds both.
+    public var marginHorizontal: Double = 4
+    public var marginVertical: Double = 4
+    /// The margin sliders move together.
+    public var marginsLinked = true
     public var showHeader = false
     public var showPathInHeader = true
     public var showDetailsInHeader = true
     public var showTimelineInHeader = true
-    public var roundedCorners = true
+    /// Corner radius 0–20 as a percentage of the thumb width; 4 is
+    /// MoviePrint's borderRadiusRatio 0.04, 0 is square. Older files have
+    /// `roundedCorners` (false → 0).
+    public var cornerRadius: Double = 4
     public var showHiddenThumbs = false
     public var frameInfo: FrameInfo = .hidden
     /// Catppuccin Mocha crust on text, in place of MoviePrint's black on
@@ -248,7 +284,10 @@ public struct Settings: Codable, Sendable, Equatable {
     public var frameInfoColor = RGBA(hex: 0x11111B)
     public var frameInfoBackground = RGBA(hex: 0xCDD6F4)
     public var frameInfoPosition: FrameInfoPosition = .topLeft
-    /// 1–100.
+    /// A `FrameInfoFamily` sentinel or an installed family name. Older
+    /// files have `frameInfoFont` (sans, condensed, mono).
+    public var frameInfoFontFamily = FrameInfoFamily.systemMono
+    /// 1–100, relative to the thumb height.
     public var frameInfoSize: Double = 10
     /// 0–50.
     public var frameInfoMargin: Double = 0
@@ -258,23 +297,38 @@ public struct Settings: Codable, Sendable, Equatable {
 
     public init() {}
 
-    public var marginRatio: Double { marginSlider / 200 }
+    public var marginRatioHorizontal: Double { marginHorizontal / 200 }
+    public var marginRatioVertical: Double { marginVertical / 200 }
+    public var borderRadiusRatio: Double { cornerRadius / 100 }
 
     private enum CodingKeys: String, CodingKey {
-        case marginSlider, showHeader, showPathInHeader, showDetailsInHeader, showTimelineInHeader
-        case roundedCorners, showHiddenThumbs, frameInfo, thumbnailCacheMB, ffmpegPath
+        case marginHorizontal, marginVertical, marginsLinked
+        case showHeader, showPathInHeader, showDetailsInHeader, showTimelineInHeader
+        case cornerRadius, showHiddenThumbs, frameInfo, thumbnailCacheMB, ffmpegPath
         case frameInfoColor, frameInfoBackground, frameInfoPosition, frameInfoSize, frameInfoMargin
+        case frameInfoFontFamily
+    }
+
+    /// Keys of earlier versions, read only to migrate them.
+    private enum LegacyKeys: String, CodingKey {
+        case marginSlider, roundedCorners, frameInfoFont
     }
 
     public init(from decoder: any Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
+        let legacy = try decoder.container(keyedBy: LegacyKeys.self)
         let d = Settings()
-        marginSlider = try c.decodeIfPresent(Double.self, forKey: .marginSlider) ?? d.marginSlider
+        let oldMargin = try? legacy.decodeIfPresent(Double.self, forKey: .marginSlider)
+        marginHorizontal = try c.decodeIfPresent(Double.self, forKey: .marginHorizontal) ?? oldMargin ?? d.marginHorizontal
+        marginVertical = try c.decodeIfPresent(Double.self, forKey: .marginVertical) ?? oldMargin ?? d.marginVertical
+        marginsLinked = try c.decodeIfPresent(Bool.self, forKey: .marginsLinked) ?? d.marginsLinked
         showHeader = try c.decodeIfPresent(Bool.self, forKey: .showHeader) ?? d.showHeader
         showPathInHeader = try c.decodeIfPresent(Bool.self, forKey: .showPathInHeader) ?? d.showPathInHeader
         showDetailsInHeader = try c.decodeIfPresent(Bool.self, forKey: .showDetailsInHeader) ?? d.showDetailsInHeader
         showTimelineInHeader = try c.decodeIfPresent(Bool.self, forKey: .showTimelineInHeader) ?? d.showTimelineInHeader
-        roundedCorners = try c.decodeIfPresent(Bool.self, forKey: .roundedCorners) ?? d.roundedCorners
+        let oldRounded = try? legacy.decodeIfPresent(Bool.self, forKey: .roundedCorners)
+        cornerRadius = try c.decodeIfPresent(Double.self, forKey: .cornerRadius)
+            ?? (oldRounded == false ? 0 : d.cornerRadius)
         showHiddenThumbs = try c.decodeIfPresent(Bool.self, forKey: .showHiddenThumbs) ?? d.showHiddenThumbs
         frameInfo = try c.decodeIfPresent(FrameInfo.self, forKey: .frameInfo) ?? d.frameInfo
         thumbnailCacheMB = try c.decodeIfPresent(Int.self, forKey: .thumbnailCacheMB) ?? d.thumbnailCacheMB
@@ -282,6 +336,10 @@ public struct Settings: Codable, Sendable, Equatable {
         frameInfoColor = try c.decodeIfPresent(RGBA.self, forKey: .frameInfoColor) ?? d.frameInfoColor
         frameInfoBackground = try c.decodeIfPresent(RGBA.self, forKey: .frameInfoBackground) ?? d.frameInfoBackground
         frameInfoPosition = try c.decodeIfPresent(FrameInfoPosition.self, forKey: .frameInfoPosition) ?? d.frameInfoPosition
+        let oldFont = (try? legacy.decodeIfPresent(String.self, forKey: .frameInfoFont))
+            .flatMap(FrameInfoFamily.migrated(fromFont:))
+        frameInfoFontFamily = (try? c.decodeIfPresent(String.self, forKey: .frameInfoFontFamily))
+            ?? oldFont ?? d.frameInfoFontFamily
         frameInfoSize = try c.decodeIfPresent(Double.self, forKey: .frameInfoSize) ?? d.frameInfoSize
         frameInfoMargin = try c.decodeIfPresent(Double.self, forKey: .frameInfoMargin) ?? d.frameInfoMargin
     }

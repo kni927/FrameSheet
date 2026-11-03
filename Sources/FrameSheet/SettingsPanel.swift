@@ -1,29 +1,44 @@
+import AppKit
 import FrameSheetCore
 import SwiftUI
 
 /// Right sidebar (§6), grid parts: stats and columns of the current sheet,
-/// styling, frame info, thumbnail cache and ffmpeg. Header, output, naming,
-/// face, timeline and experimental sections come with their TASKs.
+/// styling and frame info. The thumbnail cache and ffmpeg live in the
+/// Settings window; header, output, naming, face, timeline and experimental
+/// sections come with their TASKs.
 struct SettingsPanel: View {
     @Environment(AppModel.self) private var model
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: Theme.space3) {
+            VStack(alignment: .leading, spacing: 0) {
                 if let sheet = model.currentSheet {
                     GridSection(sheet: sheet)
                 }
                 StylingSection()
                 FrameInfoSection()
-                CacheSection()
-                Card(title: "ffmpeg") { FFmpegRow() }
             }
-            .padding(Theme.space3)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .background(Theme.crust)
         .font(Theme.bodySm)
         .foregroundStyle(Theme.text)
+        // The panel is a full-height inspector column; its hide button sits
+        // in the panel's part of the window toolbar, at its leading edge.
+        // While the panel is hidden the main toolbar shows the button.
+        .toolbar {
+            ToolbarItem {
+                Button {
+                    model.showSettings = false
+                } label: {
+                    Label("Hide panel", systemImage: "sidebar.right")
+                }
+                .buttonStyle(ToolbarIconStyle())
+                .help("Hide panel (3)")
+            }
+            .sharedBackgroundVisibility(.hidden)
+            ToolbarSpacer(.flexible)
+        }
     }
 }
 
@@ -36,25 +51,43 @@ extension AppModel {
     }
 }
 
-/// A slider with its label and value on one line above it.
+/// A slider with its label on the left and its value right-aligned above it.
 private struct LabeledSlider: View {
     let title: String
     @Binding var value: Double
     let range: ClosedRange<Double>
     var step: Double = 1
+    var unit = ""
+    var help: String?
     var onEditingChanged: (Bool) -> Void = { _ in }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
-            HStack {
-                Text(title)
-                Spacer()
-                Text("\(Int(value.rounded()))")
+            PanelRow(title) {
+                Text("\(Int(value.rounded()))\(unit)")
                     .font(Theme.mono(12))
                     .foregroundStyle(Theme.textMuted)
             }
             Slider(value: $value, in: range, step: step, onEditingChanged: onEditingChanged)
                 .controlSize(.small)
+                .help(help ?? title)
+        }
+    }
+}
+
+/// An on/off setting: label left, switch right.
+private struct SwitchRow: View {
+    let title: String
+    @Binding var isOn: Bool
+    var help: String?
+
+    var body: some View {
+        PanelRow(title) {
+            Toggle(title, isOn: $isOn)
+                .labelsHidden()
+                .toggleStyle(.switch)
+                .controlSize(.mini)
+                .help(help ?? title)
         }
     }
 }
@@ -62,57 +95,81 @@ private struct LabeledSlider: View {
 private struct GridSection: View {
     @Environment(AppModel.self) private var model
     let sheet: Sheet
-    @State private var changeCount = false
-    @State private var rows = 4.0
     @State private var isDragging = false
+    /// The Rows slider's value while it is dragged; applied on release.
+    @State private var rowsDraft: Double?
+    @State private var isDraggingRows = false
 
     var body: some View {
-        Card(title: "Grid") {
-            Text(GridLayout.statsLine(columns: sheet.columnCount, thumbCount: sheet.visibleThumbs.count))
-                .font(Theme.mono(12))
-                .foregroundStyle(Theme.textMuted)
+        let count = sheet.visibleThumbs.count
+        let rows = GridLayout.rows(columns: sheet.columnCount, thumbCount: count)
+        PanelSection(title: "Grid") {
+            // The stats (§6) as numbers over labels; no "×" or "=", since
+            // hidden thumbs make columns × rows differ from the count.
+            HStack(spacing: 0) {
+                Stat(value: sheet.columnCount, label: "columns")
+                Stat(value: rowsDraft.map { Int($0.rounded()) } ?? rows, label: "rows")
+                Stat(value: rowsDraft.map { sheet.columnCount * Int($0.rounded()) } ?? count, label: "count")
+            }
+            .padding(.bottom, Theme.space1)
             LabeledSlider(
                 title: "Columns",
                 value: Binding(
                     get: { Double(sheet.columnCount) },
                     set: { model.setColumnsLive(Int($0.rounded()), editing: isDragging) }),
-                range: 1...20
+                range: 1...20, help: "Columns of this sheet"
             ) { editing in
                 isDragging = editing
                 if !editing { model.endColumnsDrag() }
             }
-            Toggle("Change thumb count", isOn: $changeCount.animation(.easeOut(duration: 0.15)))
-                .toggleStyle(.checkbox)
-                .onChange(of: changeCount) { _, on in
-                    if on { rows = Double(defaultRows) }
-                }
-            if changeCount {
-                LabeledSlider(title: "Rows", value: $rows, range: 1...20)
-                let count = sheet.columnCount * Int(rows.rounded())
-                Label(
-                    "Applying replaces the \(sheet.thumbs.count) thumbs of this sheet with \(count) new ones.",
-                    systemImage: "exclamationmark.triangle"
-                )
-                .font(Theme.caption)
-                .foregroundStyle(Theme.warning)
-                .fixedSize(horizontal: false, vertical: true)
-                HStack {
-                    Spacer()
-                    Button("Apply") {
-                        model.applyThumbCount(columns: sheet.columnCount, rows: Int(rows.rounded()))
-                        changeCount = false
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.small)
-                }
+            LabeledSlider(
+                title: "Rows",
+                value: Binding(
+                    get: { rowsDraft ?? Double(max(1, rows)) },
+                    set: { value in
+                        rowsDraft = value
+                        // Keyboard or accessibility changes come without a
+                        // drag: apply them at once.
+                        if !isDraggingRows { commitRows() }
+                    }),
+                range: 1...20,
+                help: "Recaptures columns × rows thumbs between the first and last visible frames, replacing the thumbs (⌘Z undoes)"
+            ) { editing in
+                isDraggingRows = editing
+                if !editing { commitRows() }
             }
         }
-        .onChange(of: sheet.id) { changeCount = false }
+        .onChange(of: sheet.id) { rowsDraft = nil }
     }
 
-    private var defaultRows: Int {
-        let c = max(1, sheet.columnCount)
-        return min(20, max(1, (sheet.visibleThumbs.count + c - 1) / c))
+    /// One recapture (one undo step) when the Rows slider is released on a
+    /// new value.
+    private func commitRows() {
+        guard let draft = rowsDraft else { return }
+        rowsDraft = nil
+        let rows = Int(draft.rounded())
+        guard rows != GridLayout.rows(columns: sheet.columnCount, thumbCount: sheet.visibleThumbs.count)
+        else { return }
+        model.applyThumbCount(columns: sheet.columnCount, rows: rows)
+    }
+}
+
+/// A large number over a small muted label, one of three equal columns.
+private struct Stat: View {
+    let value: Int
+    let label: String
+
+    var body: some View {
+        VStack(spacing: 0) {
+            Text("\(value)")
+                .font(Theme.statValue)
+                .foregroundStyle(Theme.text)
+            Text(label)
+                .font(Theme.panelCaption)
+                .foregroundStyle(Theme.textMuted)
+        }
+        .frame(maxWidth: .infinity)
+        .accessibilityElement(children: .combine)
     }
 }
 
@@ -120,12 +177,64 @@ private struct StylingSection: View {
     @Environment(AppModel.self) private var model
 
     var body: some View {
-        Card(title: "Styling") {
-            LabeledSlider(title: "Grid margin", value: model.setting(\.marginSlider), range: 0...20)
-            Toggle("Rounded corners", isOn: model.setting(\.roundedCorners))
-            Toggle("Show hidden thumbs", isOn: model.setting(\.showHiddenThumbs))
+        PanelSection(title: "Styling") {
+            MarginRows()
+            LabeledSlider(
+                title: "Corner radius", value: model.setting(\.cornerRadius), range: 0...20, unit: " %",
+                help: "Corner radius, % of thumb width (0 = square)")
+            SwitchRow(title: "Show hidden thumbs", isOn: model.setting(\.showHiddenThumbs), help: "Show hidden thumbs dimmed")
         }
-        .toggleStyle(.checkbox)
+    }
+}
+
+/// Horizontal and vertical grid margins with a link that moves them
+/// together.
+private struct MarginRows: View {
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        let settings = model.library.settings
+        let linked = settings.marginsLinked
+        HStack(alignment: .center, spacing: Theme.space2) {
+            VStack(alignment: .leading, spacing: Theme.space2) {
+                LabeledSlider(
+                    title: "Horizontal margin", value: margin(\.marginHorizontal, other: \.marginVertical),
+                    range: 0...20, help: "Space between columns")
+                LabeledSlider(
+                    title: "Vertical margin", value: margin(\.marginVertical, other: \.marginHorizontal),
+                    range: 0...20, help: "Space between rows")
+            }
+            Button {
+                model.updateSettings { s in
+                    s.marginsLinked.toggle()
+                    // Linking aligns the vertical margin to the horizontal one.
+                    if s.marginsLinked { s.marginVertical = s.marginHorizontal }
+                }
+            } label: {
+                Image(systemName: linked ? "link" : "link.badge.plus")
+                    .font(.system(size: 13))
+                    .frame(width: 24, height: 24)
+            }
+            .buttonStyle(ToolbarIconStyle(selected: linked))
+            .help(linked ? "Margins linked (click to unlink)" : "Link margins")
+            .accessibilityLabel("Link margins")
+            .accessibilityAddTraits(linked ? .isSelected : [])
+        }
+    }
+
+    /// One margin; while linked, the other follows.
+    private func margin(
+        _ key: WritableKeyPath<FrameSheetCore.Settings, Double>,
+        other: WritableKeyPath<FrameSheetCore.Settings, Double>
+    ) -> Binding<Double> {
+        Binding(
+            get: { model.library.settings[keyPath: key] },
+            set: { value in
+                model.updateSettings { s in
+                    s[keyPath: key] = value
+                    if s.marginsLinked { s[keyPath: other] = value }
+                }
+            })
     }
 }
 
@@ -133,7 +242,7 @@ private struct FrameInfoSection: View {
     @Environment(AppModel.self) private var model
 
     var body: some View {
-        Card(title: "Frame info") {
+        PanelSection(title: "Frame info") {
             Picker("Frame info", selection: model.setting(\.frameInfo)) {
                 Text("Frames").tag(FrameInfo.frames)
                 Text("Timecode").tag(FrameInfo.timecode)
@@ -141,45 +250,105 @@ private struct FrameInfoSection: View {
             }
             .pickerStyle(.segmented)
             .labelsHidden()
-            ColorRow(title: "Font colour", value: model.setting(\.frameInfoColor))
-            ColorRow(title: "Background colour", value: model.setting(\.frameInfoBackground))
-            Picker("Position", selection: model.setting(\.frameInfoPosition)) {
-                ForEach(FrameInfoPosition.allCases, id: \.self) { position in
-                    Text(position.label).tag(position)
-                }
+            .help("Frame number, timecode or none")
+            PanelRow("Font") {
+                FontFamilyPicker(selection: model.setting(\.frameInfoFontFamily))
             }
-            LabeledSlider(title: "Size", value: model.setting(\.frameInfoSize), range: 1...100)
-            LabeledSlider(title: "Margin", value: model.setting(\.frameInfoMargin), range: 0...50)
+            LabeledSlider(
+                title: "Size", value: model.setting(\.frameInfoSize), range: 1...100,
+                help: "Relative to thumb height")
+            ColorRow(title: "Colour", value: model.setting(\.frameInfoColor), keepsOpacity: false)
+            ColorRow(title: "Background", value: model.setting(\.frameInfoBackground), keepsOpacity: true)
+            LabeledSlider(
+                title: "Background opacity",
+                value: Binding(
+                    get: { model.library.settings.frameInfoBackground.alpha * 100 },
+                    set: { v in model.updateSettings { $0.frameInfoBackground.alpha = v / 100 } }),
+                range: 0...100, unit: " %", help: "Background opacity")
+            PanelRow("Position") {
+                Picker("Position", selection: model.setting(\.frameInfoPosition)) {
+                    ForEach(FrameInfoPosition.allCases, id: \.self) { position in
+                        Text(position.label).tag(position)
+                    }
+                }
+                .labelsHidden()
+                .fixedSize()
+                .help("Where on the thumb")
+            }
+            LabeledSlider(
+                title: "Margin", value: model.setting(\.frameInfoMargin), range: 0...50,
+                help: "Distance from the thumb edge")
         }
     }
 }
 
-/// Catppuccin swatches, transparent, and the system colour picker for any
-/// other colour.
+/// The system designs first, then every installed font family.
+private struct FontFamilyPicker: View {
+    @Binding var selection: String
+
+    /// Read once; the list does not change while the app runs often enough
+    /// to matter.
+    @MainActor private static let installed = NSFontManager.shared.availableFontFamilies
+
+    var body: some View {
+        Picker("Font", selection: $selection) {
+            ForEach(FrameInfoFamily.systemFamilies, id: \.family) { item in
+                Text(item.label).tag(item.family)
+            }
+            Divider()
+            // A chosen family that is no longer installed stays selectable.
+            if !FrameInfoFamily.isSystem(selection), !Self.installed.contains(selection) {
+                Text(selection).tag(selection)
+            }
+            ForEach(Self.installed, id: \.self) { family in
+                Text(family).tag(family)
+            }
+        }
+        .pickerStyle(.menu)
+        .labelsHidden()
+        .frame(maxWidth: 170)
+        .help("Frame info font")
+    }
+}
+
+/// A few Catppuccin swatches, Transparent, and the system colour picker for
+/// any other colour. With `keepsOpacity` a new colour keeps the opacity set
+/// by the slider (the opacity of Transparent is restored to 100 %).
 private struct ColorRow: View {
     let title: String
     @Binding var value: RGBA
-
-    private let columns = Array(repeating: GridItem(.fixed(18), spacing: 6), count: 8)
+    let keepsOpacity: Bool
 
     var body: some View {
-        VStack(alignment: .leading, spacing: Theme.space1) {
-            HStack {
-                Text(title)
-                Spacer()
-                ColorPicker(title, selection: Binding(get: { Color(value) }, set: { value = RGBA($0) }))
-                    .labelsHidden()
-                    .help("Any colour")
-            }
-            LazyVGrid(columns: columns, alignment: .leading, spacing: 6) {
+        PanelRow(title) {
+            HStack(spacing: Theme.space1) {
                 ForEach(Theme.frameInfoPresets, id: \.name) { preset in
-                    Swatch(rgba: preset.rgba, selected: value == preset.rgba) { value = preset.rgba }
-                        .help(preset.name)
+                    Swatch(rgba: preset.rgba, selected: value.alpha > 0 && sameColour(value, preset.rgba)) {
+                        choose(preset.rgba)
+                    }
+                    .help(preset.name)
                 }
                 Swatch(rgba: .clear, selected: value.alpha == 0) { value = .clear }
                     .help("Transparent")
+                ColorPicker(
+                    title,
+                    selection: Binding(get: { Color(value).opacity(1) }, set: { choose(RGBA($0)) }),
+                    supportsOpacity: false
+                )
+                .labelsHidden()
+                .help("Any colour")
             }
         }
+    }
+
+    private func choose(_ colour: RGBA) {
+        var new = colour
+        new.alpha = keepsOpacity && value.alpha > 0 ? value.alpha : 1
+        value = new
+    }
+
+    private func sameColour(_ a: RGBA, _ b: RGBA) -> Bool {
+        abs(a.red - b.red) < 0.002 && abs(a.green - b.green) < 0.002 && abs(a.blue - b.blue) < 0.002
     }
 }
 
@@ -206,69 +375,5 @@ private struct Swatch: View {
             .contentShape(Circle())
         }
         .buttonStyle(.plain)
-    }
-}
-
-private struct CacheSection: View {
-    @Environment(AppModel.self) private var model
-
-    var body: some View {
-        Card(title: "Thumbnail cache") {
-            let limit = model.library.settings.thumbnailCacheMB
-            Stepper(
-                value: Binding(get: { limit }, set: { model.setCacheLimit($0) }), in: 64...8192, step: 64
-            ) {
-                HStack {
-                    Text("Memory limit")
-                    Spacer()
-                    Text("\(limit) MB")
-                        .font(Theme.mono(12))
-                        .foregroundStyle(Theme.textMuted)
-                }
-            }
-            Button("Clear thumbnail cache") { model.clearThumbnailCache() }
-                .controlSize(.small)
-            Text("Decoded display-size thumbnails kept in memory.")
-                .font(Theme.caption)
-                .foregroundStyle(Theme.textMuted)
-        }
-    }
-}
-
-private struct FFmpegRow: View {
-    @Environment(AppModel.self) private var model
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: Theme.space1) {
-            if model.isFindingFFmpeg {
-                ProgressView().controlSize(.small)
-            } else if let tools = model.ffmpeg?.tools {
-                Text(tools.ffmpeg.path)
-                    .font(Theme.mono(12))
-                    .textSelection(.enabled)
-                    .foregroundStyle(Theme.text)
-                Text("Version \(tools.version) · \(tools.source.rawValue)")
-                if tools.ffprobe == nil {
-                    Label("ffprobe is missing next to ffmpeg", systemImage: "exclamationmark.triangle")
-                        .foregroundStyle(Theme.warning)
-                }
-            } else {
-                Label("Not found", systemImage: "exclamationmark.triangle").foregroundStyle(Theme.warning)
-            }
-            ForEach(model.ffmpeg?.notes ?? [], id: \.self) { note in
-                Text(note).foregroundStyle(Theme.warning)
-            }
-            HStack {
-                Button("Choose…") { model.chooseFFmpeg() }
-                if model.library.settings.ffmpegPath != nil {
-                    Button("Search automatically") { model.setFFmpegPath(nil) }
-                }
-            }
-            .controlSize(.small)
-            .padding(.top, Theme.space1)
-            Text("Used for files AVFoundation cannot decode, such as WebM and MKV.")
-        }
-        .font(Theme.caption)
-        .foregroundStyle(Theme.textMuted)
     }
 }

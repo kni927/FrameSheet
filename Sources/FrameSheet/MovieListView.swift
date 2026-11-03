@@ -38,23 +38,31 @@ private struct MovieRow: View {
         HStack(alignment: .top, spacing: Theme.space3) {
             Poster(file: file)
             VStack(alignment: .leading, spacing: 2) {
+                // One line, cut in the middle: names without spaces would
+                // otherwise wrap mid-word. The tooltips give the full text.
                 Text(file.name)
                     .font(Theme.label)
                     .foregroundStyle(Theme.text)
-                    .lineLimit(2)
-                Text(file.folder)
                     .lineLimit(1)
                     .truncationMode(.middle)
+                    .help(file.name)
+                Text("…/\((file.folder as NSString).lastPathComponent)")
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .help(file.folder)
                 if missing {
                     Label("Movie is missing", systemImage: "exclamationmark.triangle")
                         .foregroundStyle(Theme.danger)
                     Button("Locate…") { model.locate(file.id) }
                         .controlSize(.small)
+                        .help("Find the moved movie")
                         .padding(.top, 2)
                 } else {
                     Text(Timecode.string(frames: file.frameCount, fps: file.fps))
                         .font(Theme.mono(12))
                     Text("\(ByteCountFormatter.string(fromByteCount: file.size, countStyle: .file)) · \(file.width)×\(file.height)")
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.85)
                 }
             }
             .font(Theme.caption)
@@ -123,16 +131,24 @@ private struct SheetRow: View {
                     .onSubmit { commit(ref) }
                     .onExitCommand { isRenaming = false }
                     .onChange(of: fieldFocused) { _, focused in
+                        model.isEditingText = focused
                         if !focused && isRenaming { commit(ref) }
                     }
+                    .onDisappear { model.isEditingText = false }
             } else {
+                // The name keeps its room before the type label.
                 Text(sheet.name)
                     .foregroundStyle(Theme.text)
                     .lineLimit(1)
+                    .truncationMode(.middle)
+                    .layoutPriority(1)
+                    .help(sheet.name)
             }
-            Spacer()
-            Text(sheet.type.label)
+            Spacer(minLength: Theme.space1)
+            Text(shortLabel(sheet.type))
                 .foregroundStyle(Theme.textMuted)
+                .lineLimit(1)
+                .help(sheet.type.label)
         }
         .font(Theme.caption)
         .padding(.vertical, Theme.space1)
@@ -149,6 +165,14 @@ private struct SheetRow: View {
             Button("Duplicate") { model.duplicateSheet(ref) }
             Divider()
             Button("Delete", role: .destructive) { model.deleteSheet(ref) }
+        }
+    }
+
+    private func shortLabel(_ type: SheetType) -> String {
+        switch type {
+        case .interval: "Interval"
+        case .shot: "Shots"
+        case .faces: "Faces"
         }
     }
 

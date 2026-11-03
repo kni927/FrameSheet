@@ -14,20 +14,27 @@ struct FrameSheetApp: App {
                 .preferredColorScheme(.dark)
                 .frame(minWidth: 900, minHeight: 560)
                 .onAppear { delegate.model = model }
+                .background(WindowReader { delegate.mainWindow = $0 })
         }
         .commands {
             CommandGroup(replacing: .newItem) {
                 Button("Add Movies…") { model.presentOpenPanel() }
             }
-            // Library undo (§3). Text fields keep their own undo only through
-            // the context menu while this replaces the menu items.
+            // Library undo (§3). While a text field is being edited, the
+            // items undo and redo the typing instead (KNOWN_ISSUES 5); they
+            // stay enabled while the rename field has focus, so the shortcut
+            // reaches it.
             CommandGroup(replacing: .undoRedo) {
-                Button("Undo") { model.undo() }
-                    .keyboardShortcut("z", modifiers: .command)
-                    .disabled(!model.canUndo)
-                Button("Redo") { model.redo() }
-                    .keyboardShortcut("z", modifiers: [.command, .shift])
-                    .disabled(!model.canRedo)
+                Button("Undo") {
+                    if let text = Self.editedText { text.undoManager?.undo() } else { model.undo() }
+                }
+                .keyboardShortcut("z", modifiers: .command)
+                .disabled(!model.canUndo && !model.isEditingText)
+                Button("Redo") {
+                    if let text = Self.editedText { text.undoManager?.redo() } else { model.redo() }
+                }
+                .keyboardShortcut("z", modifiers: [.command, .shift])
+                .disabled(!model.canRedo && !model.isEditingText)
             }
             // View menu; Enter Full Screen (⌃⌘F) comes with the window.
             CommandGroup(before: .toolbar) {
@@ -39,16 +46,28 @@ struct FrameSheetApp: App {
                     .keyboardShortcut("-", modifiers: .command)
                 Divider()
                 Button(model.showMovieList ? "Hide Movie List" : "Show Movie List") { model.showMovieList.toggle() }
-                Button(model.showSettings ? "Hide Settings" : "Show Settings") { model.showSettings.toggle() }
+                Button(model.showSettings ? "Hide Settings Panel" : "Show Settings Panel") { model.showSettings.toggle() }
                 Divider()
             }
         }
+        Settings {
+            SettingsWindow()
+                .environment(model)
+                .preferredColorScheme(.dark)
+        }
+    }
+
+    /// The field editor of the text field being edited in the key window.
+    @MainActor private static var editedText: NSText? {
+        NSApp.keyWindow?.firstResponder as? NSText
     }
 }
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     var model: AppModel?
+    /// The main window; grid keys act only there, not in Settings.
+    weak var mainWindow: NSWindow?
     private var keyMonitor: Any?
     private var flagsMonitor: Any?
 
@@ -84,7 +103,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func handleKey(_ event: NSEvent) -> NSEvent? {
         // Only the main window: open panels, the colour panel and alerts
         // keep their own keys.
-        guard let model, NSApp.modalWindow == nil, !(event.window is NSPanel) else { return event }
+        guard let model, NSApp.modalWindow == nil, !(event.window is NSPanel),
+              mainWindow == nil || event.window === mainWindow
+        else { return event }
         let flags = event.modifierFlags.intersection([.shift, .option, .control, .command])
         // A keyboard scrub takes the arrows, Return and Escape.
         if let scrub = model.scrub {
@@ -125,4 +146,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         return nil
     }
+}
+
+/// Hands its window to `onWindow` once it is in one.
+private struct WindowReader: NSViewRepresentable {
+    let onWindow: (NSWindow) -> Void
+
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView()
+        DispatchQueue.main.async { [weak view] in
+            if let window = view?.window { onWindow(window) }
+        }
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {}
 }

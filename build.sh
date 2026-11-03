@@ -49,12 +49,6 @@ else
     echo "WARNING: assets/AppIcon.png not found. Continuing without icon."
 fi
 
-echo "=== Step 3b: Copying fonts from assets/fonts ==="
-# IBM Plex Sans and Mono (OFL 1.1, docs/licenses/IBM-Plex-LICENSE), registered
-# through ATSApplicationFontsPath in Info.plist.
-mkdir -p "$APP_DIR/Contents/Resources/Fonts"
-cp "$REPO_DIR"/assets/fonts/* "$APP_DIR/Contents/Resources/Fonts/"
-
 echo "=== Step 4: Creating Info.plist ==="
 cat <<EOF > "$APP_DIR/Contents/Info.plist"
 <?xml version="1.0" encoding="UTF-8"?>
@@ -76,8 +70,6 @@ cat <<EOF > "$APP_DIR/Contents/Info.plist"
             </array>
         </dict>
     </array>
-    <key>ATSApplicationFontsPath</key>
-    <string>Fonts</string>
     <key>CFBundleDevelopmentRegion</key>
     <string>en</string>
     <key>CFBundleExecutable</key>

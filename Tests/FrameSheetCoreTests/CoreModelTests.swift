@@ -109,11 +109,45 @@ import Testing
     @Test func headerAndRows() {
         let g = GridGeometry(.init(
             movieWidth: 1920, movieHeight: 1080, columnCount: 3, thumbCount: 10,
-            containerWidth: 1000, showHeader: true, roundedCorners: false))
+            containerWidth: 1000, showHeader: true, borderRadiusRatio: 0))
         #expect(g.rowCount == 4)
         #expect(g.borderRadius == 0)
         // 1080 × 0.25 × 2 × 0.25 = 135 before scaling
         #expect(abs(g.headerHeight - 135 * g.scale) < 1e-9)
+    }
+
+    @Test func customCornerRadius() {
+        let g = GridGeometry(.init(
+            movieWidth: 1920, movieHeight: 1080, columnCount: 4, thumbCount: 16,
+            containerWidth: 2006.4, borderRadiusRatio: 0.1))
+        #expect(abs(g.scale - 1) < 1e-9)
+        // 1920 × 0.1 × 0.25
+        #expect(abs(g.borderRadius - 48) < 1e-9)
+    }
+
+    @Test func unequalMargins() {
+        // Horizontal as in unscaledPrint, so the width and scale stay the same.
+        let g = GridGeometry(.init(
+            movieWidth: 1920, movieHeight: 1080, columnCount: 4, thumbCount: 16,
+            containerWidth: 2006.4, marginRatioHorizontal: 0.02, marginRatioVertical: 0.04))
+        #expect(abs(g.scale - 1) < 1e-9)
+        #expect(abs(g.thumbMargin - 9.6) < 1e-9)
+        #expect(abs(g.thumbMarginVertical - 19.2) < 1e-9)
+        #expect(abs(g.printWidth - 2016.4) < 1e-9)
+        // 38.4 + 4 × (270 + 38.4) = 1272 of 2006.4
+        #expect(abs(g.printHeight - 2016.4 * 1272 / 2006.4) < 1e-9)
+        let f = g.thumbFrame(at: 5)
+        #expect(abs(f.minX - 513.6) < 1e-9)
+        #expect(abs(f.minY - 346.8) < 1e-9)
+    }
+
+    @Test func noVerticalMargin() {
+        let g = GridGeometry(.init(
+            movieWidth: 1920, movieHeight: 1080, columnCount: 4, thumbCount: 16,
+            containerWidth: 2006.4, marginRatioHorizontal: 0.02, marginRatioVertical: 0))
+        #expect(abs(g.printHeight - 2016.4 * 1080 / 2006.4) < 1e-9)
+        #expect(abs(g.thumbFrame(at: 5).minY - 270) < 1e-9)
+        #expect(abs(g.thumbFrame(at: 5).minX - 513.6) < 1e-9)
     }
 
     @Test func aspectRatioOverride() {
@@ -156,8 +190,41 @@ import Testing
     @Test func settingsToleratesMissingKeys() throws {
         let settings = try JSONDecoder().decode(Settings.self, from: Data(#"{"showHeader":true}"#.utf8))
         #expect(settings.showHeader)
-        #expect(settings.marginSlider == 4)
+        #expect(settings.marginHorizontal == 4)
+        #expect(settings.marginVertical == 4)
+        #expect(settings.marginsLinked)
+        #expect(settings.cornerRadius == 4)
+        #expect(abs(settings.borderRadiusRatio - GridGeometry.borderRadiusRatio) < 1e-12)
         #expect(settings.thumbnailCacheMB == 256)
+        #expect(settings.frameInfoFontFamily == FrameInfoFamily.systemMono)
+        // An unknown former frame info font falls back to the default.
+        let unknown = try JSONDecoder().decode(Settings.self, from: Data(#"{"frameInfoFont":"serif"}"#.utf8))
+        #expect(unknown.frameInfoFontFamily == FrameInfoFamily.systemMono)
+    }
+
+    @Test func settingsMigratesFormerKeys() throws {
+        let json = #"{"marginSlider":10,"roundedCorners":false,"frameInfoFont":"condensed"}"#
+        let old = try JSONDecoder().decode(Settings.self, from: Data(json.utf8))
+        #expect(old.marginHorizontal == 10)
+        #expect(old.marginVertical == 10)
+        #expect(old.cornerRadius == 0)
+        #expect(old.frameInfoFontFamily == FrameInfoFamily.systemCondensed)
+        let rounded = try JSONDecoder().decode(Settings.self, from: Data(#"{"roundedCorners":true}"#.utf8))
+        #expect(rounded.cornerRadius == 4)
+        // New keys win over former ones.
+        let both = #"{"marginSlider":10,"marginVertical":2,"frameInfoFontFamily":"Helvetica Neue"}"#
+        let new = try JSONDecoder().decode(Settings.self, from: Data(both.utf8))
+        #expect(new.marginHorizontal == 10)
+        #expect(new.marginVertical == 2)
+        #expect(new.frameInfoFontFamily == "Helvetica Neue")
+        // Round trip.
+        var settings = Settings()
+        settings.marginVertical = 7
+        settings.marginsLinked = false
+        settings.cornerRadius = 12
+        settings.frameInfoFontFamily = "Menlo"
+        let data = try JSONEncoder().encode(settings)
+        #expect(try JSONDecoder().decode(Settings.self, from: data) == settings)
     }
 }
 

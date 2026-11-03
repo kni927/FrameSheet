@@ -302,12 +302,12 @@ private extension Library {
         let thumb = start.sheet(ref.sheetId, of: ref.fileId)!.thumbs[2].id
         for frame in 200..<260 { doc.edit { $0.changeThumb(ref, thumb: thumb, to: frame) } }
         #expect(doc.history.undoStack.count == EditHistory.limit)
-        doc.update { $0.settings.marginSlider = 12 }
+        doc.update { $0.settings.marginHorizontal = 12 }
         var undone = 0
         while doc.undo() { undone += 1 }
         #expect(undone == 50)
         #expect(doc.library.sheet(ref.sheetId, of: ref.fileId)!.thumbs[2].frameNumber == 209)
-        #expect(doc.library.settings.marginSlider == 12)
+        #expect(doc.library.settings.marginHorizontal == 12)
     }
 }
 
@@ -315,6 +315,9 @@ private extension Library {
     @Test func statsAndFrameInfo() {
         #expect(GridLayout.statsLine(columns: 4, thumbCount: 16) == "4 Columns × 4 Rows = 16")
         #expect(GridLayout.statsLine(columns: 5, thumbCount: 16) == "5 Columns × 4 Rows = 16")
+        #expect(GridLayout.rows(columns: 4, thumbCount: 19) == 5)
+        #expect(GridLayout.rows(columns: 4, thumbCount: 0) == 0)
+        #expect(GridLayout.rows(columns: 0, thumbCount: 3) == 3)
         #expect(FrameInfoText.text(.frames, frame: 42, fps: 25) == "0042")
         #expect(FrameInfoText.text(.frames, frame: 123_456, fps: 25) == "123456")
         #expect(FrameInfoText.text(.timecode, frame: 25 * 61 + 3, fps: 25) == "00:01:01:03")

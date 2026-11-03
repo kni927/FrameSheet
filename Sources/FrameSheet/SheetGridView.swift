@@ -17,19 +17,19 @@ struct SheetGridView: View {
         let dimmed = hoverButton.map { Sheet.affectedThumbs($0.button, of: $0.thumb, in: thumbs) } ?? []
         GeometryReader { proxy in
             let padding = Theme.space4
-            // Room at the top for the floating toolbar.
-            let top = Theme.space12
+            let top = padding
             let geometry = GridGeometry(.init(
                 movieWidth: Double(file.width), movieHeight: Double(file.height),
                 aspectRatioInv: file.transform.aspectRatioInv, columnCount: sheet.columnCount,
                 thumbCount: thumbs.count,
                 containerWidth: max(1, proxy.size.width - padding * 2 - GridGeometry.minPrintWidthMargin),
                 containerHeight: max(1, proxy.size.height - padding - top),
-                zoom: model.zoom, marginRatio: settings.marginRatio, showHeader: settings.showHeader,
+                zoom: model.zoom, marginRatioHorizontal: settings.marginRatioHorizontal,
+                marginRatioVertical: settings.marginRatioVertical, showHeader: settings.showHeader,
                 showPathInHeader: settings.showPathInHeader,
                 showDetailsInHeader: settings.showDetailsInHeader,
                 showTimelineInHeader: settings.showTimelineInHeader,
-                roundedCorners: settings.roundedCorners))
+                borderRadiusRatio: settings.borderRadiusRatio))
             ScrollView([.horizontal, .vertical]) {
                 ZStack(alignment: .topLeading) {
                     Color.clear
@@ -140,7 +140,7 @@ private struct FrameInfoLabel: View {
         if let text = FrameInfoText.text(settings.frameInfo, frame: thumb.frameNumber, fps: file.fps) {
             let size = max(1, FrameInfoText.fontSize(size: settings.frameInfoSize, thumbHeight: thumbHeight))
             Text(text)
-                .font(Theme.mono(size, medium: true))
+                .font(font(settings.frameInfoFontFamily, size: size))
                 .foregroundStyle(Color(settings.frameInfoColor))
                 .padding(.horizontal, size * 0.3)
                 .padding(.vertical, size * 0.1)
@@ -148,6 +148,17 @@ private struct FrameInfoLabel: View {
                 .padding(settings.frameInfoMargin)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: alignment(settings.frameInfoPosition))
                 .allowsHitTesting(false)
+        }
+    }
+
+    /// The system designs, or an installed family by name (any family the
+    /// owner picks; a missing one falls back to the system font).
+    private func font(_ family: String, size: Double) -> Font {
+        switch family {
+        case FrameInfoFamily.system: Theme.sans(size, medium: true)
+        case FrameInfoFamily.systemCondensed: Theme.condensed(size, weight: .medium)
+        case FrameInfoFamily.systemMono: Theme.mono(size, medium: true)
+        default: Font.custom(family, size: size).weight(.medium)
         }
     }
 
@@ -166,7 +177,9 @@ private struct FrameInfoLabel: View {
 
 /// Buttons over a hovered thumb (§7): IN and OUT on top, insert before and
 /// after at the sides, the scrub handle in the middle, EXPAND and Hide/Show
-/// at the bottom. Option-click on IN/OUT hides all before/after.
+/// at the bottom. Option-click on IN/OUT hides all before/after. Drawn as in
+/// MoviePrint: faint white over the thumb, solid white under the pointer,
+/// with a dark shadow instead of a backdrop (owner, 2026-11-03).
 private struct HoverOverlay: View {
     @Environment(AppModel.self) private var model
     let file: MovieFile
@@ -179,37 +192,44 @@ private struct HoverOverlay: View {
         let isInterval = sheet.type == .interval
         VStack(spacing: 0) {
             HStack {
-                OverlayButton(title: hideMode ? "◀ HIDE" : "IN", help: isInterval
-                    ? "IN: start the sheet at this frame and recapture the same number of thumbs up to the last one.\n⌥-click: hide all thumbs before this one."
-                    : "Hide all thumbs before this one.", report: { onHoverButton($0 ? .inPoint : nil) }) {
+                OverlayButton(
+                    title: hideMode ? "◀ HIDE" : "IN",
+                    help: isInterval ? "IN — start here (⌥ hide before)" : "Hide all before",
+                    report: { onHoverButton($0 ? .inPoint : nil) }
+                ) {
                     model.setInOut(.before, thumb: thumb.id, option: optionHeld)
                 }
                 Spacer()
-                OverlayButton(title: hideMode ? "HIDE ▶" : "OUT", help: isInterval
-                    ? "OUT: end the sheet at this frame and recapture the same number of thumbs from the first one.\n⌥-click: hide all thumbs after this one."
-                    : "Hide all thumbs after this one.", report: { onHoverButton($0 ? .outPoint : nil) }) {
+                OverlayButton(
+                    title: hideMode ? "HIDE ▶" : "OUT",
+                    help: isInterval ? "OUT — end here (⌥ hide after)" : "Hide all after",
+                    report: { onHoverButton($0 ? .outPoint : nil) }
+                ) {
                     model.setInOut(.after, thumb: thumb.id, option: optionHeld)
                 }
             }
             Spacer(minLength: 0)
             HStack {
-                OverlayButton(systemImage: "plus", help: "Insert a thumb before this one, at the frame midway to the previous thumb.", report: { onHoverButton($0 ? .insertBefore : nil) }) {
+                OverlayButton(systemImage: "plus", help: "Insert before", report: { onHoverButton($0 ? .insertBefore : nil) }) {
                     model.insertThumb(.before, relativeTo: thumb.id)
                 }
                 Spacer()
                 ScrubHandle(thumb: thumb)
                 Spacer()
-                OverlayButton(systemImage: "plus", help: "Insert a thumb after this one, at the frame midway to the next thumb.", report: { onHoverButton($0 ? .insertAfter : nil) }) {
+                OverlayButton(systemImage: "plus", help: "Insert after", report: { onHoverButton($0 ? .insertAfter : nil) }) {
                     model.insertThumb(.after, relativeTo: thumb.id)
                 }
             }
             Spacer(minLength: 0)
             HStack {
-                OverlayButton(title: "EXPAND", help: "EXPAND: open a new sheet of 16 thumbs between this thumb's neighbours. Back to parent (toolbar) returns.", report: { onHoverButton($0 ? .expand : nil) }) {
+                OverlayButton(title: "EXPAND", help: "Expand to 16 thumbs", report: { onHoverButton($0 ? .expand : nil) }) {
                     model.expand(thumb.id)
                 }
                 Spacer()
-                OverlayButton(systemImage: thumb.hidden ? "eye" : "eye.slash", help: thumb.hidden ? "Show this thumb again." : "Hide this thumb (Show hidden thumbs in the toolbar shows it dimmed).", report: { onHoverButton($0 ? .hide : nil) }) {
+                OverlayButton(
+                    systemImage: thumb.hidden ? "eye" : "eye.slash", help: thumb.hidden ? "Show thumb" : "Hide thumb",
+                    report: { onHoverButton($0 ? .hide : nil) }
+                ) {
                     onHoverButton(nil)
                     model.toggleHidden(thumb.id)
                 }
@@ -229,6 +249,18 @@ private struct HoverOverlay: View {
     private var hideMode: Bool { model.optionHeld || sheet.type != .interval }
 }
 
+/// Text and icon style of the hover overlay: condensed semibold white, half
+/// opaque until the pointer is over it. White is outside the kni tokens, an
+/// exception the owner approved for legibility on any frame.
+private struct OverlayLabel: ViewModifier {
+    let active: Bool
+    func body(content: Content) -> some View {
+        content
+            .foregroundStyle(Color.white.opacity(active ? 1 : 0.5))
+            .shadow(color: Theme.crust.opacity(0.8), radius: 2, y: 1)
+    }
+}
+
 private struct OverlayButton: View {
     var title: String?
     var systemImage: String?
@@ -243,15 +275,14 @@ private struct OverlayButton: View {
         Button(action: action) {
             Group {
                 if let title {
-                    Text(title).font(Theme.sans(11 * scale, medium: true))
+                    Text(title).font(Theme.condensed(15 * scale, weight: .semibold))
                 } else if let systemImage {
-                    Image(systemName: systemImage).font(.system(size: 11 * scale, weight: .semibold))
+                    Image(systemName: systemImage).font(.system(size: 15 * scale, weight: .semibold))
                 }
             }
-            .foregroundStyle(hovering ? Theme.onAccent : Theme.text)
-            .padding(.horizontal, (Theme.space1 + 2) * scale)
-            .frame(minWidth: 22 * scale, minHeight: 20 * scale)
-            .background(hovering ? Theme.accent : Theme.crust.opacity(0.85), in: RoundedRectangle(cornerRadius: Theme.radiusSm))
+            .modifier(OverlayLabel(active: hovering))
+            .padding(.horizontal, Theme.space1 * scale)
+            .frame(minWidth: 26 * scale, minHeight: 24 * scale)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -271,15 +302,17 @@ private struct ScrubHandle: View {
     @Environment(AppModel.self) private var model
     let thumb: Thumb
     @Environment(\.overlayScale) private var scale
+    @State private var hovering = false
 
     var body: some View {
-        Image(systemName: "arrow.left.and.right")
-            .font(.system(size: 12 * scale, weight: .semibold))
-            .foregroundStyle(Theme.onAccent)
-            .frame(width: 36 * scale, height: 22 * scale)
-            .background(Theme.accent, in: Capsule())
-            .contentShape(Capsule())
-            .help("Scrub: drag left/right to pick another frame between the neighbours; release to CHANGE TO it.\nHold ⇧ to ADD BEFORE, ⌥ to ADD AFTER, ⌃ to reach the start or end of the movie.\nClick and release to scrub without holding the button; click again to confirm, Esc cancels.")
+        Text("‹|›")
+            .font(Theme.condensed(20 * scale, weight: .semibold))
+            .modifier(OverlayLabel(active: hovering || model.scrub?.thumbId == thumb.id))
+            .frame(width: 44 * scale, height: 28 * scale)
+            .contentShape(Rectangle())
+            .onHover { hovering = $0 }
+            .help("Scrub (⇧ before, ⌥ after, ⌃ ends)")
+            .accessibilityLabel("Scrub")
             .highPriorityGesture(
                 // Starts on mouse-down, so the thumb's own drag (reorder)
                 // cannot take it; a quick click leaves the scrub open.

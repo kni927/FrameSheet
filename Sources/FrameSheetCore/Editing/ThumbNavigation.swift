@@ -71,31 +71,52 @@ extension ScrubMapping {
 }
 
 /// Placement of the scrub overlay: a Cancel bar at the top, the live frame
-/// centred below it, and the two neighbour images on either side.
+/// centred below it with its label above and the hint below, and the two
+/// neighbour images on either side. In a small container everything scales
+/// down together, so the neighbours keep at least `minSideRatio` of the live
+/// width, and the label and hint span the container's width rather than the
+/// live frame's.
 public struct ScrubLayout: Equatable, Sendable {
     public static let cancelBarHeight = 44.0
     /// Room above the live frame for the CHANGE TO / ADD … label.
     public static let labelHeight = 40.0
+    /// Room below the live frame for the hint line.
+    public static let hintHeight = 20.0
     public static let gap = 12.0
+    /// Neighbours are 0.6 of the live width when there is room, never less
+    /// than 0.4.
+    public static let sideRatio = 0.6
+    public static let minSideRatio = 0.4
 
     public let live: CGRect
     public let left: CGRect
     public let right: CGRect
+    /// The action label and frame / timecode line above the live frame.
+    public let label: CGRect
+    /// The hint line below the live frame.
+    public let hint: CGRect
 
     /// `aspectRatioInv` is the movie's height / width.
     public init(containerWidth: Double, containerHeight: Double, aspectRatioInv: Double) {
         let ratio = aspectRatioInv > 0 ? aspectRatioInv : 9.0 / 16.0
+        let margin = ScrubMapping.sideMargin
         let top = Self.cancelBarHeight + Self.labelHeight
-        let usableHeight = max(1, containerHeight - top - Self.gap * 2)
-        let liveWidth = max(1, min(containerWidth * 0.5, usableHeight / ratio))
+        let usableHeight = max(1, containerHeight - top - Self.hintHeight - Self.gap * 2)
+        // Width left for the live frame once both neighbours get their
+        // minimum share.
+        let byWidth = (containerWidth - 2 * (margin + Self.gap)) / (1 + 2 * Self.minSideRatio)
+        let liveWidth = max(1, min(containerWidth * 0.5, byWidth, usableHeight / ratio))
         let liveHeight = liveWidth * ratio
         let liveX = (containerWidth - liveWidth) / 2
         let liveY = top + max(0, (usableHeight - liveHeight) / 2)
-        let sideWidth = max(0, min(liveWidth * 0.6, liveX - ScrubMapping.sideMargin - Self.gap))
+        let sideWidth = max(0, min(liveWidth * Self.sideRatio, liveX - margin - Self.gap))
         let sideHeight = sideWidth * ratio
         let sideY = liveY + (liveHeight - sideHeight) / 2
+        let textWidth = max(1, containerWidth - 2 * margin)
         live = CGRect(x: liveX, y: liveY, width: liveWidth, height: liveHeight)
         left = CGRect(x: liveX - Self.gap - sideWidth, y: sideY, width: sideWidth, height: sideHeight)
         right = CGRect(x: live.maxX + Self.gap, y: sideY, width: sideWidth, height: sideHeight)
+        label = CGRect(x: margin, y: liveY - Self.labelHeight, width: textWidth, height: Self.labelHeight)
+        hint = CGRect(x: margin, y: live.maxY, width: textWidth, height: Self.hintHeight)
     }
 }

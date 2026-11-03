@@ -68,5 +68,25 @@ private func sheet(_ frames: [Int], hidden: Set<Int> = []) -> Sheet {
         // A short container limits the live frame by height.
         let short = ScrubLayout(containerWidth: 2000, containerHeight: 300, aspectRatioInv: 9.0 / 16.0)
         #expect(short.live.maxY <= 300)
+        #expect(short.hint.maxY <= 300)
+    }
+
+    /// The smallest window (900 × 560) with both sidebars open leaves the
+    /// main area about 340 × 500.
+    @Test func scrubLayoutFitsASmallContainer() {
+        let width = 340.0
+        let height = 500.0
+        let layout = ScrubLayout(containerWidth: width, containerHeight: height, aspectRatioInv: 9.0 / 16.0)
+        let margin = ScrubMapping.sideMargin
+        #expect(layout.left.minX >= margin - 0.001)
+        #expect(layout.right.maxX <= width - margin + 0.001)
+        #expect(layout.left.width >= layout.live.width * ScrubLayout.minSideRatio - 0.001)
+        #expect(layout.right.width == layout.left.width)
+        #expect(layout.live.minY >= ScrubLayout.cancelBarHeight + ScrubLayout.labelHeight)
+        #expect(layout.hint.maxY <= height)
+        // The label line spans the container, not just the narrow live frame.
+        #expect(abs(layout.label.width - (width - 2 * margin)) < 1e-9)
+        #expect(abs(layout.label.maxY - layout.live.minY) < 0.001)
+        #expect(layout.label.width > layout.live.width)
     }
 }

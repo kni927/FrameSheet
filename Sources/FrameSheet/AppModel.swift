@@ -54,6 +54,9 @@ final class AppModel {
     private(set) var scrub: ScrubSession?
     /// Option is held: IN/OUT hide all before/after instead.
     var optionHeld = false
+    /// A text field (the sheet rename field) has focus: Undo and Redo act
+    /// on its typing.
+    var isEditingText = false
     private(set) var scrubImage: CGImage?
     /// Size of the main area, where the scrub overlay is drawn.
     var mainAreaSize: CGSize = .zero
@@ -70,6 +73,11 @@ final class AppModel {
     /// Frames that failed to decode; not retried automatically on redraw.
     @ObservationIgnored private var failed: Set<String> = []
     @ObservationIgnored private var lastReload: [String: Date] = [:]
+    /// Images on screen now (the current sheet's thumbs and the posters),
+    /// held strongly: NSCache may drop entries under memory pressure even
+    /// below its cost limit, and every drop showed as an empty cell and a
+    /// redraw. Pruned to what is on screen when the sheet changes.
+    @ObservationIgnored private var pinned: [String: CGImage] = [:]
     @ObservationIgnored private var saveTask: Task<Void, Never>?
     @ObservationIgnored private var discovery: Task<Void, Never>?
     @ObservationIgnored private var columnsAtDragStart: Int?
@@ -130,7 +138,7 @@ final class AppModel {
 
     func image(file: UUID, frame: Int, width: Int) -> CGImage? {
         _ = imageGeneration
-        if let image = cache.image(file: file, frame: frame, width: width) { return image }
+        if let image = cachedImage(file: file, frame: frame, width: width) { return image }
         // NSCache may have evicted it (cost limit or memory pressure): decode
         // it again, outside the view update that asked for it.
         let key = Self.loadingKey(file, frame, width)
@@ -234,6 +242,7 @@ final class AppModel {
 
     func clearThumbnailCache() {
         cache.removeAll()
+        pinned.removeAll()
         failed.removeAll()
         imageGeneration += 1
         for file in library.files { loadPoster(file) }
@@ -292,6 +301,7 @@ final class AppModel {
         backends = [:]
         missing = []
         cache.removeAll()
+        pinned.removeAll()
         failed.removeAll()
     }
 
@@ -318,6 +328,7 @@ final class AppModel {
         backends[fileId] = nil
         missing.remove(fileId)
         cache.removeAll()
+        pinned.removeAll()
         failed.removeAll()
         imageGeneration += 1
         if let relinked = library.file(fileId) { loadPoster(relinked) }
@@ -525,7 +536,7 @@ final class AppModel {
         scrub = ScrubSession(
             ref: ref, thumbId: thumb, mapping: mapping, frame: own.frameNumber,
             modifiers: modifiers, keyboard: keyboard, lastX: x, lastY: y)
-        scrubImage = cache.image(file: file.id, frame: own.frameNumber, width: Self.thumbWidth)
+        scrubImage = cachedImage(file: file.id, frame: own.frameNumber, width: Self.thumbWidth)
         if !keyboard { scrubMoved(x: x, y: y, modifiers: modifiers) }
         requestScrubFrame(scrub?.frame ?? own.frameNumber)
     }
@@ -615,14 +626,13 @@ final class AppModel {
             defer { scrubDecode = nil }
             while let frame = scrubPending, let session = scrub, let file = library.file(session.ref.fileId) {
                 scrubPending = nil
-        scrubFrames.removeAll()
                 let width = scrubDecodeWidth
                 let key = Self.loadingKey(file.id, frame, width)
                 if let cached = scrubFrames.first(where: { $0.key == key })?.image {
                     scrubImage = cached
                     continue
                 }
-                if let thumb = cache.image(file: file.id, frame: frame, width: Self.thumbWidth) {
+                if let thumb = cachedImage(file: file.id, frame: frame, width: Self.thumbWidth) {
                     scrubImage = thumb
                 }
                 guard let backend = try? await backend(for: file),
@@ -646,7 +656,29 @@ final class AppModel {
         return backend
     }
 
+    private func cachedImage(file: UUID, frame: Int, width: Int) -> CGImage? {
+        pinned[Self.loadingKey(file, frame, width)] ?? cache.image(file: file, frame: frame, width: width)
+    }
+
+    /// Caches a decoded image, and pins it when it is on screen.
+    private func store(_ image: CGImage, file: UUID, frame: Int, width: Int) {
+        cache.insert(image, file: file, frame: frame, width: width)
+        let onScreen = width == Self.posterWidth
+            || (width == Self.thumbWidth && file == library.currentFileId)
+        if onScreen { pinned[Self.loadingKey(file, frame, width)] = image }
+    }
+
+    /// Keeps only the posters and the current sheet's thumbs pinned.
+    private func prunePinned() {
+        var keep = Set(library.files.map { Self.loadingKey($0.id, $0.posterFrame, Self.posterWidth) })
+        if let file = currentFile, let sheet = currentSheet {
+            for thumb in sheet.thumbs { keep.insert(Self.loadingKey(file.id, thumb.frameNumber, Self.thumbWidth)) }
+        }
+        pinned = pinned.filter { keep.contains($0.key) }
+    }
+
     private func loadCurrentSheet() {
+        prunePinned()
         guard let file = currentFile, let sheet = currentSheet else { return }
         load(frames: sheet.thumbs.map(\.frameNumber), of: file, width: Self.thumbWidth, sheetId: sheet.id)
     }
@@ -659,7 +691,7 @@ final class AppModel {
     /// another frame, the thumb takes that frame number (decision 11).
     private func load(frames: [Int], of file: MovieFile, width: Int, sheetId: UUID?) {
         let wanted = Array(Set(frames)).filter {
-            cache.image(file: file.id, frame: $0, width: width) == nil
+            cachedImage(file: file.id, frame: $0, width: width) == nil
                 && !loading.contains(Self.loadingKey(file.id, $0, width))
         }
         guard !wanted.isEmpty, !missing.contains(file.id) else { return }
@@ -677,11 +709,11 @@ final class AppModel {
             for await result in backend.frames(wanted, maxWidth: width) {
                 switch result.result {
                 case .success(let frame):
-                    cache.insert(frame.image, file: file.id, frame: frame.actualFrame, width: width)
+                    store(frame.image, file: file.id, frame: frame.actualFrame, width: width)
                     // Also under the requested frame, so a view asking for it
                     // finds it even before the thumb is retargeted (otherwise
                     // the reload-on-miss in `image` would loop).
-                    cache.insert(frame.image, file: file.id, frame: frame.requestedFrame, width: width)
+                    store(frame.image, file: file.id, frame: frame.requestedFrame, width: width)
                     if frame.actualFrame != frame.requestedFrame, let sheetId {
                         retarget(file.id, sheet: sheetId, from: frame.requestedFrame, to: frame.actualFrame)
                     }

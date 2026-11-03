@@ -20,6 +20,8 @@ struct ScrubOverlay: View {
             neighbour(session.lowFrame, in: layout.left)
             neighbour(session.highFrame, in: layout.right)
             live(in: layout.live)
+            label(in: layout.label)
+            hint(in: layout.hint)
         }
         // While dragging, the drag that started the scrub tracks the pointer.
         // A sticky scrub follows the pointer itself and confirms on a click;
@@ -44,41 +46,64 @@ struct ScrubOverlay: View {
             Text(FrameInfoText.text(.frames, frame: frame, fps: file.fps) ?? "")
                 .font(Theme.mono(12))
                 .foregroundStyle(Theme.textMuted)
+                .lineLimit(1)
+                .fixedSize()
         }
         .frame(width: rect.width)
         .offset(x: rect.minX, y: rect.minY)
     }
 
     private func live(in rect: CGRect) -> some View {
-        VStack(spacing: Theme.space1) {
-            HStack(spacing: Theme.space2) {
-                Text(session.action.label)
-                    .font(Theme.sans(13, medium: true))
-                    .foregroundStyle(Theme.onAccent)
-                    .padding(.horizontal, Theme.space2)
-                    .padding(.vertical, 2)
-                    .background(Theme.accent, in: RoundedRectangle(cornerRadius: Theme.radiusSm))
-                Text("\(FrameInfoText.text(.frames, frame: session.frame, fps: file.fps) ?? "")  \(Timecode.string(frames: session.frame, fps: file.fps))")
-                    .font(Theme.mono(13, medium: true))
-                    .foregroundStyle(Theme.text)
-            }
-            .frame(height: ScrubLayout.labelHeight - Theme.space1)
-            FrameImage(image: model.scrubImage)
-                .frame(width: rect.width, height: rect.height)
-                .clipShape(RoundedRectangle(cornerRadius: Theme.radiusSm))
-                .overlay(RoundedRectangle(cornerRadius: Theme.radiusSm).strokeBorder(Theme.accent, lineWidth: 2))
-            if session.sticky {
-                Text("Move to scrub  ·  click to confirm  ·  Esc cancels")
-                    .font(Theme.caption)
-                    .foregroundStyle(Theme.textMuted)
-            } else if session.keyboard {
-                Text("← → step  ·  ⇧ ×10  ·  Return confirms  ·  Esc cancels")
-                    .font(Theme.caption)
-                    .foregroundStyle(Theme.textMuted)
-            }
+        FrameImage(image: model.scrubImage)
+            .frame(width: rect.width, height: rect.height)
+            .clipShape(RoundedRectangle(cornerRadius: Theme.radiusSm))
+            .overlay(RoundedRectangle(cornerRadius: Theme.radiusSm).strokeBorder(Theme.accent, lineWidth: 2))
+            .offset(x: rect.minX, y: rect.minY)
+    }
+
+    /// The action, frame number and timecode on one line, centred over the
+    /// live frame; in a narrow window the timecode truncates first.
+    private func label(in rect: CGRect) -> some View {
+        HStack(spacing: Theme.space2) {
+            Text(session.action.label)
+                .font(Theme.sans(13, medium: true))
+                .foregroundStyle(Theme.onAccent)
+                .padding(.horizontal, Theme.space2)
+                .padding(.vertical, 2)
+                .background(Theme.accent, in: RoundedRectangle(cornerRadius: Theme.radiusSm))
+                .fixedSize()
+                .layoutPriority(2)
+            Text(FrameInfoText.text(.frames, frame: session.frame, fps: file.fps) ?? "")
+                .font(Theme.mono(13, medium: true))
+                .foregroundStyle(Theme.text)
+                .fixedSize()
+                .layoutPriority(1)
+            Text(Timecode.string(frames: session.frame, fps: file.fps))
+                .font(Theme.mono(13, medium: true))
+                .foregroundStyle(Theme.text)
+                .lineLimit(1)
+                .truncationMode(.tail)
         }
-        .frame(width: rect.width)
-        .offset(x: rect.minX, y: rect.minY - ScrubLayout.labelHeight)
+        .padding(.bottom, Theme.space1)
+        .frame(width: rect.width, height: rect.height)
+        .offset(x: rect.minX, y: rect.minY)
+    }
+
+    @ViewBuilder
+    private func hint(in rect: CGRect) -> some View {
+        let text = session.sticky
+            ? "Move to scrub  ·  click to confirm  ·  Esc cancels"
+            : session.keyboard ? "← → step  ·  ⇧ ×10  ·  Return confirms  ·  Esc cancels" : nil
+        if let text {
+            Text(text)
+                .font(Theme.caption)
+                .foregroundStyle(Theme.textMuted)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+                .truncationMode(.middle)
+                .frame(width: rect.width, height: rect.height)
+                .offset(x: rect.minX, y: rect.minY)
+        }
     }
 }
 

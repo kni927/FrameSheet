@@ -2,8 +2,9 @@ import AppKit
 import FrameSheetCore
 import SwiftUI
 
-/// The §4 window: movie list, main area with the sheet, settings sidebar,
-/// header and footer.
+/// The §4 window: movie list, main area with the sheet, settings sidebar and
+/// the window toolbar (the sheet tools sit next to the title; there is no
+/// footer, owner 2026-11-03).
 struct ContentView: View {
     @Environment(AppModel.self) private var model
 
@@ -14,24 +15,38 @@ struct ContentView: View {
             set: { model.showMovieList = $0 != .detailOnly }
         )) {
             MovieListView()
-                .navigationSplitViewColumnWidth(min: 220, ideal: 260, max: 360)
+                .navigationSplitViewColumnWidth(min: 240, ideal: 280, max: 380)
         } detail: {
             MainArea()
-                .inspector(isPresented: $model.showSettings) {
-                    SettingsPanel()
-                        .inspectorColumnWidth(min: 260, ideal: 300, max: 380)
-                }
         }
+        // On the split view rather than the detail, so the panel is a
+        // full-height column like the movie list, with its own part of the
+        // toolbar.
+        .inspector(isPresented: $model.showSettings) {
+            SettingsPanel()
+                .inspectorColumnWidth(min: 280, ideal: 300, max: 380)
+        }
+        // The app name is a toolbar item at the far left instead (owner,
+        // 2026-11-03), so the window title is not shown twice.
+        .toolbar(removing: .title)
         .toolbar {
             ToolbarItem(placement: .navigation) {
+                Text("FrameSheet")
+                    .font(Theme.sans(15, medium: true))
+                    .foregroundStyle(Theme.text)
+                    .padding(.horizontal, Theme.space1)
+                    .fixedSize()
+                    .accessibilityAddTraits(.isHeader)
+            }
+            .sharedBackgroundVisibility(.hidden)
+            ToolbarItemGroup(placement: .navigation) {
                 Button {
                     model.presentOpenPanel()
                 } label: {
                     Label("Add movies", systemImage: "plus")
                 }
+                .buttonStyle(ToolbarIconStyle())
                 .help("Add movies (A)")
-            }
-            ToolbarItem(placement: .navigation) {
                 Menu {
                     Button("Import MoviePrint…") {}.disabled(true)
                     Divider()
@@ -40,14 +55,26 @@ struct ContentView: View {
                 } label: {
                     Label("More options", systemImage: "ellipsis.circle")
                 }
+                .menuStyle(.button)
+                .menuIndicator(.hidden)
+                .buttonStyle(ToolbarIconStyle())
+                .help("More options")
             }
-            ToolbarItem(placement: .primaryAction) {
-                Button {
-                    model.showSettings.toggle()
-                } label: {
-                    Label("Settings", systemImage: "sidebar.right")
+            .sharedBackgroundVisibility(.hidden)
+            SheetToolbar(model: model, sheet: model.currentSheet)
+            // While the panel is shown its own toolbar part carries the
+            // button, at the panel's leading edge.
+            if !model.showSettings {
+                ToolbarItem(placement: .primaryAction) {
+                    Button {
+                        model.showSettings = true
+                    } label: {
+                        Label("Show panel", systemImage: "sidebar.right")
+                    }
+                    .buttonStyle(ToolbarIconStyle())
+                    .help("Show panel (3)")
                 }
-                .help("Settings (3)")
+                .sharedBackgroundVisibility(.hidden)
             }
         }
         .tint(Theme.accent)
@@ -57,37 +84,32 @@ struct ContentView: View {
     }
 }
 
-/// Main area: the sheet grid or the empty state, the floating toolbar, the
-/// scrub overlay, the drop target and the footer.
+/// Main area: the sheet grid or the empty state, the scrub overlay and the
+/// drop target.
 struct MainArea: View {
     @Environment(AppModel.self) private var model
     @State private var isDropTargeted = false
 
     var body: some View {
-        VStack(spacing: 0) {
-            ZStack(alignment: .top) {
-                Theme.base
-                if let file = model.currentFile, let sheet = model.currentSheet {
-                    SheetGridView(file: file, sheet: sheet)
-                    FloatingToolbar(sheet: sheet)
-                        .padding(.top, Theme.space3)
-                } else {
-                    EmptyState()
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                }
-                if let scrub = model.scrub, let file = model.currentFile {
-                    ScrubOverlay(session: scrub, file: file)
-                }
-                if isDropTargeted { DropOverlay() }
+        ZStack(alignment: .top) {
+            Theme.base
+            if let file = model.currentFile, let sheet = model.currentSheet {
+                SheetGridView(file: file, sheet: sheet)
+            } else {
+                EmptyState()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
-            .coordinateSpace(.named(MainArea.space))
-            .onGeometryChange(for: CGSize.self) { $0.size } action: { model.mainAreaSize = $0 }
-            .dropDestination(for: URL.self) { urls, _ in
-                model.addMovies(urls, clearFirst: NSEvent.modifierFlags.contains(.option))
-                return true
-            } isTargeted: { isDropTargeted = $0 }
-            Footer()
+            if let scrub = model.scrub, let file = model.currentFile {
+                ScrubOverlay(session: scrub, file: file)
+            }
+            if isDropTargeted { DropOverlay() }
         }
+        .coordinateSpace(.named(MainArea.space))
+        .onGeometryChange(for: CGSize.self) { $0.size } action: { model.mainAreaSize = $0 }
+        .dropDestination(for: URL.self) { urls, _ in
+            model.addMovies(urls, clearFirst: NSEvent.modifierFlags.contains(.option))
+            return true
+        } isTargeted: { isDropTargeted = $0 }
     }
 
     /// Coordinate space of the main area; the scrub maps pointer X in it.
@@ -124,29 +146,6 @@ private struct DropOverlay: View {
     }
 }
 
-private struct Footer: View {
-    @Environment(AppModel.self) private var model
-
-    var body: some View {
-        HStack {
-            if let sheet = model.currentSheet {
-                Text(GridLayout.statsLine(columns: sheet.columnCount, thumbCount: sheet.visibleThumbs.count))
-                    .font(Theme.caption)
-                    .foregroundStyle(Theme.textMuted)
-            }
-            Spacer()
-            Button("Save MoviePrint") {}
-                .disabled(true)
-                .help("Save MoviePrint (M) — not built yet")
-        }
-        .font(Theme.bodySm)
-        .padding(.horizontal, Theme.space3)
-        .padding(.vertical, Theme.space2)
-        .background(Theme.crust)
-        .overlay(alignment: .top) { Rectangle().fill(Theme.border).frame(height: 1) }
-    }
-}
-
 private struct Toast: View {
     @Environment(AppModel.self) private var model
 
@@ -172,7 +171,7 @@ private struct Toast: View {
             .frame(maxWidth: 520)
             .background(Theme.mantle, in: RoundedRectangle(cornerRadius: Theme.radiusMd))
             .overlay(RoundedRectangle(cornerRadius: Theme.radiusMd).strokeBorder(Theme.border, lineWidth: 1))
-            .padding(.bottom, 52)
+            .padding(.bottom, Theme.space6)
         }
     }
 }

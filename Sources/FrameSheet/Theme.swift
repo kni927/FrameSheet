@@ -4,9 +4,7 @@ import SwiftUI
 
 // The kni Design System, Mocha (dark) theme: colour, type, spacing and radius
 // tokens. Colours are Catppuccin Mocha (MIT, docs/licenses/Catppuccin-LICENSE);
-// fonts are IBM Plex Sans and Plex Mono (OFL 1.1, docs/licenses/IBM-Plex-LICENSE),
-// bundled under Contents/Resources/Fonts and registered through
-// ATSApplicationFontsPath. Views use the token names, not the palette.
+// fonts are the system's. Views use the token names, not the palette.
 enum Theme {
     // MARK: Colour tokens
 
@@ -39,33 +37,39 @@ enum Theme {
 
     // MARK: Type styles
 
-    // Font.custom falls back through the system cascade list, so Japanese
-    // text (file names) renders in Hiragino Sans, as the design system's
-    // sans and mono families specify.
-    private static let sansRegular = "IBMPlexSans"
-    private static let sansMedium = "IBMPlexSans-Medm"
-    private static let sansSemiBold = "IBMPlexSans-SmBld"
-    private static let monoRegular = "IBMPlexMono"
-    private static let monoMedium = "IBMPlexMono-Medm"
+    // System fonts: SF Pro, SF Mono and SF Pro Condensed (owner, 2026-11-03).
+    // The system cascade list renders Japanese text (file names) in Hiragino
+    // Sans.
 
     /// Labels and metadata, 12/500, in textMuted.
-    static let caption = Font.custom(sansMedium, size: 12)
+    static let caption = Font.system(size: 12, weight: .medium)
     /// Dense lists and controls, 13/400.
-    static let bodySm = Font.custom(sansRegular, size: 13)
-    static let body = Font.custom(sansRegular, size: 15)
-    static let heading2 = Font.custom(sansSemiBold, size: 19)
-    static let heading1 = Font.custom(sansSemiBold, size: 24)
+    static let bodySm = Font.system(size: 13)
+    static let body = Font.system(size: 15)
+    static let heading2 = Font.system(size: 19, weight: .semibold)
+    static let heading1 = Font.system(size: 24, weight: .semibold)
     /// Code, paths and numbers that line up, 13/400.
-    static let code = Font.custom(monoRegular, size: 13)
+    static let code = Font.system(size: 13, design: .monospaced)
 
     /// Section titles in the sidebars: caption size at the medium weight,
     /// in `text`.
-    static let label = Font.custom(sansMedium, size: 13)
+    static let label = Font.system(size: 13, weight: .medium)
+    /// Section titles in the right panel and the Settings window, 16/600
+    /// in `text` (owner, 2026-11-03: larger and bolder than the rows).
+    static let sectionTitle = Font.system(size: 16, weight: .semibold)
+    /// Secondary text in the panels: caption size at the regular weight, so
+    /// panel text stays lighter than its section titles.
+    static let panelCaption = Font.system(size: 12)
+    /// Large numbers of the grid stats.
+    static let statValue = Font.system(size: 20, weight: .regular).monospacedDigit()
     static func sans(_ size: Double, medium: Bool = false) -> Font {
-        .custom(medium ? sansMedium : sansRegular, size: size)
+        .system(size: size, weight: medium ? .medium : .regular)
     }
     static func mono(_ size: Double, medium: Bool = false) -> Font {
-        .custom(medium ? monoMedium : monoRegular, size: size)
+        .system(size: size, weight: medium ? .medium : .regular, design: .monospaced)
+    }
+    static func condensed(_ size: Double, weight: Font.Weight = .regular) -> Font {
+        .system(size: size, weight: weight).width(.condensed)
     }
 
     // MARK: Spacing and radius
@@ -87,15 +91,11 @@ enum Theme {
 
     // MARK: Frame info presets
 
-    /// Swatches for the frame info font and background colours (§6).
+    /// Swatches for the frame info font and background colours (§6); the
+    /// colour picker and Transparent cover the rest.
     static let frameInfoPresets: [(name: String, rgba: RGBA)] = [
-        ("Crust", RGBA(hex: 0x11111B)), ("Base", RGBA(hex: 0x1E1E2E)),
-        ("Surface", RGBA(hex: 0x313244)), ("Overlay", RGBA(hex: 0x6C7086)),
-        ("Text", RGBA(hex: 0xCDD6F4)), ("White", RGBA(hex: 0xFFFFFF)),
-        ("Mauve", RGBA(hex: 0xCBA6F7)), ("Red", RGBA(hex: 0xF38BA8)),
-        ("Peach", RGBA(hex: 0xFAB387)), ("Yellow", RGBA(hex: 0xF9E2AF)),
-        ("Green", RGBA(hex: 0xA6E3A1)), ("Teal", RGBA(hex: 0x94E2D5)),
-        ("Blue", RGBA(hex: 0x89B4FA)), ("Lavender", RGBA(hex: 0xB4BEFE)),
+        ("Crust", RGBA(hex: 0x11111B)), ("Text", RGBA(hex: 0xCDD6F4)),
+        ("Mauve", RGBA(hex: 0xCBA6F7)), ("Yellow", RGBA(hex: 0xF9E2AF)),
     ]
 }
 
@@ -151,21 +151,85 @@ extension RGBA {
     }
 }
 
-/// A card in a sidebar: mantle with a 1 pt border.
-struct Card<Content: View>: View {
+/// A section of a sidebar: its heading over the content, divided from the
+/// section above by a 1 pt line. Content text is regular weight.
+struct PanelSection<Content: View>: View {
     let title: String
     @ViewBuilder var content: Content
 
     var body: some View {
-        VStack(alignment: .leading, spacing: Theme.space3) {
+        VStack(alignment: .leading, spacing: Theme.space2) {
             Text(title)
-                .font(Theme.label)
+                .font(Theme.sectionTitle)
                 .foregroundStyle(Theme.text)
+                .padding(.bottom, 2)
             content
+                .font(Theme.bodySm)
+                .fontWeight(.regular)
         }
         .padding(Theme.space3)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Theme.mantle, in: RoundedRectangle(cornerRadius: Theme.radiusLg))
-        .overlay(RoundedRectangle(cornerRadius: Theme.radiusLg).strokeBorder(Theme.border, lineWidth: 1))
+        .overlay(alignment: .top) { Rectangle().fill(Theme.border).frame(height: 1) }
+    }
+}
+
+/// One settings row: the label on the left, the value or control
+/// right-aligned.
+struct PanelRow<Value: View>: View {
+    let title: String
+    @ViewBuilder var value: Value
+
+    init(_ title: String, @ViewBuilder value: () -> Value) {
+        self.title = title
+        self.value = value()
+    }
+
+    var body: some View {
+        HStack(spacing: Theme.space2) {
+            Text(title)
+                .font(Theme.bodySm)
+                .foregroundStyle(Theme.text)
+                .lineLimit(1)
+            Spacer(minLength: Theme.space2)
+            value
+        }
+        .frame(minHeight: 22)
+    }
+}
+
+/// Icon buttons in the window toolbar and the panels: no Liquid Glass
+/// capsule (owner, 2026-11-03), a square-ish `radiusSm` background on hover
+/// and press, and `surface` while `selected` (an on toggle).
+struct ToolbarIconStyle: ButtonStyle {
+    var selected = false
+
+    func makeBody(configuration: Configuration) -> some View {
+        ToolbarIconBody(configuration: configuration, selected: selected)
+    }
+}
+
+private struct ToolbarIconBody: View {
+    let configuration: ButtonStyleConfiguration
+    let selected: Bool
+    @Environment(\.isEnabled) private var isEnabled
+    @State private var hovering = false
+
+    var body: some View {
+        configuration.label
+            .labelStyle(.iconOnly)
+            .font(.system(size: 14))
+            .foregroundStyle(isEnabled ? Theme.text : Theme.textMuted.opacity(0.5))
+            .frame(minWidth: 28, minHeight: 24)
+            .padding(.horizontal, 2)
+            .background(background, in: RoundedRectangle(cornerRadius: Theme.radiusSm))
+            .contentShape(RoundedRectangle(cornerRadius: Theme.radiusSm))
+            .onHover { hovering = $0 }
+    }
+
+    private var background: Color {
+        guard isEnabled else { return .clear }
+        if configuration.isPressed { return Theme.surfaceHover }
+        if hovering || selected { return Theme.surface }
+        return .clear
     }
 }
