@@ -63,7 +63,7 @@ struct ContentView: View {
                         Label("Add movies", systemImage: "plus")
                     }
                     .buttonStyle(ToolbarIconStyle(grouped: true))
-                    .help("Add movies (A)")
+                    .toolbarHelp("Add movies (A)")
                     Menu {
                         Button("Import Sheet…") { model.presentImportPanel() }
                             .help("Import a PNG or JSON saved by FrameSheet or MoviePrint")
@@ -77,10 +77,9 @@ struct ContentView: View {
                     .menuStyle(.button)
                     .menuIndicator(.hidden)
                     .buttonStyle(ToolbarIconStyle(grouped: true))
-                    .help("More options")
+                    .toolbarHelp("More options")
                 }
-                .toolbarItemWithoutTooltip()
-            }
+                }
             .sharedBackgroundVisibility(.hidden)
             SheetToolbar(model: model, sheet: model.currentSheet)
         }

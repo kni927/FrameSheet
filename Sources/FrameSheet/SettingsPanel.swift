@@ -173,6 +173,17 @@ private struct StylingSection: View {
                 SwitchRow(
                     title: "Timeline", isOn: model.setting(\.showTimelineInHeader),
                     help: "Mini timeline with the thumbs' positions in the header")
+                PanelRow("Alignment") {
+                    Picker("Alignment", selection: model.setting(\.headerAlignment)) {
+                        ForEach(HeaderAlignment.allCases, id: \.self) { alignment in
+                            Text(alignment.label).tag(alignment)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                    .fixedSize()
+                    .help("Header text at the right or left")
+                }
             }
             .padding(.leading, Theme.space4)
             .disabled(!showHeader)
@@ -472,8 +483,9 @@ private struct SizeRows: View {
             }
             HStack(spacing: Theme.space2) {
                 Slider(
+                    // With max the knob sits at the right end.
                     value: Binding(
-                        get: { Double(settings.outputSize) },
+                        get: { Double(settings.outputSizeMax ? OutputSize.limit : settings.outputSize) },
                         set: { v in model.updateSettings { $0.outputSize = OutputSize.snapped(Int(v.rounded())) } }),
                     in: Double(OutputSize.steps.first!)...Double(OutputSize.limit), step: 1024
                 )

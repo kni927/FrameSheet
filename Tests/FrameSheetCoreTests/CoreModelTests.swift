@@ -256,9 +256,22 @@ import Testing
         #expect(settings.frameInfoMarginHorizontal == 0)
         #expect(settings.frameInfoMarginVertical == 0)
         #expect(settings.frameInfoMarginsLinked)
+        #expect(settings.headerAlignment == .right)
         // An unknown former frame info font falls back to the default.
         let unknown = try JSONDecoder().decode(Settings.self, from: Data(#"{"frameInfoFont":"serif"}"#.utf8))
         #expect(unknown.frameInfoFontFamily == FrameInfoFamily.systemMono)
+    }
+
+    @Test func headerAlignmentDecodesTolerantly() throws {
+        var left = Settings()
+        left.headerAlignment = .left
+        let decoded = try JSONDecoder().decode(Settings.self, from: JSONEncoder().encode(left))
+        #expect(decoded.headerAlignment == .left)
+        // An unknown value keeps the other settings and falls back to right.
+        let unknown = try JSONDecoder().decode(
+            Settings.self, from: Data(#"{"headerAlignment":"centre","showHeader":true}"#.utf8))
+        #expect(unknown.headerAlignment == .right)
+        #expect(unknown.showHeader)
     }
 
     @Test func settingsMigratesFormerKeys() throws {

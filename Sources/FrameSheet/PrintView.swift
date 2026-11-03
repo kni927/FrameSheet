@@ -116,9 +116,10 @@ private struct FrameInfoLabel: View {
 
 /// The print header (§5.2) in MoviePrint's layout (`ThumbGridHeader`)
 /// without its logo or an app icon (owner, 2026-11-03): the file name with
-/// the optional folder and details lines, left-aligned over the full width,
-/// and the optional mini timeline under them. Sizes are `PrintHeader.Metrics`
-/// of the logo band; colours are kni tokens.
+/// the optional folder and details lines, right-aligned as in MoviePrint or
+/// left-aligned (`headerAlignment`) over the full width, and the optional
+/// mini timeline under them. Sizes are `PrintHeader.Metrics` of the logo
+/// band; colours are kni tokens.
 struct PrintHeaderView: View {
     let file: MovieFile
     /// The print's thumbs, for the timeline.
@@ -129,8 +130,9 @@ struct PrintHeaderView: View {
 
     var body: some View {
         let m = PrintHeader.Metrics(logoHeight: logoHeight)
+        let right = settings.headerAlignment == .right
         VStack(alignment: .leading, spacing: 0) {
-            VStack(alignment: .leading, spacing: 0) {
+            VStack(alignment: right ? .trailing : .leading, spacing: 0) {
                 Text(file.name)
                     .font(.system(size: max(1, m.titleSize), weight: .semibold))
                     .foregroundStyle(Theme.text)
@@ -146,7 +148,7 @@ struct PrintHeaderView: View {
             }
             .lineLimit(1)
             .truncationMode(.middle)
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(maxWidth: .infinity, alignment: right ? .trailing : .leading)
             if settings.showTimelineInHeader {
                 HeaderTimeline(
                     timeline: PrintHeader.timeline(frameNumbers: frameNumbers, frameCount: file.frameCount),

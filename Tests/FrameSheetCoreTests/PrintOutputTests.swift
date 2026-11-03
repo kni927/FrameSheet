@@ -144,6 +144,9 @@ import Testing
     @Test func encodesPNGWithEmbeddedDataAndJPG() throws {
         let png = try ImageEncoding.data(image(width: 8, height: 4, alpha: true), format: .png, quality: 80)
         #expect(png.starts(with: PNGText.signature))
+        // Quality is for JPG only: a PNG is the same at any quality.
+        #expect(try ImageEncoding.data(image(width: 8, height: 4, alpha: true), format: .png, quality: 0) == png)
+        #expect(try ImageEncoding.data(image(width: 8, height: 4, alpha: true), format: .png, quality: 100) == png)
         let sheet = Sheet(name: "Sheet-1", type: .interval, columnCount: 2,
                           thumbs: [Thumb(frameNumber: 10, index: 0), Thumb(frameNumber: 20, index: 1)])
         let exchange = SheetExchange(file: file(), sheet: sheet, includeHidden: false, appVersion: "3.0.0")

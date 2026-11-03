@@ -514,12 +514,12 @@ private func makePNG(width: Int = 2, height: Int = 1) throws -> Data {
         var file = MovieFile(
             url: URL(fileURLWithPath: "/Volumes/Media/Movies/sample.mov"), duration: 408.5, frameCount: 9789,
             fps: 23.976, width: 1280, height: 720, size: 41_104_179, fourCC: "avc1")
-        // Fields apart by an em space, not MoviePrint's " | ".
+        // Fields apart by an en space, not MoviePrint's " | ".
         #expect(PrintHeader.detailsLine(file: file)
-                == "00:06:47:21\u{2003}23.98 FPS\u{2003}1280 × 720\u{2003}39.2 MB\u{2003}avc1")
+                == "00:06:47:21\u{2002}23.98 FPS\u{2002}1280 × 720\u{2002}39.2 MB\u{2002}avc1")
         file.fps = 25
         file.size = 4 * 1024 * 1024 * 1024
-        #expect(PrintHeader.detailsLine(file: file) == "00:06:31:14\u{2003}25 FPS\u{2003}1280 × 720\u{2003}4 GB\u{2003}avc1")
+        #expect(PrintHeader.detailsLine(file: file) == "00:06:31:14\u{2002}25 FPS\u{2002}1280 × 720\u{2002}4 GB\u{2002}avc1")
         #expect(!PrintHeader.detailsLine(file: file).contains("|"))
         #expect(PrintHeader.folderLine(file: file, home: "/Volumes/Home") == "/Volumes/Media/Movies/")
         #expect(PrintHeader.folderLine(file: file, home: "/Volumes/Media") == "~/Movies/")

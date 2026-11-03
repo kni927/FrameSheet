@@ -8,8 +8,8 @@ import SwiftUI
 /// thumbs, show header, cycle frame info, optimize grid layout, Save
 /// Sheet with its menu, then the right panel toggle. Disabled while no sheet is shown (not the toggle). Each group is
 /// one `ToolbarIconGroup` in a single toolbar item, so its icons touch; the
-/// items have no glass background and no tooltip of their own
-/// (`toolbarItemWithoutTooltip`).
+/// items have no glass background, and each control has its own tooltip
+/// (`toolbarHelp`).
 struct SheetToolbar: ToolbarContent {
     let model: AppModel
     let sheet: Sheet?
@@ -26,7 +26,7 @@ struct SheetToolbar: ToolbarContent {
                     Label("Back to parent", systemImage: "arrow.uturn.backward")
                 }
                 .buttonStyle(ToolbarIconStyle(grouped: true))
-                .help("Back to parent sheet")
+                .toolbarHelp("Back to parent sheet")
                 .disabled(sheet?.parentSheetId == nil)
                 Menu {
                     ForEach(2...6, id: \.self) { n in
@@ -38,7 +38,7 @@ struct SheetToolbar: ToolbarContent {
                 .menuStyle(.button)
                 .menuIndicator(.hidden)
                 .buttonStyle(ToolbarIconStyle(grouped: true))
-                .help("Add interval sheet")
+                .toolbarHelp("Add interval sheet")
                 .disabled(noSheet)
                 Button {
                     if let ref = model.currentRef { model.duplicateSheet(ref) }
@@ -46,10 +46,9 @@ struct SheetToolbar: ToolbarContent {
                     Label("Duplicate sheet", systemImage: "plus.square.on.square")
                 }
                 .buttonStyle(ToolbarIconStyle(grouped: true))
-                .help("Duplicate sheet")
+                .toolbarHelp("Duplicate sheet")
                 .disabled(noSheet)
             }
-            .toolbarItemWithoutTooltip()
         }
         .sharedBackgroundVisibility(.hidden)
         ToolbarItem(placement: .navigation) {
@@ -60,7 +59,7 @@ struct SheetToolbar: ToolbarContent {
                     Label("Zoom out", systemImage: "minus.magnifyingglass")
                 }
                 .buttonStyle(ToolbarIconStyle(grouped: true))
-                .help("Zoom out (⌘−)")
+                .toolbarHelp("Zoom out (⌘−)")
                 .disabled(noSheet || model.zoom <= GridGeometry.zoomSteps.first!)
                 // Only when the print leaves space in that direction.
                 if geometry?.hasSpaceAboveAndBelow == true {
@@ -70,7 +69,7 @@ struct SheetToolbar: ToolbarContent {
                         Label("Fit height", systemImage: "arrow.up.and.down")
                     }
                     .buttonStyle(ToolbarIconStyle(grouped: true))
-                    .help("Fit height")
+                    .toolbarHelp("Fit height")
                 }
                 if geometry?.hasSpaceAtSides == true {
                     Button {
@@ -79,7 +78,7 @@ struct SheetToolbar: ToolbarContent {
                         Label("Fit width", systemImage: "arrow.left.and.right")
                     }
                     .buttonStyle(ToolbarIconStyle(grouped: true))
-                    .help("Fit width")
+                    .toolbarHelp("Fit width")
                 }
                 Button {
                     model.zoomToFit()
@@ -87,7 +86,7 @@ struct SheetToolbar: ToolbarContent {
                     Label("Fit", systemImage: "square.arrowtriangle.4.outward")
                 }
                 .buttonStyle(ToolbarIconStyle(grouped: true))
-                .help("Fit (⌘0) · \(Int((model.zoom * 100).rounded()))%")
+                .toolbarHelp("Fit (⌘0) · \(Int((model.zoom * 100).rounded()))%")
                 .disabled(noSheet)
                 Button {
                     model.zoom(in: true)
@@ -95,10 +94,9 @@ struct SheetToolbar: ToolbarContent {
                     Label("Zoom in", systemImage: "plus.magnifyingglass")
                 }
                 .buttonStyle(ToolbarIconStyle(grouped: true))
-                .help("Zoom in (⌘=)")
+                .toolbarHelp("Zoom in (⌘=)")
                 .disabled(noSheet || model.zoom >= GridGeometry.zoomSteps.last!)
             }
-            .toolbarItemWithoutTooltip()
         }
         .sharedBackgroundVisibility(.hidden)
         ToolbarItem(placement: .navigation) {
@@ -114,7 +112,7 @@ struct SheetToolbar: ToolbarContent {
                     }
                     .buttonStyle(ToolbarIconStyle(selected: settings.showHiddenThumbs, grouped: true))
                     .accessibilityAddTraits(settings.showHiddenThumbs ? .isSelected : [])
-                    .help("Show hidden thumbs")
+                    .toolbarHelp("Show hidden thumbs")
                     .disabled(noSheet)
                     Button {
                         model.updateSettings { $0.showHeader.toggle() }
@@ -123,7 +121,7 @@ struct SheetToolbar: ToolbarContent {
                     }
                     .buttonStyle(ToolbarIconStyle(selected: settings.showHeader, grouped: true))
                     .accessibilityAddTraits(settings.showHeader ? .isSelected : [])
-                    .help("Show header")
+                    .toolbarHelp("Show header")
                     .disabled(noSheet)
                     Button {
                         model.cycleFrameInfo()
@@ -133,7 +131,7 @@ struct SheetToolbar: ToolbarContent {
                             systemImage: settings.frameInfo == .hidden ? "123.rectangle" : "123.rectangle.fill")
                     }
                     .buttonStyle(ToolbarIconStyle(grouped: true))
-                    .help("Frame info: \(frameInfoName(settings.frameInfo)) (click cycles)")
+                    .toolbarHelp("Frame info: \(frameInfoName(settings.frameInfo)) (click cycles)")
                     .disabled(noSheet)
                     Button {
                         model.optimiseGrid()
@@ -141,7 +139,7 @@ struct SheetToolbar: ToolbarContent {
                         Label("Optimize grid", systemImage: "square.grid.3x3")
                     }
                     .buttonStyle(ToolbarIconStyle(grouped: true))
-                    .help("Optimize grid layout")
+                    .toolbarHelp("Optimize grid layout")
                     .disabled(noSheet)
                 }
                 // Save (decision 23): the download button, and a menu with
@@ -153,7 +151,7 @@ struct SheetToolbar: ToolbarContent {
                         Label("Save sheet", systemImage: "square.and.arrow.down")
                     }
                     .buttonStyle(ToolbarIconStyle(grouped: true))
-                    .help("Save sheet (M)")
+                    .toolbarHelp("Save sheet (M)")
                     .disabled(noSheet || model.isSaving)
                     Menu {
                         Button("Open Output Location") { model.openOutputLocation() }
@@ -163,7 +161,7 @@ struct SheetToolbar: ToolbarContent {
                     .menuStyle(.button)
                     .menuIndicator(.hidden)
                     .buttonStyle(ToolbarIconStyle(grouped: true))
-                    .help("More save options")
+                    .toolbarHelp("More save options")
                 }
                 Button {
                     model.showSettings.toggle()
@@ -172,9 +170,8 @@ struct SheetToolbar: ToolbarContent {
                 }
                 .buttonStyle(ToolbarIconStyle(selected: model.showSettings))
                 .accessibilityAddTraits(model.showSettings ? .isSelected : [])
-                .help(model.showSettings ? "Hide panel (3)" : "Show panel (3)")
+                .toolbarHelp(model.showSettings ? "Hide panel (3)" : "Show panel (3)")
             }
-            .toolbarItemWithoutTooltip()
         }
         .sharedBackgroundVisibility(.hidden)
     }

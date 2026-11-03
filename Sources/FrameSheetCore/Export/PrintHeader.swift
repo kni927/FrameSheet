@@ -10,14 +10,15 @@ public enum PrintHeader {
     /// least 2 % of the timeline wide.
     public static let minimumRangeWidth = 0.02
 
-    /// Between the details fields: an em space, wide enough to stand apart
-    /// from the single spaces inside "23.98 FPS" and "1280 × 720" (owner,
-    /// 2026-11-03: spaces instead of MoviePrint's " | ").
-    public static let detailsSeparator = "\u{2003}"
+    /// Between the details fields: an en space, wider than the single
+    /// spaces inside "23.98 FPS" and "1280 × 720" so the fields stand apart,
+    /// narrower than the em space tried first (owner, 2026-11-03: spaces
+    /// instead of MoviePrint's " | ").
+    public static let detailsSeparator = "\u{2002}"
 
     /// MoviePrint's `TC | fps FPS | W × H | size | fourCC` with
     /// `detailsSeparator`, e.g. "00:06:48:12  23.98 FPS  1280 × 720  39.2 MB
-    /// avc1" (em spaces).
+    /// avc1" (en spaces).
     public static func detailsLine(file: MovieFile) -> String {
         let fps = file.fps > 0 ? file.fps : 25
         return [
@@ -61,8 +62,9 @@ public enum PrintHeader {
 
     /// Sizes inside the header, from MoviePrint `ThumbGridHeader`'s ratios
     /// of the logo band height L: a quarter of L as padding and text unit,
-    /// the text left-aligned over the full width (no logo or app icon,
-    /// owner, 2026-11-03), the timeline under it.
+    /// the text right- or left-aligned over the full width
+    /// (`HeaderAlignment`; no logo or app icon, owner, 2026-11-03), the
+    /// timeline under it.
     public struct Metrics: Equatable, Sendable {
         /// `textRatio` × L: padding at the top, left and right, and the
         /// size of the folder and details text.

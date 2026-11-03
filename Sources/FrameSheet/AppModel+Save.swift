@@ -92,11 +92,14 @@ extension AppModel {
                 saveJob = nil
             }
             do {
-                let (url, failures) = try await writeSheet(
+                let (url, failures, fromWindow) = try await writeSheet(
                     file: file, sheet: sheet, settings: settings, plan: plan)
                 showNotice("Saved \(url.lastPathComponent)")
-                if failures > 0 {
-                    toast = "\(file.name): \(failures) frame(s) could not be decoded for the print."
+                if failures + fromWindow > 0 {
+                    // The window's thumbs are 640 px wide, often less than
+                    // the print's, so the save says when it used them.
+                    toast = "\(file.name): \(failures + fromWindow) frame(s) could not be decoded for the print"
+                        + (fromWindow > 0 ? "; \(fromWindow) use the window's thumb." : ".")
                 }
                 if settings.openFinderAfterSaving { NSWorkspace.shared.activateFileViewerSelecting([url]) }
             } catch is CancellationError {
@@ -113,7 +116,7 @@ extension AppModel {
 
     private func writeSheet(
         file: MovieFile, sheet: Sheet, settings: FrameSheetCore.Settings, plan: PrintOutput.Plan
-    ) async throws -> (url: URL, failures: Int) {
+    ) async throws -> (url: URL, failures: Int, fromWindow: Int) {
         let backend = try await backend(for: file)
         let individual = settings.includeIndividualThumbs ? sheet.visibleThumbs : []
         let frames = Array(Set(plan.thumbs.map(\.frameNumber))).sorted()
@@ -143,9 +146,11 @@ extension AppModel {
         try Task.checkCancellation()
         // A frame that failed keeps the window's thumb, if there is one.
         var failures = 0
+        var fromWindow = 0
         for frame in frames where images[frame] == nil {
             if let cached = cachedImage(file: file.id, frame: frame, width: Self.thumbWidth) {
                 images[frame] = cached
+                fromWindow += 1
             } else {
                 failures += 1
             }
@@ -215,7 +220,7 @@ extension AppModel {
                     folder: thumbsFolder, file: file, sheet: sheet, settings: settings)
             }
         }
-        return (url, failures)
+        return (url, failures, fromWindow)
     }
 
     /// Encodes an image, embeds the sheet data in a PNG when given, and

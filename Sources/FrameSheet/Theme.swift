@@ -227,15 +227,39 @@ struct ToolbarIconGroup<Content: View>: View {
 }
 
 extension View {
-    /// For a toolbar item that holds several controls. SwiftUI gives the
-    /// item (its `NSToolbarItem.toolTip`) the first `.help` found inside it,
-    /// and AppKit showed that over every control of the item for about
-    /// 0.5 s before the control's own ("Show hidden thumbs", then "Hide
-    /// panel (3)"). An empty help on the item's content leaves the item
-    /// without a tooltip, so each control shows only its own.
-    func toolbarItemWithoutTooltip() -> some View {
-        help("")
+    /// The tooltip of a control in a toolbar item that holds several
+    /// controls: an AppKit `toolTip` on a view behind the control, in place
+    /// of `.help`. SwiftUI gives a toolbar item (its `NSToolbarItem.toolTip`)
+    /// the first `.help` found inside it, and AppKit showed that over every
+    /// control of the item for about 0.5 s before the control's own; an
+    /// empty `.help` on the item's content hid the controls' tooltips as
+    /// well (owner, 2026-11-03). With no `.help` inside, the item has no
+    /// tooltip and each control shows only its own from the start. Items
+    /// with one control keep `.help`.
+    func toolbarHelp(_ text: String) -> some View {
+        background(ToolTipArea(text: text))
     }
+}
+
+/// An empty AppKit view that carries a tooltip.
+private struct ToolTipArea: NSViewRepresentable {
+    let text: String
+
+    func makeNSView(context: Context) -> ToolTipView {
+        let view = ToolTipView()
+        view.toolTip = text
+        return view
+    }
+
+    func updateNSView(_ view: ToolTipView, context: Context) {
+        if view.toolTip != text { view.toolTip = text }
+    }
+}
+
+/// Never the target of a click, so clicks and hover reach the control in
+/// front of it; AppKit shows its tooltip from its tooltip rect.
+final class ToolTipView: NSView {
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
 }
 
 private struct ToolbarIconBody: View {

@@ -206,6 +206,20 @@ public enum FrameInfoPosition: String, Codable, Sendable, CaseIterable {
     }
 }
 
+/// Where the header's file name, folder and details lines sit: at the
+/// right as in MoviePrint's `ThumbGridHeader` (the default), or at the left
+/// (owner, 2026-11-03).
+public enum HeaderAlignment: String, Codable, Sendable, CaseIterable {
+    case right, left
+
+    public var label: String {
+        switch self {
+        case .right: "Right"
+        case .left: "Left"
+        }
+    }
+}
+
 /// Font family of the frame info on thumbs: one of the three system
 /// designs (stored as sentinels) or the name of an installed family.
 public enum FrameInfoFamily {
@@ -295,6 +309,7 @@ public struct Settings: Codable, Sendable, Equatable {
     public var showPathInHeader = true
     public var showDetailsInHeader = true
     public var showTimelineInHeader = true
+    public var headerAlignment: HeaderAlignment = .right
     /// Corner radius 0–20 as a percentage of the thumb width; 4 is
     /// MoviePrint's borderRadiusRatio 0.04, 0 is square. Older files have
     /// `roundedCorners` (false → 0).
@@ -359,7 +374,7 @@ public struct Settings: Codable, Sendable, Equatable {
 
     private enum CodingKeys: String, CodingKey {
         case marginHorizontal, marginVertical, marginsLinked
-        case showHeader, showPathInHeader, showDetailsInHeader, showTimelineInHeader
+        case showHeader, showPathInHeader, showDetailsInHeader, showTimelineInHeader, headerAlignment
         case cornerRadius, showHiddenThumbs, frameInfo, thumbnailCacheMB, ffmpegPath
         case frameInfoColor, frameInfoBackground, frameInfoPosition, frameInfoSize
         case frameInfoFontFamily, frameInfoMarginHorizontal, frameInfoMarginVertical, frameInfoMarginsLinked
@@ -386,6 +401,7 @@ public struct Settings: Codable, Sendable, Equatable {
         showPathInHeader = try c.decodeIfPresent(Bool.self, forKey: .showPathInHeader) ?? d.showPathInHeader
         showDetailsInHeader = try c.decodeIfPresent(Bool.self, forKey: .showDetailsInHeader) ?? d.showDetailsInHeader
         showTimelineInHeader = try c.decodeIfPresent(Bool.self, forKey: .showTimelineInHeader) ?? d.showTimelineInHeader
+        headerAlignment = (try? c.decodeIfPresent(HeaderAlignment.self, forKey: .headerAlignment)) ?? d.headerAlignment
         let oldRounded = try? legacy.decodeIfPresent(Bool.self, forKey: .roundedCorners)
         cornerRadius = try c.decodeIfPresent(Double.self, forKey: .cornerRadius)
             ?? (oldRounded == false ? 0 : d.cornerRadius)
