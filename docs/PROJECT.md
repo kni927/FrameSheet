@@ -24,7 +24,7 @@ v2 (a settings-to-one-image generator) stays at tag v2.3.1.
 ## Goals
 - Reproduce MoviePrint 0.2.23's layout and interactions, natively on Apple
   Silicon, where MoviePrint itself no longer runs.
-- Keep the editor logic (models, layout maths, naming, shot detection,
+- Keep the editor logic (models, layout math, naming, shot detection,
   import/export) in a tested core library.
 - Fast scans: one decode pass for shot detection and faces
   (`docs/v3-measurements.md`).
