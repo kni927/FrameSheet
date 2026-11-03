@@ -117,8 +117,11 @@ app icon (owner, 2026-11-01).
 
 - **Stats line:** grid "C Columns × R Rows = count"; timeline "N Shots /
   ~M Minutes ≈ X cut/min".
-- **Grid view:** Columns 1–20 (default 4, per sheet, live); Change thumb count
-  → Rows 1–20 (default 16 thumbs), overwrite warning, **Apply** (not live).
+- **Grid view** (owner, T03b): Columns 1–20 (default 4, per sheet) rearranges
+  live, keeping the thumbs; Rows 1–20 sets a target (extra rows show as
+  placeholders, fewer rows dim the thumbs that would go); **Replace**
+  recaptures columns × rows thumbs evenly in one undo step, enabled when that
+  differs from the current count. Default 16 thumbs.
 - **Timeline view:** Minutes per row 10–1800 s (default 120 s, per sheet);
   Natural flow (shot sheets, wrap by width; default off); Change scene count →
   shot detection threshold 3–40 (default 6.0) and Add new MoviePrint.
