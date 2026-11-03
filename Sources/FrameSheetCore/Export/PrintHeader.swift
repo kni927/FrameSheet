@@ -10,8 +10,14 @@ public enum PrintHeader {
     /// least 2 % of the timeline wide.
     public static let minimumRangeWidth = 0.02
 
-    /// `TC | fps FPS | W × H | size | fourCC`, e.g.
-    /// "00:06:48:12 | 23.98 FPS | 1280 × 720 | 39.2 MB | avc1".
+    /// Between the details fields: an em space, wide enough to stand apart
+    /// from the single spaces inside "23.98 FPS" and "1280 × 720" (owner,
+    /// 2026-11-03: spaces instead of MoviePrint's " | ").
+    public static let detailsSeparator = "\u{2003}"
+
+    /// MoviePrint's `TC | fps FPS | W × H | size | fourCC` with
+    /// `detailsSeparator`, e.g. "00:06:48:12  23.98 FPS  1280 × 720  39.2 MB
+    /// avc1" (em spaces).
     public static func detailsLine(file: MovieFile) -> String {
         let fps = file.fps > 0 ? file.fps : 25
         return [
@@ -20,12 +26,13 @@ public enum PrintHeader {
             "\(file.width) × \(file.height)",
             formatBytes(file.size),
             file.fourCC,
-        ].joined(separator: " | ")
+        ].joined(separator: detailsSeparator)
     }
 
-    /// The folder line: the movie's folder with a trailing slash.
-    public static func folderLine(file: MovieFile) -> String {
-        let folder = file.url.deletingLastPathComponent().path
+    /// The folder line: the movie's folder with a trailing slash, as
+    /// `~/…` when under `home`.
+    public static func folderLine(file: MovieFile, home: String = NSHomeDirectory()) -> String {
+        let folder = PathDisplay.abbreviatingHome(file.url.deletingLastPathComponent().path, home: home)
         return folder.hasSuffix("/") ? folder : folder + "/"
     }
 
@@ -54,14 +61,12 @@ public enum PrintHeader {
 
     /// Sizes inside the header, from MoviePrint `ThumbGridHeader`'s ratios
     /// of the logo band height L: a quarter of L as padding and text unit,
-    /// the image half of L high at the left, the text right-aligned at the
-    /// right, the timeline under both.
+    /// the text left-aligned over the full width (no logo or app icon,
+    /// owner, 2026-11-03), the timeline under it.
     public struct Metrics: Equatable, Sendable {
         /// `textRatio` × L: padding at the top, left and right, and the
         /// size of the folder and details text.
         public var unit: Double
-        /// `headerImageRatio` × L; the app icon is square.
-        public var imageSize: Double
         /// The file name: 1.5 units, on a line of 1.8 units with half a
         /// unit below it.
         public var titleSize: Double
@@ -77,7 +82,6 @@ public enum PrintHeader {
 
         public init(logoHeight: Double) {
             unit = logoHeight * 0.25
-            imageSize = logoHeight * 0.5
             titleSize = unit * 1.5
             titleLineHeight = unit * 1.8
             titleSpacing = unit * 0.5

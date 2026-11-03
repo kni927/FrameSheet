@@ -89,6 +89,19 @@ public final class AVFoundationBackend: DecodeBackend {
         return CMTime(seconds: startTime + seconds, preferredTimescale: 600_000)
     }
 
+    /// Where the ±0.5 s retry asks: the exact time, but no later than half
+    /// the tolerance before the video ends, so the whole window lies inside
+    /// the movie (the ffmpeg path likewise retries 0.5 s earlier). Centred on
+    /// the last frame, half the window would lie past the end; a movie whose
+    /// last frames do not decode then failed although a frame a little
+    /// earlier did (the print's last thumb, T04).
+    func retryTime(of frame: Int) -> CMTime {
+        let requested = time(of: frame)
+        let end = startTime + info.duration - Self.retryTolerance.seconds
+        guard info.duration > 0, requested.seconds > end else { return requested }
+        return CMTime(seconds: max(startTime, end), preferredTimescale: 600_000)
+    }
+
     /// The frame a zero-tolerance request returns: the requested one, or
     /// the last frame for a request past the end (`time(of:)` clamps there).
     /// Not derived from the decoded time, whose rounding can be a frame off
@@ -150,7 +163,7 @@ public final class AVFoundationBackend: DecodeBackend {
     private func retry(_ frameNumber: Int, maxWidth: Int) async throws -> DecodedFrame {
         do {
             let (image, actual) = try await makeGenerator(maxWidth: maxWidth, exact: false)
-                .image(at: time(of: frameNumber))
+                .image(at: retryTime(of: frameNumber))
             return DecodedFrame(
                 image: image, requestedFrame: frameNumber, actualFrame: self.frameNumber(at: actual),
                 retried: true)

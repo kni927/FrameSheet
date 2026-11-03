@@ -15,7 +15,7 @@ struct SaveError: Error, LocalizedError {
     var errorDescription: String? { message }
 }
 
-/// Save MoviePrint, Save thumb, individual thumbs and Export JSON (§12).
+/// Save Sheet, Save thumb, individual thumbs and Export JSON (§12).
 extension AppModel {
     /// The folder saved files go to for a movie (or none).
     func outputFolder(for file: MovieFile?) -> URL {
@@ -37,7 +37,7 @@ extension AppModel {
     /// Change… in the Output section.
     func chooseOutputFolder() {
         let panel = NSOpenPanel()
-        panel.message = "Choose the folder for saved MoviePrints"
+        panel.message = "Choose the folder for saved sheets"
         panel.canChooseFiles = false
         panel.canChooseDirectories = true
         panel.canCreateDirectories = true
@@ -66,12 +66,14 @@ extension AppModel {
 
     func cancelSave() { saveJob?.cancel() }
 
-    /// Save MoviePrint (key M): decodes the print's frames fresh at about
-    /// twice their size in the print, one gated batch through the movie's
-    /// backend; renders `PrintView` offscreen at the output width; writes
-    /// PNG (with the embedded sheet data) or JPG; then the individual thumbs
-    /// when asked.
-    func saveMoviePrint() {
+    /// Save Sheet (key M): decodes the print's frames fresh at about twice
+    /// their size in the print, in small sequential batches through the
+    /// movie's backend (never in parallel; the AVFoundation backend holds the
+    /// DecodeGate per batch); renders `PrintView` offscreen at the output
+    /// width; encodes and writes PNG (with the embedded sheet data) or JPG
+    /// off the main actor; then the individual thumbs when asked. The toast
+    /// shows each stage; Cancel stops between frames and between stages.
+    func saveSheet() {
         guard !isSaving, let file = currentFile, let sheet = currentSheet else { return }
         guard !missing.contains(file.id) else {
             toast = "\(file.name): the movie is missing."
@@ -90,7 +92,7 @@ extension AppModel {
                 saveJob = nil
             }
             do {
-                let (url, failures) = try await writeMoviePrint(
+                let (url, failures) = try await writeSheet(
                     file: file, sheet: sheet, settings: settings, plan: plan)
                 showNotice("Saved \(url.lastPathComponent)")
                 if failures > 0 {
@@ -105,25 +107,38 @@ extension AppModel {
         }
     }
 
-    private func writeMoviePrint(
+    /// Frames per decode batch of a save: small, so the toast counts frames
+    /// as they arrive and Cancel takes effect soon.
+    private static let saveDecodeBatch = 4
+
+    private func writeSheet(
         file: MovieFile, sheet: Sheet, settings: FrameSheetCore.Settings, plan: PrintOutput.Plan
     ) async throws -> (url: URL, failures: Int) {
         let backend = try await backend(for: file)
         let individual = settings.includeIndividualThumbs ? sheet.visibleThumbs : []
         let frames = Array(Set(plan.thumbs.map(\.frameNumber))).sorted()
-        // Decoding the print, rendering it, then each individual thumb.
-        let steps = Double(frames.count + 1 + individual.count)
-        var done = 0.0
 
-        // 1. Frames, as one batch: the AVFoundation backend holds the
-        // DecodeGate for it, so a large save is one decoder session.
+        // 1. Frames, a few at a time, one batch after the other.
         var images: [Int: CGImage] = [:]
-        progress = SaveProgress(message: "Decoding frames…", fraction: 0)
-        for await result in backend.frames(frames, maxWidth: plan.decodeWidth) {
-            if case .success(let frame) = result.result { images[result.frameNumber] = frame.image }
-            done += 1
-            progress = SaveProgress(
-                message: "Decoding frame \(Int(done)) of \(frames.count)…", fraction: done / steps)
+        // Requested → decoded frame, where the ±0.5 s retry got another one.
+        var decodedFrame: [Int: Int] = [:]
+        var done = 0
+        progress = SaveProgress(message: "Decoding frame 1 of \(frames.count)…", fraction: 0)
+        for start in stride(from: 0, to: frames.count, by: Self.saveDecodeBatch) {
+            try Task.checkCancellation()
+            let batch = Array(frames[start..<min(start + Self.saveDecodeBatch, frames.count)])
+            for await result in backend.frames(batch, maxWidth: plan.decodeWidth) {
+                if case .success(let frame) = result.result {
+                    images[result.frameNumber] = frame.image
+                    if frame.actualFrame != frame.requestedFrame {
+                        decodedFrame[frame.requestedFrame] = frame.actualFrame
+                    }
+                }
+                done += 1
+                progress = SaveProgress(
+                    message: "Decoding frame \(min(done + 1, frames.count)) of \(frames.count)…",
+                    fraction: Double(done) / Double(frames.count))
+            }
         }
         try Task.checkCancellation()
         // A frame that failed keeps the window's thumb, if there is one.
@@ -136,14 +151,24 @@ extension AppModel {
             }
         }
         guard failures < frames.count else { throw SaveError("No frame could be decoded.") }
+        // A retried thumb is labelled and placed on the timeline by the frame
+        // it shows, as the window retargets it (decision 11).
+        var thumbs = plan.thumbs
+        for i in thumbs.indices {
+            if let actual = decodedFrame[thumbs[i].frameNumber] {
+                images[actual] = images[thumbs[i].frameNumber]
+                thumbs[i].frameNumber = actual
+            }
+        }
 
-        // 2. The print, by the view the window shows.
-        progress = SaveProgress(message: "Rendering \(plan.width) × \(plan.height) px…", fraction: done / steps)
+        // 2. The print, by the view the window shows. ImageRenderer works on
+        // the main actor, so the window waits for this stage.
+        progress = SaveProgress(message: "Rendering \(plan.width) × \(plan.height) px…", fraction: nil)
         // Lets the toast show before the render blocks the main actor.
         try await Task.sleep(for: .milliseconds(50))
         let decoded = images
         images.removeAll()
-        let content = PrintView(file: file, thumbs: plan.thumbs, geometry: plan.geometry, settings: settings) {
+        let content = PrintView(file: file, thumbs: thumbs, geometry: plan.geometry, settings: settings) {
             decoded[$0.frameNumber]
         }
         .frame(width: CGFloat(plan.width), height: CGFloat(plan.height), alignment: .topLeading)
@@ -153,18 +178,18 @@ extension AppModel {
         guard let image = renderer.cgImage else {
             throw SaveError("The \(plan.width) × \(plan.height) px print could not be rendered.")
         }
-        var data = try ImageEncoding.data(image, format: settings.outputFormat, quality: settings.outputQuality)
-        if settings.outputFormat == .png, settings.embedFrameNumbers || settings.embedFilePath {
-            let exchange = SheetExchange(
+        try Task.checkCancellation()
+
+        // 3. The file, encoded and written off the main actor.
+        progress = SaveProgress(
+            message: "Writing \(settings.outputFormat == .png ? "PNG" : "JPG")…", fraction: nil)
+        let exchange: SheetExchange? = settings.outputFormat == .png
+            && (settings.embedFrameNumbers || settings.embedFilePath)
+            ? SheetExchange(
                 file: file, sheet: sheet, includeHidden: settings.showHiddenThumbs,
                 embedFilePath: settings.embedFilePath, embedFrameData: settings.embedFrameNumbers,
                 appVersion: Self.appVersion)
-            data = try exchange.embedded(in: data)
-        }
-        done += 1
-
-        // 3. The file.
-        try Task.checkCancellation()
+            : nil
         let folder = outputFolder(for: file)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         let baseName = PrintOutput.baseName(
@@ -172,7 +197,8 @@ extension AppModel {
         let url = FileNaming.outputURL(
             folder: folder, baseName: baseName, fileExtension: settings.outputFormat.fileExtension,
             overwrite: settings.overwrite, exists: { FileManager.default.fileExists(atPath: $0.path) })
-        try data.write(to: url, options: .atomic)
+        try await Self.encodeAndWrite(
+            image, format: settings.outputFormat, quality: settings.outputQuality, embedding: exchange, to: url)
 
         // 4. Individual thumbs at full size, in a folder named after the print.
         if !individual.isEmpty {
@@ -181,15 +207,28 @@ extension AppModel {
             for (i, thumb) in individual.enumerated() {
                 try Task.checkCancellation()
                 progress = SaveProgress(
-                    message: "Saving thumb \(i + 1) of \(individual.count)…", fraction: done / steps)
+                    message: "Saving thumb \(i + 1) of \(individual.count)…",
+                    fraction: Double(i) / Double(individual.count))
                 let frame = try await backend.frame(thumb.frameNumber, maxWidth: max(1, backend.info.width))
-                _ = try writeThumb(
+                _ = try await writeThumb(
                     frame.image, frameNumber: thumb.frameNumber, template: settings.individualThumbNameTemplate,
                     folder: thumbsFolder, file: file, sheet: sheet, settings: settings)
-                done += 1
             }
         }
         return (url, failures)
+    }
+
+    /// Encodes an image, embeds the sheet data in a PNG when given, and
+    /// writes the file, away from the main actor (a 16384 px PNG takes
+    /// seconds and some hundred MB).
+    @concurrent
+    nonisolated private static func encodeAndWrite(
+        _ image: CGImage, format: ImageFormat, quality: Int, embedding exchange: SheetExchange?, to url: URL
+    ) async throws {
+        var data = try ImageEncoding.data(image, format: format, quality: quality)
+        if let exchange { data = try exchange.embedded(in: data) }
+        try Task.checkCancellation()
+        try data.write(to: url, options: .atomic)
     }
 
     /// Save thumb in the hover overlay: the frame at the movie's own size,
@@ -205,7 +244,7 @@ extension AppModel {
                 let frame = try await backend.frame(thumb.frameNumber, maxWidth: max(1, backend.info.width))
                 let folder = outputFolder(for: file)
                 try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-                let url = try writeThumb(
+                let url = try await writeThumb(
                     frame.image, frameNumber: thumb.frameNumber, template: settings.singleThumbNameTemplate,
                     folder: folder, file: file, sheet: sheet, settings: settings)
                 showNotice("Saved \(url.lastPathComponent)")
@@ -221,15 +260,15 @@ extension AppModel {
     private func writeThumb(
         _ image: CGImage, frameNumber: Int, template: String, folder: URL, file: MovieFile, sheet: Sheet,
         settings: FrameSheetCore.Settings
-    ) throws -> URL {
-        let data = try ImageEncoding.data(image, format: settings.thumbFormat, quality: settings.thumbQuality)
+    ) async throws -> URL {
         let baseName = PrintOutput.baseName(
             template: template, movieFileName: file.name, sheetName: sheet.name, frameNumber: frameNumber,
             fps: file.fps)
         let url = FileNaming.outputURL(
             folder: folder, baseName: baseName, fileExtension: settings.thumbFormat.fileExtension,
             overwrite: settings.overwrite, exists: { FileManager.default.fileExists(atPath: $0.path) })
-        try data.write(to: url, options: .atomic)
+        try await Self.encodeAndWrite(
+            image, format: settings.thumbFormat, quality: settings.thumbQuality, embedding: nil, to: url)
         return url
     }
 

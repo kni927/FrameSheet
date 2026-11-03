@@ -90,7 +90,7 @@ final class AppModel {
     /// redraw. Pruned to what is on screen when the sheet changes.
     @ObservationIgnored private var pinned: [String: CGImage] = [:]
     @ObservationIgnored private var saveTask: Task<Void, Never>?
-    /// Save MoviePrint while it runs (one at a time).
+    /// Save Sheet while it runs (one at a time).
     @ObservationIgnored var saveJob: Task<Void, Never>?
     @ObservationIgnored private var discovery: Task<Void, Never>?
     @ObservationIgnored private var columnsAtDragStart: Int?
@@ -423,10 +423,10 @@ final class AppModel {
 
     static let importExtensions: Set<String> = ["png", "json"]
 
-    /// More options → Import MoviePrint…
+    /// More options → Import Sheet…
     func presentImportPanel() {
         let panel = NSOpenPanel()
-        panel.message = "Import a MoviePrint PNG with embedded data, or its JSON file"
+        panel.message = "Import a PNG with embedded sheet data, or a JSON file, saved by FrameSheet or MoviePrint"
         panel.allowedContentTypes = [.png, .json]
         panel.allowsMultipleSelection = true
         panel.canChooseDirectories = false
@@ -498,9 +498,9 @@ final class AppModel {
 
     private static func importMessage(_ error: any Error) -> String {
         switch error {
-        case SheetExchangeError.noData: "no MoviePrint data found or embedded."
+        case SheetExchangeError.noData: "no sheet data found or embedded."
         case SheetExchangeError.noFilePath: "the data names no movie file."
-        case SheetExchangeError.invalidJSON: "not a MoviePrint JSON file."
+        case SheetExchangeError.invalidJSON: "not a FrameSheet or MoviePrint JSON file."
         case PNGText.Error.invalidPNG: "the PNG could not be read."
         default: error.localizedDescription
         }

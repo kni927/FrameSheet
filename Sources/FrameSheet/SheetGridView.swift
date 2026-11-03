@@ -153,8 +153,8 @@ private struct ThumbView: View {
 }
 
 /// Buttons over a hovered thumb (§7): IN and OUT on top, insert before and
-/// after at the sides, the scrub handle in the middle, EXPAND, Hide/Show and
-/// Save thumb at the bottom. Option-click on IN/OUT hides all before/after.
+/// after at the sides, the scrub handle in the middle, EXPAND, HIDE/SHOW and
+/// SAVE (thumb) at the bottom. Option-click on IN/OUT hides all before/after.
 /// Drawn as in MoviePrint: faint white over the thumb, solid white under the
 /// pointer, with a dark shadow instead of a backdrop (owner, 2026-11-03).
 private struct HoverOverlay: View {
@@ -204,21 +204,24 @@ private struct HoverOverlay: View {
                 }
             }
             Spacer(minLength: 0)
-            HStack {
-                OverlayButton(title: "EXPAND", help: "Expand to 16 thumbs", report: { onHoverButton($0 ? .expand : nil) }) {
-                    model.expand(thumb.id)
+            // MoviePrint's arrangement: EXPAND at the left, HIDE in the
+            // middle, SAVE at the right.
+            ZStack {
+                HStack {
+                    OverlayButton(title: "EXPAND", help: "Expand to 16 thumbs", report: { onHoverButton($0 ? .expand : nil) }) {
+                        model.expand(thumb.id)
+                    }
+                    Spacer()
+                    OverlayButton(title: "SAVE", help: "Save thumb (full size)") {
+                        model.saveThumb(thumb.id)
+                    }
                 }
-                Spacer()
                 OverlayButton(
-                    systemImage: thumb.hidden ? "eye" : "eye.slash", help: thumb.hidden ? "Show thumb" : "Hide thumb",
+                    title: thumb.hidden ? "SHOW" : "HIDE", help: thumb.hidden ? "Show thumb" : "Hide thumb",
                     report: { onHoverButton($0 ? .hide : nil) }
                 ) {
                     onHoverButton(nil)
                     model.toggleHidden(thumb.id)
-                }
-                // At the end of the EXPAND and HIDE row, as MoviePrint's SAVE.
-                OverlayButton(systemImage: "arrow.down.to.line", help: "Save thumb at full size") {
-                    model.saveThumb(thumb.id)
                 }
             }
         }

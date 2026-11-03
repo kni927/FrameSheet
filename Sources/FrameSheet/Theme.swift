@@ -226,6 +226,18 @@ struct ToolbarIconGroup<Content: View>: View {
     }
 }
 
+extension View {
+    /// For a toolbar item that holds several controls. SwiftUI gives the
+    /// item (its `NSToolbarItem.toolTip`) the first `.help` found inside it,
+    /// and AppKit showed that over every control of the item for about
+    /// 0.5 s before the control's own ("Show hidden thumbs", then "Hide
+    /// panel (3)"). An empty help on the item's content leaves the item
+    /// without a tooltip, so each control shows only its own.
+    func toolbarItemWithoutTooltip() -> some View {
+        help("")
+    }
+}
+
 private struct ToolbarIconBody: View {
     let configuration: ButtonStyleConfiguration
     let selected: Bool

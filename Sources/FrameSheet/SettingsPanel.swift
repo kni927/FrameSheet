@@ -384,7 +384,7 @@ private struct Swatch: View {
     }
 }
 
-/// Output (§6): where and how Save MoviePrint, Save thumb and Export JSON
+/// Output (§6): where and how Save Sheet, Save thumb and Export JSON
 /// write.
 private struct OutputSection: View {
     @Environment(AppModel.self) private var model
@@ -396,7 +396,7 @@ private struct OutputSection: View {
         PanelSection(title: "Output") {
             PanelRow("Folder") {
                 Text(settings.outputSameFolderAsMovie
-                     ? "Movie's folder" : (folder.path as NSString).abbreviatingWithTildeInPath)
+                     ? "Movie's folder" : PathDisplay.abbreviatingHome(folder.path))
                     .font(Theme.detailCondensed)
                     .foregroundStyle(Theme.textMuted)
                     .lineLimit(1)
@@ -515,7 +515,7 @@ private struct NamingSection: View {
         let settings = model.library.settings
         PanelSection(title: "Naming scheme") {
             TemplateField(
-                title: "MoviePrint", key: \.sheetNameTemplate, isThumb: false,
+                title: "Sheet", key: \.sheetNameTemplate, isThumb: false,
                 fileExtension: settings.outputFormat.fileExtension)
             TemplateField(
                 title: "Single thumb", key: \.singleThumbNameTemplate, isThumb: true,

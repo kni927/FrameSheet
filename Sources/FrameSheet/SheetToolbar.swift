@@ -6,9 +6,10 @@ import SwiftUI
 /// interval sheets: back to parent, add interval sheet, duplicate, zoom (with
 /// Fit height and Fit width when they would change the fit), show hidden
 /// thumbs, show header, cycle frame info, optimize grid layout, Save
-/// MoviePrint with its menu, then the right panel toggle. Disabled while no sheet is shown (not the toggle). Each group is
+/// Sheet with its menu, then the right panel toggle. Disabled while no sheet is shown (not the toggle). Each group is
 /// one `ToolbarIconGroup` in a single toolbar item, so its icons touch; the
-/// items have no glass background.
+/// items have no glass background and no tooltip of their own
+/// (`toolbarItemWithoutTooltip`).
 struct SheetToolbar: ToolbarContent {
     let model: AppModel
     let sheet: Sheet?
@@ -48,6 +49,7 @@ struct SheetToolbar: ToolbarContent {
                 .help("Duplicate sheet")
                 .disabled(noSheet)
             }
+            .toolbarItemWithoutTooltip()
         }
         .sharedBackgroundVisibility(.hidden)
         ToolbarItem(placement: .navigation) {
@@ -96,6 +98,7 @@ struct SheetToolbar: ToolbarContent {
                 .help("Zoom in (⌘=)")
                 .disabled(noSheet || model.zoom >= GridGeometry.zoomSteps.last!)
             }
+            .toolbarItemWithoutTooltip()
         }
         .sharedBackgroundVisibility(.hidden)
         ToolbarItem(placement: .navigation) {
@@ -145,12 +148,12 @@ struct SheetToolbar: ToolbarContent {
                 // the output location (Save All comes with T08).
                 ToolbarIconGroup {
                     Button {
-                        model.saveMoviePrint()
+                        model.saveSheet()
                     } label: {
-                        Label("Save MoviePrint", systemImage: "square.and.arrow.down")
+                        Label("Save sheet", systemImage: "square.and.arrow.down")
                     }
                     .buttonStyle(ToolbarIconStyle(grouped: true))
-                    .help("Save MoviePrint (M)")
+                    .help("Save sheet (M)")
                     .disabled(noSheet || model.isSaving)
                     Menu {
                         Button("Open Output Location") { model.openOutputLocation() }
@@ -171,6 +174,7 @@ struct SheetToolbar: ToolbarContent {
                 .accessibilityAddTraits(model.showSettings ? .isSelected : [])
                 .help(model.showSettings ? "Hide panel (3)" : "Show panel (3)")
             }
+            .toolbarItemWithoutTooltip()
         }
         .sharedBackgroundVisibility(.hidden)
     }

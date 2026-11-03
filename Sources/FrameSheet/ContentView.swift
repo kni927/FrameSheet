@@ -65,8 +65,8 @@ struct ContentView: View {
                     .buttonStyle(ToolbarIconStyle(grouped: true))
                     .help("Add movies (A)")
                     Menu {
-                        Button("Import MoviePrint…") { model.presentImportPanel() }
-                            .help("Import a sheet from a MoviePrint PNG or JSON file")
+                        Button("Import Sheet…") { model.presentImportPanel() }
+                            .help("Import a PNG or JSON saved by FrameSheet or MoviePrint")
                         Divider()
                         Button("Clear movie list…", role: .destructive) { confirmingClear = true }
                             .disabled(model.library.files.isEmpty)
@@ -79,6 +79,7 @@ struct ContentView: View {
                     .buttonStyle(ToolbarIconStyle(grouped: true))
                     .help("More options")
                 }
+                .toolbarItemWithoutTooltip()
             }
             .sharedBackgroundVisibility(.hidden)
             SheetToolbar(model: model, sheet: model.currentSheet)

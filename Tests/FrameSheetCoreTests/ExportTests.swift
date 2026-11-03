@@ -514,11 +514,27 @@ private func makePNG(width: Int = 2, height: Int = 1) throws -> Data {
         var file = MovieFile(
             url: URL(fileURLWithPath: "/Volumes/Media/Movies/sample.mov"), duration: 408.5, frameCount: 9789,
             fps: 23.976, width: 1280, height: 720, size: 41_104_179, fourCC: "avc1")
-        #expect(PrintHeader.detailsLine(file: file) == "00:06:47:21 | 23.98 FPS | 1280 × 720 | 39.2 MB | avc1")
+        // Fields apart by an em space, not MoviePrint's " | ".
+        #expect(PrintHeader.detailsLine(file: file)
+                == "00:06:47:21\u{2003}23.98 FPS\u{2003}1280 × 720\u{2003}39.2 MB\u{2003}avc1")
         file.fps = 25
         file.size = 4 * 1024 * 1024 * 1024
-        #expect(PrintHeader.detailsLine(file: file) == "00:06:31:14 | 25 FPS | 1280 × 720 | 4 GB | avc1")
-        #expect(PrintHeader.folderLine(file: file) == "/Volumes/Media/Movies/")
+        #expect(PrintHeader.detailsLine(file: file) == "00:06:31:14\u{2003}25 FPS\u{2003}1280 × 720\u{2003}4 GB\u{2003}avc1")
+        #expect(!PrintHeader.detailsLine(file: file).contains("|"))
+        #expect(PrintHeader.folderLine(file: file, home: "/Volumes/Home") == "/Volumes/Media/Movies/")
+        #expect(PrintHeader.folderLine(file: file, home: "/Volumes/Media") == "~/Movies/")
+    }
+
+    @Test func homeAbbreviation() {
+        let home = "/Volumes/Home/someone"
+        #expect(PathDisplay.abbreviatingHome("/Volumes/Home/someone/Movies/a", home: home) == "~/Movies/a")
+        #expect(PathDisplay.abbreviatingHome("/Volumes/Home/someone", home: home) == "~")
+        #expect(PathDisplay.abbreviatingHome("/Volumes/Home/someone/", home: home + "/") == "~/")
+        // Only whole components: a sibling with the same prefix stays.
+        #expect(PathDisplay.abbreviatingHome("/Volumes/Home/someone2/x", home: home) == "/Volumes/Home/someone2/x")
+        #expect(PathDisplay.abbreviatingHome("/Volumes/Media/x", home: home) == "/Volumes/Media/x")
+        #expect(PathDisplay.abbreviatingHome("/x", home: "/") == "/x")
+        #expect(PathDisplay.abbreviatingHome("/x", home: "") == "/x")
     }
 
     @Test func formatting() {

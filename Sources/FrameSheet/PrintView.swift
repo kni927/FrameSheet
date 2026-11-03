@@ -1,10 +1,9 @@
-import AppKit
 import FrameSheetCore
 import SwiftUI
 
 /// The print of a grid sheet (§5.1, §5.2): background, header and thumbs
 /// with their frame info, laid out by `GridGeometry`. The window draws it
-/// under its interaction layer and Save MoviePrint renders it offscreen
+/// under its interaction layer and Save Sheet renders it offscreen
 /// with `ImageRenderer`, so both show the same print. It reads nothing from
 /// the environment; images come from `image`.
 struct PrintView: View {
@@ -115,10 +114,11 @@ private struct FrameInfoLabel: View {
     }
 }
 
-/// The print header (§5.2) in MoviePrint's layout (`ThumbGridHeader`): the
-/// app icon at the left, the file name with the optional folder and details
-/// lines right-aligned at the right, the optional mini timeline under both.
-/// Sizes are `PrintHeader.Metrics` of the logo band; colours are kni tokens.
+/// The print header (§5.2) in MoviePrint's layout (`ThumbGridHeader`)
+/// without its logo or an app icon (owner, 2026-11-03): the file name with
+/// the optional folder and details lines, left-aligned over the full width,
+/// and the optional mini timeline under them. Sizes are `PrintHeader.Metrics`
+/// of the logo band; colours are kni tokens.
 struct PrintHeaderView: View {
     let file: MovieFile
     /// The print's thumbs, for the timeline.
@@ -130,29 +130,23 @@ struct PrintHeaderView: View {
     var body: some View {
         let m = PrintHeader.Metrics(logoHeight: logoHeight)
         VStack(alignment: .leading, spacing: 0) {
-            HStack(alignment: .top, spacing: m.unit) {
-                Image(nsImage: Self.appIcon)
-                    .resizable()
-                    .interpolation(.high)
-                    .frame(width: m.imageSize, height: m.imageSize)
-                Spacer(minLength: 0)
-                VStack(alignment: .trailing, spacing: 0) {
-                    Text(file.name)
-                        .font(.system(size: max(1, m.titleSize), weight: .semibold))
-                        .foregroundStyle(Theme.text)
-                        .minimumScaleFactor(PrintHeader.Metrics.titleMinimumScale)
-                        .frame(height: m.titleLineHeight)
-                        .padding(.bottom, m.titleSpacing)
-                    if settings.showPathInHeader {
-                        line(PrintHeader.folderLine(file: file), metrics: m)
-                    }
-                    if settings.showDetailsInHeader {
-                        line(PrintHeader.detailsLine(file: file), metrics: m)
-                    }
+            VStack(alignment: .leading, spacing: 0) {
+                Text(file.name)
+                    .font(.system(size: max(1, m.titleSize), weight: .semibold))
+                    .foregroundStyle(Theme.text)
+                    .minimumScaleFactor(PrintHeader.Metrics.titleMinimumScale)
+                    .frame(height: m.titleLineHeight)
+                    .padding(.bottom, m.titleSpacing)
+                if settings.showPathInHeader {
+                    line(PrintHeader.folderLine(file: file), metrics: m)
                 }
-                .lineLimit(1)
-                .truncationMode(.middle)
+                if settings.showDetailsInHeader {
+                    line(PrintHeader.detailsLine(file: file), metrics: m)
+                }
             }
+            .lineLimit(1)
+            .truncationMode(.middle)
+            .frame(maxWidth: .infinity, alignment: .leading)
             if settings.showTimelineInHeader {
                 HeaderTimeline(
                     timeline: PrintHeader.timeline(frameNumbers: frameNumbers, frameCount: file.frameCount),
@@ -171,12 +165,6 @@ struct PrintHeaderView: View {
             .font(.system(size: max(1, m.unit)))
             .foregroundStyle(Theme.textMuted)
             .frame(height: m.lineHeight)
-    }
-
-    /// The FrameSheet icon from the bundle; also available in an offscreen
-    /// render, which runs in the app.
-    @MainActor static var appIcon: NSImage {
-        NSImage(named: NSImage.applicationIconName) ?? NSApp.applicationIconImage ?? NSImage()
     }
 }
 

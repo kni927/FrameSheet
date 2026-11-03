@@ -51,8 +51,9 @@ private struct MovieRow: View {
                 Spacer(minLength: 0)
             }
             .padding(.bottom, 2)
-            // The full path, cut in the middle to the row's width.
-            Text(file.folder)
+            // The folder (`~/…` under home), cut in the middle to the row's
+            // width; the tooltip has the full path.
+            Text(PathDisplay.abbreviatingHome(file.folder))
                 .font(Theme.detailCondensed)
                 .lineLimit(1)
                 .truncationMode(.middle)

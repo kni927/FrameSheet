@@ -127,7 +127,6 @@ import Testing
         }
         let m = PrintHeader.Metrics(logoHeight: 100)
         #expect(m.unit == 25)
-        #expect(m.imageSize == 50)
         #expect(abs(m.titleSize - 37.5) < 1e-9)
         #expect(abs(m.timelineHeight - 30) < 1e-9)
     }

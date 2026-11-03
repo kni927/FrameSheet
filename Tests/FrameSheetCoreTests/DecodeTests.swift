@@ -157,6 +157,20 @@ import Testing
         #expect(Self.frameNumber(in: pastEnd.image) == pastEnd.actualFrame)
         #expect(pastEnd.actualFrame < Self.frameCount)
 
+        // The last frame through the batch at a print's larger width, as
+        // Save Sheet asks for it (T04: it failed there).
+        let last = Self.frameCount - 1
+        var lastResults: [FrameResult] = []
+        for await result in backend.frames([last - 10, last], maxWidth: 4000) { lastResults.append(result) }
+        #expect(lastResults.count == 2)
+        for result in lastResults {
+            let frame = try result.result.get()
+            #expect(frame.image.width == 320)
+            #expect(Self.frameNumber(in: frame.image) == frame.actualFrame)
+        }
+        let lastFrame = try #require(lastResults.first { $0.frameNumber == last }).result.get()
+        #expect(lastFrame.actualFrame == last)
+
         let single = try await backend.frame(7, maxWidth: 4000)
         #expect(single.image.width == 320)
         #expect(Self.frameNumber(in: single.image) == 7)
@@ -182,6 +196,24 @@ import Testing
     @Test(.enabled(if: DecodeIntegrationTests.tools != nil)) func mkvGoesToFFmpeg() async throws {
         let clip = try await Self.makeClip("h264.mkv", ["-c:v", "libx264", "-qp", "0", "-pix_fmt", "yuv420p"])
         try await check(clip, expect: .ffmpeg)
+    }
+
+    /// The ±0.5 s retry stays inside the movie: at the end it asks half the
+    /// tolerance before the end, elsewhere at the frame itself.
+    @Test(.enabled(if: DecodeIntegrationTests.tools != nil)) func retryWindowStaysInsideTheMovie() async throws {
+        let clip = try await Self.makeClip("retry.mov", ["-c:v", "libx264", "-crf", "18", "-pix_fmt", "yuv420p"])
+        let backend = try #require(try await DecoderRouter.open(clip, ffmpeg: Self.tools) as? AVFoundationBackend)
+        let duration = backend.info.duration
+        #expect(abs(duration - 2) < 0.05)
+        let last = backend.retryTime(of: Self.frameCount - 1).seconds
+        #expect(abs(last - (duration - 0.5)) < 1e-3)
+        #expect(abs(backend.retryTime(of: 10).seconds - 10.5 / 25) < 1e-4)
+        // The batch at a larger width decodes the last frame of a B-frame clip.
+        var results: [FrameResult] = []
+        for await result in backend.frames([0, Self.frameCount - 1], maxWidth: 1920) { results.append(result) }
+        let frame = try #require(results.first { $0.frameNumber == Self.frameCount - 1 }).result.get()
+        #expect(Self.frameNumber(in: frame.image) == frame.actualFrame)
+        #expect(frame.actualFrame == Self.frameCount - 1)
     }
 
     @Test func mkvWithoutFFmpegExplains() async throws {
