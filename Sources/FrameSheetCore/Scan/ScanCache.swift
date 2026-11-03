@@ -37,7 +37,10 @@ public struct ScanData: Sendable, Equatable {
 
     mutating func append(difference: Float, color: RGB8) {
         differences.append(difference)
-        colors.append(contentsOf: [color.red, color.green, color.blue])
+        // Three appends: an array literal here would allocate every frame.
+        colors.append(color.red)
+        colors.append(color.green)
+        colors.append(color.blue)
     }
 
     /// Fills a frame the decoder skipped with the previous frame's color and

@@ -387,6 +387,15 @@ private extension Library {
         #expect(FrameInfoText.text(.frames, frame: 42, fps: 25, timecodeFormat: .minutesSeconds) == "0042")
         #expect(FrameInfoText.next(after: .hidden) == .frames)
         #expect(abs(FrameInfoText.fontSize(size: 10, thumbHeight: 200) - 15) < 1e-9)
+        // Max size: points per 1000 points of print width.
+        #expect(abs(FrameInfoText.fontSize(size: 10, thumbHeight: 200, maxSize: 25, printWidth: 1000) - 15) < 1e-9)
+        #expect(abs(FrameInfoText.fontSize(size: 10, thumbHeight: 800, maxSize: 25, printWidth: 1000) - 25) < 1e-9)
+        #expect(abs(FrameInfoText.fontSize(size: 10, thumbHeight: 800, maxSize: 25, printWidth: 4000) - 60) < 1e-9)
+        // The default cap leaves a two-column landscape sheet at Size 10 as
+        // it was: thumbs about 0.27 of the print width high.
+        #expect(FrameInfoText.fontSize(size: 10, thumbHeight: 270, maxSize: Defaults.frameInfoMaxSize, printWidth: 1000)
+            == FrameInfoText.fontSize(size: 10, thumbHeight: 270))
+        #expect(FrameNumberFormat.frame.label == "Frame" && FrameNumberFormat.frameOfLast.label == "Frame / Total")
     }
 
     @Test func zoomSteps() {

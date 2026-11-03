@@ -60,6 +60,13 @@ public enum FrameInfoText {
         size / 10 * 0.075 * thumbHeight
     }
 
+    /// The font size capped by the Max size setting, which is in points per
+    /// 1000 points of print width: the window and the saved print (laid out
+    /// at the output width) cap at the same fraction of the print.
+    public static func fontSize(size: Double, thumbHeight: Double, maxSize: Double, printWidth: Double) -> Double {
+        min(fontSize(size: size, thumbHeight: thumbHeight), maxSize * max(0, printWidth) / 1000)
+    }
+
     /// Frame info cycles frames → timecode → none (toolbar).
     public static func next(after mode: FrameInfo) -> FrameInfo {
         switch mode {

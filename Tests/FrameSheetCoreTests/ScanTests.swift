@@ -1,3 +1,4 @@
+import AVFoundation
 import CoreGraphics
 import Foundation
 import Synchronization
@@ -200,6 +201,71 @@ private func starts(_ spans: [SceneSpan]) -> [Int] { spans.map(\.start) }
         #expect(rebuilt.scenes.map(\.start) == [0, 50])
         #expect(rebuilt.thumbs.map(\.frameNumber) == [25, 125])
         #expect(rebuilt.thumbs.map(\.index) == [0, 1])
+        // Scenes starting where one did keep its id (and their thumb's).
+        #expect(rebuilt.scenes.map(\.id) == [sheet.scenes[0].id, sheet.scenes[1].id])
+        #expect(rebuilt.thumbs.map(\.id) == rebuilt.scenes.map(\.id))
+        library.replaceScenes(ref, with: SceneList.scenes(from: scan, threshold: 6))
+        let again = library.sheet(sheet.id, of: file.id)!
+        #expect(again.scenes.map(\.start) == [0, 50, 100, 150])
+        #expect(again.scenes[0].id == sheet.scenes[0].id && again.scenes[1].id == sheet.scenes[1].id)
+        #expect(Set(again.scenes.map(\.id)).count == 4)
+        #expect(again.thumbs.map(\.id) == again.scenes.map(\.id))
+    }
+
+    /// The scene list a running scan streams grows at its end; the scenes
+    /// already there keep their ids from one update to the next.
+    @Test func streamedScenesKeepTheirIds() throws {
+        var library = Library()
+        let file = MovieFile(
+            url: URL(fileURLWithPath: "/movies/a.mp4"), duration: 40, frameCount: 1000, fps: 25,
+            width: 640, height: 360, size: 1, fourCC: "avc1")
+        library.files.append(file)
+        let added = library.addShotSheet(to: file.id, scenes: [])
+        let sheet = try #require(added)
+        let ref = SheetRef(fileId: file.id, sheetId: sheet.id)
+        var scan = ScanData(method: .mean, expectedFrameCount: 1000)
+        var previous: [Int: UUID] = [:]
+        for end in stride(from: 100, through: 1000, by: 100) {
+            while scan.frameCount < end {
+                scan.append(difference: scan.frameCount % 100 == 0 ? 50 : 0, color: .black)
+            }
+            library.replaceScenes(ref, with: SceneList.scenes(from: scan, threshold: 6))
+            let scenes = library.sheet(sheet.id, of: file.id)!.scenes
+            for scene in scenes {
+                if let id = previous[scene.start] { #expect(scene.id == id, "scene at \(scene.start)") }
+            }
+            previous = Dictionary(uniqueKeysWithValues: scenes.map { ($0.start, $0.id) })
+        }
+        #expect(previous.count == 10)
+    }
+}
+
+@Suite struct ApplyInOutTests {
+    @Test func recapturesAnIntervalSheetBetweenInAndOut() throws {
+        var library = Library()
+        let file = MovieFile(
+            url: URL(fileURLWithPath: "/movies/a.mp4"), duration: 40, frameCount: 1000, fps: 25,
+            width: 640, height: 360, size: 1, fourCC: "avc1")
+        library.files.append(file)
+        let added = library.addDefaultIntervalSheet(to: file.id)
+        let sheet = try #require(added)
+        let ref = SheetRef(fileId: file.id, sheetId: sheet.id)
+        library.applyInOut(ref, inFrame: 120, outFrame: 880)
+        let after = try #require(library.sheet(sheet.id, of: file.id))
+        #expect(library.file(file.id)?.inFrame == 120)
+        #expect(library.file(file.id)?.outFrame == 880)
+        #expect(after.thumbs.count == 16)
+        #expect(after.thumbs.first?.frameNumber == 120)
+        #expect(after.thumbs.last?.frameNumber == 880)
+        #expect(after.thumbs.allSatisfy { (120...880).contains($0.frameNumber) })
+        // Clamped to the movie; a shot sheet keeps its thumbs.
+        let addedShot = library.addShotSheet(
+            to: file.id, scenes: [SceneSpan(start: 0, length: 1000, colorRGB: [1, 2, 3])])
+        let shot = try #require(addedShot)
+        library.applyInOut(SheetRef(fileId: file.id, sheetId: shot.id), inFrame: -5, outFrame: 5000)
+        #expect(library.file(file.id)?.inFrame == 0)
+        #expect(library.file(file.id)?.outFrame == 999)
+        #expect(library.sheet(shot.id, of: file.id)?.thumbs.map(\.frameNumber) == [500])
     }
 }
 
@@ -356,9 +422,16 @@ private func starts(_ spans: [SceneSpan]) -> [Int] { spans.map(\.start) }
             Settings.self, from: Data(#"{"shotDetectionMethod":"other","shotDetectionThreshold":99}"#.utf8))
         #expect(odd.shotDetectionMethod == .mean)
         #expect(odd.shotDetectionThreshold == 40)
+        // Thumb label Max size: default, clamped, and tolerant of a wrong type.
+        #expect(settings.frameInfoMaxSize == Defaults.frameInfoMaxSize)
+        let big = try JSONDecoder().decode(Settings.self, from: Data(#"{"frameInfoMaxSize":500}"#.utf8))
+        #expect(big.frameInfoMaxSize == 100)
+        let wrong = try JSONDecoder().decode(Settings.self, from: Data(#"{"frameInfoMaxSize":"big"}"#.utf8))
+        #expect(wrong.frameInfoMaxSize == Defaults.frameInfoMaxSize)
         var changed = Settings()
         changed.shotDetectionMethod = .histogram
         changed.automaticInOut = true
+        changed.frameInfoMaxSize = 12
         let back = try JSONDecoder().decode(Settings.self, from: JSONEncoder().encode(changed))
         #expect(back == changed)
     }
@@ -594,6 +667,43 @@ private func brightestQuadrant(_ image: CGImage) -> Int {
         #expect(observer.state.withLock { $0.frames } == Array(0..<Self.frameCount))
     }
 
+    /// The same with open GOPs (known issue 5): the reader reopened after
+    /// the pause starts at a closed GOP instead of failing at the keyframe
+    /// before the resume point and falling back to a read from the start.
+    @Test(.enabled(if: ShotScanIntegrationTests.tools != nil)) func openGOPPauseReopensWithoutFallback() async throws {
+        let tools = try #require(Self.tools)
+        let dir = FileManager.default.temporaryDirectory.appending(path: "FrameSheetScanClips-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let clip = dir.appending(path: "open.mp4")
+        let made = try await ProcessRunner.run(tools.ffmpeg, [
+            "-hide_banner", "-loglevel", "error", "-y",
+            "-f", "lavfi", "-i", "color=c=black:s=320x180:r=25:d=6,format=yuv420p,\(Self.segments)",
+            "-frames:v", "\(Self.frameCount)", "-c:v", "libx264",
+            "-x264-params", "keyint=16:min-keyint=16:scenecut=0:bframes=3:b-adapt=0:open-gop=1", "-pix_fmt", "yuv420p", clip.path,
+        ])
+        try #require(made.status == 0, "\(made.stderrText)")
+        let backend = try await DecoderRouter.open(clip, ffmpeg: tools)
+        let observer = RecordingObserver(trigger: 70) {
+            Task { _ = try? await backend.frame(5, maxWidth: 160) }
+            for _ in 0..<2000 where !(await DecodeGate.shared.hasWaiters) {
+                try? await Task.sleep(for: .milliseconds(1))
+            }
+        }
+        var req = request(clip, observer: observer)
+        req.yieldCheckFrames = 4
+        req.minimumRunBeforeYield = .zero
+        let diagnostics = ScanDiagnostics()
+        req.diagnostics = diagnostics
+        let result = await scan(req)
+        #expect(result.failure == nil, "\(result.failure ?? "")")
+        try checkCuts(result.data)
+        #expect(observer.state.withLock { $0.frames } == Array(0..<Self.frameCount))
+        let values = diagnostics.snapshot
+        #expect(values.pauses >= 1 && values.readers >= 2, "\(values)")
+        #expect(values.fallbacksToStart == 0, "\(values)")
+    }
+
     /// A rotated track is scanned upright, as the thumbnails show it.
     @Test(.enabled(if: ShotScanIntegrationTests.tools != nil)) func rotatedTrackIsUpright() async throws {
         let tools = try #require(Self.tools)
@@ -625,5 +735,66 @@ private func brightestQuadrant(_ image: CGImage) -> Int {
             #expect(points.inFrame == 12, "\(name)")
             #expect(points.outFrame == 51, "\(name)")
         }
+    }
+
+    /// The app's path for a movie added with Automatic IN/OUT on: the entry
+    /// takes the detected IN and OUT, and its default sheet lies between.
+    @Test(.enabled(if: ShotScanIntegrationTests.tools != nil)) func automaticInOutReachesTheDefaultSheet() async throws {
+        let filter = "geq=lum='if(lt(N,12)+gte(N,52),16,200)':cb=128:cr=128"
+        for name in ["fade.mp4", "fade.mkv"] {
+            let clip = try await Self.makeClip(name, filter: filter, frames: 60)
+            let backend = try await DecoderRouter.open(clip, ffmpeg: Self.tools)
+            let info = backend.info
+            var file = MovieFile(
+                url: clip, duration: info.duration, frameCount: info.frameCount, fps: info.fps,
+                width: info.width, height: info.height, size: info.size, fourCC: info.fourCC)
+            let applied = try await AutoInOut.apply(to: &file, ffmpeg: Self.tools)
+            #expect(applied, "\(name)")
+            var library = Library()
+            library.files.append(file)
+            let added = library.addDefaultIntervalSheet(to: file.id)
+            let sheet = try #require(added)
+            let frames = sheet.thumbs.map(\.frameNumber)
+            #expect(frames.first == 12, "\(name): \(frames)")
+            #expect(frames.last == 51, "\(name): \(frames)")
+        }
+    }
+
+    /// x264 with open GOPs: keyframes after the first are recovery points
+    /// whose leading B frames refer to the GOP before. The reader start
+    /// lookup skips them; a closed-GOP clip starts at its own keyframe.
+    @Test(.enabled(if: ShotScanIntegrationTests.tools != nil)) func closedGOPStart() async throws {
+        let tools = try #require(Self.tools)
+        let dir = FileManager.default.temporaryDirectory.appending(path: "FrameSheetGOP-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        // The asset is returned too: a track does not keep its asset alive.
+        func make(_ name: String, openGOP: Bool) async throws -> (AVURLAsset, AVAssetTrack) {
+            let url = dir.appending(path: name)
+            let result = try await ProcessRunner.run(tools.ffmpeg, [
+                "-hide_banner", "-loglevel", "error", "-y", "-f", "lavfi", "-i", "testsrc2=s=320x180:r=24:d=3",
+                "-c:v", "libx264",
+                "-x264-params", "keyint=16:min-keyint=16:scenecut=0:bframes=3:b-adapt=0:open-gop=\(openGOP ? 1 : 0)",
+                "-pix_fmt", "yuv420p", url.path,
+            ])
+            try #require(result.status == 0, "\(result.stderrText)")
+            let asset = AVURLAsset(url: url)
+            let track = try await asset.loadTracks(withMediaType: .video).first
+            return (asset, try #require(track))
+        }
+        // Keyframes at frames 0, 16, 32 and 48 (24 fps); with open GOPs
+        // every one after frame 0 has leading frames (as in DecodeTests).
+        let at = CMTime(value: 52, timescale: 24)
+        let (closedAsset, closed) = try await make("closed.mp4", openGOP: false)
+        let start = await ClosedGOPStart.time(closed, atOrBefore: at, notBefore: .zero)
+        #expect(start.map { abs($0.seconds - 2) < 0.01 } == true, "\(String(describing: start?.seconds))")
+        let (openAsset, open) = try await make("open.mp4", openGOP: true)
+        let foundOpenStart = await ClosedGOPStart.time(open, atOrBefore: at, notBefore: .zero)
+        let openStart = try #require(foundOpenStart)
+        #expect(openStart.seconds < 0.01, "\(openStart.seconds)")
+        // Too far back is no start.
+        let near = await ClosedGOPStart.time(open, atOrBefore: at, notBefore: CMTime(value: 1, timescale: 1))
+        #expect(near == nil, "\(String(describing: near?.seconds))")
+        withExtendedLifetime((closedAsset, openAsset)) {}
     }
 }

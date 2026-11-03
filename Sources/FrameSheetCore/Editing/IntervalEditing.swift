@@ -133,6 +133,22 @@ extension Library {
         recapture(ref, count: sheet.visibleThumbs.count, start: lowest, stop: frame, limitToRange: true)
     }
 
+    /// Automatic IN/OUT → Apply to current sheet: stores the movie's IN and
+    /// OUT (clamped to the movie) and, on an interval sheet, recaptures as
+    /// many thumbs as it shows between them (all 16 of the default count
+    /// when none is visible).
+    public mutating func applyInOut(_ ref: SheetRef, inFrame: Int, outFrame: Int) {
+        guard let i = files.firstIndex(where: { $0.id == ref.fileId }) else { return }
+        let last = max(0, files[i].frameCount - 1)
+        let start = min(max(0, inFrame), last)
+        let stop = min(max(start, outFrame), last)
+        files[i].inFrame = start
+        files[i].outFrame = stop
+        guard let sheet = sheet(ref.sheetId, of: ref.fileId), sheet.type == .interval else { return }
+        let count = sheet.visibleThumbs.isEmpty ? Defaults.thumbCount : sheet.visibleThumbs.count
+        recapture(ref, count: count, start: start, stop: stop, limitToRange: true)
+    }
+
     /// Replaces the sheet's thumbs with `count` frames between start and stop
     /// (MoviePrint `addIntervalSheet` on an existing sheet).
     public mutating func recapture(_ ref: SheetRef, count: Int, start: Int, stop: Int, limitToRange: Bool) {

@@ -41,7 +41,7 @@ struct PrintView: View {
                 let frame = geometry.thumbFrame(at: index)
                 PrintThumb(
                     file: file, thumb: thumb, image: image(thumb), settings: settings, size: frame.size,
-                    cornerRadius: geometry.borderRadius)
+                    printWidth: size.width, cornerRadius: geometry.borderRadius)
                     .frame(width: frame.width, height: frame.height)
                     .offset(x: frame.minX, y: frame.minY)
             }
@@ -63,7 +63,7 @@ struct PrintView: View {
                 PrintScene(
                     file: file, scene: scene, thumb: thumb,
                     image: settings.timelineShowImages ? thumb.flatMap(image) : nil, settings: settings,
-                    size: frame.size, cornerRadius: min(geometry.borderRadius, frame.width / 2))
+                    size: frame.size, printWidth: size.width, cornerRadius: min(geometry.borderRadius, frame.width / 2))
                     .frame(width: frame.width, height: frame.height)
                     .offset(x: frame.minX, y: frame.minY)
             }
@@ -81,6 +81,7 @@ private struct PrintScene: View {
     let image: CGImage?
     let settings: FrameSheetCore.Settings
     let size: CGSize
+    let printWidth: CGFloat
     let cornerRadius: Double
 
     var body: some View {
@@ -101,7 +102,8 @@ private struct PrintScene: View {
         .frame(width: size.width, height: size.height)
         .overlay {
             if let thumb {
-                FrameInfoLabel(file: file, thumb: thumb, settings: settings, thumbHeight: size.height)
+                FrameInfoLabel(
+                    file: file, thumb: thumb, settings: settings, thumbHeight: size.height, printWidth: printWidth)
             }
         }
         .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
@@ -117,6 +119,7 @@ private struct PrintThumb: View {
     let image: CGImage?
     let settings: FrameSheetCore.Settings
     let size: CGSize
+    let printWidth: CGFloat
     let cornerRadius: Double
 
     var body: some View {
@@ -131,7 +134,10 @@ private struct PrintThumb: View {
             }
         }
         .frame(width: size.width, height: size.height)
-        .overlay { FrameInfoLabel(file: file, thumb: thumb, settings: settings, thumbHeight: size.height) }
+        .overlay {
+            FrameInfoLabel(
+                file: file, thumb: thumb, settings: settings, thumbHeight: size.height, printWidth: printWidth)
+        }
         .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
         .opacity(thumb.hidden ? 0.3 : 1)
     }
@@ -144,13 +150,17 @@ private struct FrameInfoLabel: View {
     let thumb: Thumb
     let settings: FrameSheetCore.Settings
     let thumbHeight: CGFloat
+    /// Width of the whole print, which the Max size is relative to.
+    let printWidth: CGFloat
 
     var body: some View {
         if let text = FrameInfoText.text(
             settings.frameInfo, frame: thumb.frameNumber, fps: file.fps,
             timecodeFormat: settings.frameInfoTimecodeFormat, frameFormat: settings.frameInfoFrameFormat,
             frameCount: file.frameCount) {
-            let size = max(1, FrameInfoText.fontSize(size: settings.frameInfoSize, thumbHeight: thumbHeight))
+            let size = max(1, FrameInfoText.fontSize(
+                size: settings.frameInfoSize, thumbHeight: thumbHeight, maxSize: settings.frameInfoMaxSize,
+                printWidth: printWidth))
             Text(text)
                 .font(font(settings.frameInfoFontFamily, size: size))
                 .foregroundStyle(Color(settings.frameInfoColor))

@@ -54,6 +54,12 @@ final class AppModel {
     /// The shot scan in progress (one at a time), shown in the toast with
     /// Cancel; its scenes stream into `scanJob.sheetId`.
     var scanJob: ScanJob?
+    /// The sheet a scan streams into, set when the scan starts and cleared
+    /// when it ends. Thumb views and controls read this, not `scanJob`, so
+    /// the progress updates redraw only the toast.
+    var streamingSheet: SheetRef?
+    /// Automatic IN/OUT → Apply to current sheet is detecting.
+    var isDetectingInOut = false
     var showMovieList = true
     var showSettings = true
     /// Missing movie files by id (checked on launch and on open).
@@ -281,6 +287,17 @@ final class AppModel {
         for file in library.files { loadPoster(file) }
     }
 
+    /// Scenes streamed by a running scan: applied like `update` but not
+    /// saved (the finished sheet is), so a long scan does not write the
+    /// library every second.
+    func updateWithoutSaving(_ change: (inout Library) -> Void) {
+        document.update(change)
+        if let id = selectedThumbId, currentSheet?.thumbs.contains(where: { $0.id == id }) != true {
+            selectedThumbId = nil
+        }
+        loadCurrentSheet()
+    }
+
     private func didChange() {
         if let id = selectedThumbId, currentSheet?.thumbs.contains(where: { $0.id == id }) != true {
             selectedThumbId = nil
@@ -477,11 +494,12 @@ final class AppModel {
                         height: info.height, size: info.size, fourCC: info.fourCC)
                     // Experimental (§10): IN/OUT from the first and last
                     // frames, before the default sheet is made between them.
-                    if library.settings.automaticInOut,
-                       let points = try? await AutoInOut.detect(url, ffmpeg: await ffmpegTools()),
-                       points.inFrame < points.outFrame {
-                        file.inFrame = points.inFrame
-                        file.outFrame = points.outFrame
+                    if library.settings.automaticInOut {
+                        do {
+                            try await AutoInOut.apply(to: &file, ffmpeg: await ffmpegTools())
+                        } catch {
+                            toast = "\(url.lastPathComponent): automatic IN/OUT failed: \(error.localizedDescription)"
+                        }
                     }
                     added.append(file)
                     backends[file.id] = backend

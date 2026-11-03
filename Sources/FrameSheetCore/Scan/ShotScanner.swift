@@ -1,6 +1,7 @@
 import AVFoundation
 import CoreVideo
 import Foundation
+import Synchronization
 
 // The shot scan of §10: one sequential pass over every frame, decoded at up
 // to 720 px BGRA with the track's orientation applied; the 240 px metric
@@ -15,7 +16,9 @@ import Foundation
 // waiters at the gate and, at most once per `minimumRunBeforeYield`, lets
 // them go first. On the AVFoundation path it closes its reader before
 // releasing the gate (an idle reader still holds a decoder session and reads
-// ahead) and opens a new one at the last frame read; the ffmpeg process just
+// ahead) and opens a new one at the last frame read (from a closed GOP before
+// it in open-GOP files, `ClosedGOPStart`), and it runs at least a few times as
+// long as that reopen took before pausing again; the ffmpeg process just
 // pauses, since software decode does not use the hardware decoder.
 
 /// What a scan reports while it runs. A stream ends after `finished`,
@@ -65,8 +68,19 @@ public struct ScanRequest: Sendable {
     /// Tuning, changed by tests.
     var yieldCheckFrames = 30
     var minimumRunBeforeYield: Duration = .seconds(1)
+    /// After a pause the scan runs at least this many times as long as the
+    /// last reopen took (reader start and pre-roll), so pausing never costs
+    /// more than about a quarter of the scan, whatever the GOP length.
+    var reopenCostFactor = 4
     var checkpointInterval: Duration = .seconds(30)
     var eventInterval: Duration = .milliseconds(250)
+    /// Scene lists are rebuilt over every frame read so far, so they are
+    /// sent less often than the progress (the app applies one a second).
+    var sceneInterval: Duration = .seconds(1)
+    /// Lets waiting thumb requests go first in turns; off only to measure.
+    var yieldsToWaiters = true
+    /// Counters for measuring a scan (the scan probe); nil in the app.
+    var diagnostics: ScanDiagnostics?
     /// Stops as if cancelled once this many frames are stored (tests).
     var stopAfterFrames: Int?
 
@@ -123,6 +137,82 @@ public enum ShotScanner {
         let session = ScanSession(request: request, source: source, data: start, continuation: continuation)
         await session.run()
     }
+}
+
+/// Where a reader that has to deliver the frames from a time on can start,
+/// for open-GOP files (known issue 5): a reader whose range starts in a GOP
+/// with leading frames (frames after the keyframe in decode order but shown
+/// before it) can stop with -11821, while one starting at a keyframe without
+/// leading frames decodes on through the following open GOPs, as a read from
+/// the start does. In a closed-GOP file this is the keyframe AVFoundation
+/// would start from anyway.
+enum ClosedGOPStart {
+    /// How far back a start may lie; a scan reading more than this again
+    /// would cost more than the thumb requests it pauses for.
+    static let maximumPreRoll = CMTime(seconds: 30, preferredTimescale: 600)
+    /// Samples a lookup steps through at most.
+    static let maximumSteps = 100_000
+    /// Samples after a keyframe searched for leading frames.
+    static let leadingFrameWindow = 64
+
+    /// Presentation time (track time) of the latest full sync sample at or
+    /// before `time` without leading frames, not earlier than `notBefore`;
+    /// nil without sample cursors or when there is none in that range.
+    static func time(_ track: AVAssetTrack, atOrBefore time: CMTime, notBefore: CMTime) async -> CMTime? {
+        guard let segments = try? await track.load(.segments) else { return nil }
+        // Sample cursors work in media time.
+        let offset = segments.first { !$0.isEmpty }
+            .map { $0.timeMapping.target.start - $0.timeMapping.source.start } ?? .zero
+        guard let cursor = track.makeSampleCursor(presentationTimeStamp: time - offset) else { return nil }
+        for _ in 0..<maximumSteps {
+            let pts = cursor.presentationTimeStamp + offset
+            if cursor.currentSampleSyncInfo.sampleIsFullSync.boolValue {
+                if pts < notBefore { return nil }
+                if pts <= time, !hasLeadingFrames(cursor) { return pts }
+            }
+            if cursor.stepInDecodeOrder(byCount: -1) == 0 { return nil }
+        }
+        return nil
+    }
+
+    /// Whether a sample after this keyframe in decode order, before the
+    /// next keyframe, is shown before it.
+    private static func hasLeadingFrames(_ keyframe: AVSampleCursor) -> Bool {
+        guard let probe = keyframe.copy() as? AVSampleCursor else { return true }
+        let pts = keyframe.presentationTimeStamp
+        for _ in 0..<leadingFrameWindow {
+            if probe.stepInDecodeOrder(byCount: 1) == 0 { return false }
+            if probe.currentSampleSyncInfo.sampleIsFullSync.boolValue { return false }
+            if probe.presentationTimeStamp < pts { return true }
+        }
+        return false
+    }
+}
+
+/// What a scan spent on sharing the decoder: pauses for thumb requests,
+/// reader reopens and the frames decoded only to reach the resume point.
+final class ScanDiagnostics: Sendable {
+    struct Values: Sendable {
+        /// Readers opened, the first one included.
+        var readers = 0
+        /// Times the scan let waiting decodes go first.
+        var pauses = 0
+        /// Time between releasing the gate and getting it back.
+        var gateWait: Duration = .zero
+        /// From creating a reader after a pause to its first wanted frame.
+        var reopenTime: Duration = .zero
+        /// From creating the first reader to its first wanted frame.
+        var startTime: Duration = .zero
+        /// Mid-file readers that failed and were replaced by a read from 0.
+        var fallbacksToStart = 0
+        /// Frames decoded before the resume point (pre-roll), thrown away.
+        var discardedFrames = 0
+    }
+
+    let values = Mutex(Values())
+
+    func update(_ change: (inout Values) -> Void) { values.withLock { change(&$0) } }
+    var snapshot: Values { values.withLock { $0 } }
 }
 
 /// Carries a sample's image buffer out of `withUnsafeSampleBuffer`. The
@@ -210,8 +300,11 @@ private final class ScanSession {
     /// The frame re-read to restore the previous frame's values.
     var seedFrame: Int?
     var lastEvent: ContinuousClock.Instant
+    var lastScenes: ContinuousClock.Instant
     var lastCheckpoint: ContinuousClock.Instant
     var resumedAt: ContinuousClock.Instant
+    /// What the last reopen after a pause took until its first wanted frame.
+    var lastReopenCost: Duration = .zero
     var yieldsAllowed = true
 
     init(request: ScanRequest, source: ScanSource, data: ScanData, continuation: AsyncStream<ScanEvent>.Continuation) {
@@ -224,6 +317,7 @@ private final class ScanSession {
         converter = ScanFrameConverter(uprightWidth: size.width, uprightHeight: size.height, orientation: source.orientation)
         let now = ContinuousClock.now
         lastEvent = now
+        lastScenes = now
         lastCheckpoint = now
         resumedAt = now
         self.data.reserve(source.info.frameCount + 16)
@@ -304,21 +398,30 @@ private final class ScanSession {
         if now - lastEvent >= request.eventInterval {
             lastEvent = now
             continuation.yield(.progress(framesScanned: data.frameCount, frameCount: expected))
+        }
+        if now - lastScenes >= request.sceneInterval {
+            lastScenes = now
             continuation.yield(.scenes(SceneList.scenes(from: data, threshold: request.threshold)))
         }
         if now - lastCheckpoint >= request.checkpointInterval {
             lastCheckpoint = now
             try? request.store?.save(data, for: request.fileId)
         }
-        guard yieldsAllowed, now - resumedAt >= request.minimumRunBeforeYield else { return false }
+        let run = max(request.minimumRunBeforeYield, lastReopenCost * request.reopenCostFactor)
+        guard request.yieldsToWaiters, yieldsAllowed, now - resumedAt >= run else { return false }
         return await DecodeGate.shared.hasWaiters
     }
 
     /// Lets the waiting decodes run, then takes the gate back.
     func yieldGate() async {
+        let released = clock.now
         await DecodeGate.shared.release()
         await DecodeGate.shared.acquire()
         resumedAt = clock.now
+        request.diagnostics?.update {
+            $0.pauses += 1
+            $0.gateWait += resumedAt - released
+        }
     }
 
     // MARK: AVFoundation
@@ -335,6 +438,7 @@ private final class ScanSession {
                 // A reader that starts inside the movie can fail on open-GOP
                 // files (known issue 5); read from the start instead, without
                 // further pauses.
+                request.diagnostics?.update { $0.fallbacksToStart += 1 }
                 fromStart = true
                 yieldsAllowed = false
                 continue
@@ -351,11 +455,23 @@ private final class ScanSession {
         guard let track = try await asset.loadTracks(withMediaType: .video).first else {
             throw DecodeError("AVFoundation found no video track")
         }
+        let opened = clock.now
         let reader = try AVAssetReader(asset: asset)
+        let diagnostics = request.diagnostics
+        diagnostics?.update { $0.readers += 1 }
+        var reachedResumePoint = false
         if first > 0 {
-            let time = startTime + (Double(first) - 0.25) / fps
-            reader.timeRange = CMTimeRange(
-                start: CMTime(seconds: time, preferredTimescale: 600_000), duration: .positiveInfinity)
+            let resume = CMTime(seconds: startTime + (Double(first) - 0.25) / fps, preferredTimescale: 600_000)
+            // In an open-GOP file a reader starting at the keyframe before
+            // `first` can fail; start at a closed GOP shortly before instead,
+            // and decode up to `first` (the frames before are skipped).
+            var start = resume
+            if let closed = await ClosedGOPStart.time(
+                track, atOrBefore: resume, notBefore: resume - ClosedGOPStart.maximumPreRoll),
+               closed < resume {
+                start = closed
+            }
+            reader.timeRange = CMTimeRange(start: start, duration: .positiveInfinity)
         }
         let output = AVAssetReaderTrackOutput(track: track, outputSettings: [
             kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
@@ -371,7 +487,18 @@ private final class ScanSession {
             let pts = sample.presentationTimeStamp.seconds
             guard pts.isFinite else { continue }
             let frame = max(0, Int(((pts - startTime) * fps).rounded()))
-            guard wants(frame) else { continue }
+            guard wants(frame) else {
+                diagnostics?.update { $0.discardedFrames += 1 }
+                continue
+            }
+            if !reachedResumePoint {
+                reachedResumePoint = true
+                let elapsed = clock.now - opened
+                if first > 0 { lastReopenCost = elapsed }
+                diagnostics?.update {
+                    if $0.readers == 1 { $0.startTime += elapsed } else { $0.reopenTime += elapsed }
+                }
+            }
             guard let buffer = sample.withUnsafeSampleBuffer({ PixelBufferBox($0) })?.buffer else { continue }
             CVPixelBufferLockBaseAddress(buffer, .readOnly)
             do {
@@ -390,6 +517,12 @@ private final class ScanSession {
             }
             count += 1
             if count % request.yieldCheckFrames == 0, await tick() { return .yielded }
+        }
+        // A reader that fails may end its samples without throwing; short of
+        // the expected frames, that is a failure (and mid-file, the cue for
+        // the read from the start), not the end of the movie.
+        if reader.status == .failed, data.frameCount < source.info.frameCount {
+            throw reader.error ?? DecodeError("AVFoundation stopped reading at frame \(data.frameCount)")
         }
         return .finished
     }

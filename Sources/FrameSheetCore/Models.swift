@@ -193,6 +193,9 @@ public enum Defaults {
     /// `DEFAULT_TIMELINEVIEW_MIN_DISPLAY_SCENE_LENGTH_IN_FRAMES`.
     public static let timelineSceneWidthRatio = 50.0
     public static let timelineMinSceneLength = 10
+    /// Thumb label maximum, in points per 1000 points of print width.
+    public static let frameInfoMaxSize = 25.0
+    public static let frameInfoMaxSizeRange = 4.0...100.0
 }
 
 public enum FrameInfo: String, Codable, Sendable, CaseIterable {
@@ -223,8 +226,8 @@ public enum FrameNumberFormat: String, Codable, Sendable, CaseIterable {
 
     public var label: String {
         switch self {
-        case .frame: "9920"
-        case .frameOfLast: "9920 / 17604"
+        case .frame: "Frame"
+        case .frameOfLast: "Frame / Total"
         }
     }
 }
@@ -366,6 +369,11 @@ public struct Settings: Codable, Sendable, Equatable {
     public var frameInfoFontFamily = FrameInfoFamily.systemMono
     /// 1–100, relative to the thumb height.
     public var frameInfoSize: Double = 10
+    /// The largest label, in points per 1000 points of print width, so the
+    /// saved print (laid out at the output width) matches the window; caps
+    /// the size on very large thumbs and scenes. The default leaves
+    /// landscape sheets of two or more columns at Size 10 unchanged.
+    public var frameInfoMaxSize: Double = Defaults.frameInfoMaxSize
     /// Distance from the thumb edge, 0–50, left/right and top/bottom.
     /// Older files have one `frameInfoMargin`, which seeds both.
     public var frameInfoMarginHorizontal: Double = 0
@@ -443,7 +451,7 @@ public struct Settings: Codable, Sendable, Equatable {
         case exactFramesWithFFmpeg
         case shotDetectionMethod, shotDetectionThreshold, automaticInOut
         case timelineNaturalFlow, timelineSceneWidthRatio, timelineMinSceneLength, timelineShowImages
-        case frameInfoColor, frameInfoBackground, frameInfoPosition, frameInfoSize
+        case frameInfoColor, frameInfoBackground, frameInfoPosition, frameInfoSize, frameInfoMaxSize
         case frameInfoFontFamily, frameInfoMarginHorizontal, frameInfoMarginVertical, frameInfoMarginsLinked
         case frameInfoTimecodeFormat, frameInfoFrameFormat
         case outputFolder, outputSameFolderAsMovie, outputSize, outputSizeMax, outputFormat, outputQuality
@@ -502,6 +510,9 @@ public struct Settings: Codable, Sendable, Equatable {
         frameInfoFontFamily = (try? c.decodeIfPresent(String.self, forKey: .frameInfoFontFamily))
             ?? oldFont ?? d.frameInfoFontFamily
         frameInfoSize = try c.decodeIfPresent(Double.self, forKey: .frameInfoSize) ?? d.frameInfoSize
+        frameInfoMaxSize = (try? c.decodeIfPresent(Double.self, forKey: .frameInfoMaxSize))
+            .map { min(max($0, Defaults.frameInfoMaxSizeRange.lowerBound), Defaults.frameInfoMaxSizeRange.upperBound) }
+            ?? d.frameInfoMaxSize
         let oldInfoMargin = try? legacy.decodeIfPresent(Double.self, forKey: .frameInfoMargin)
         frameInfoMarginHorizontal = try c.decodeIfPresent(Double.self, forKey: .frameInfoMarginHorizontal)
             ?? oldInfoMargin ?? d.frameInfoMarginHorizontal

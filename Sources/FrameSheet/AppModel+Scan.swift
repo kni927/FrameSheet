@@ -38,12 +38,12 @@ enum ScanCacheState {
 /// being filled shows its mean colors only until the scan ends, so the scan
 /// is not made to reopen its reader for each new scene's thumb.
 extension AppModel {
-    var isScanning: Bool { scanJob != nil }
+    var isScanning: Bool { streamingSheet != nil }
 
     /// The current sheet is the one a scan streams into.
     var isStreamingSheetShown: Bool {
-        guard let job = scanJob else { return false }
-        return job.fileId == library.currentFileId && job.sheetId == library.currentSheetId
+        guard let ref = streamingSheet else { return false }
+        return ref.fileId == library.currentFileId && ref.sheetId == library.currentSheetId
     }
 
     func scanCacheState(_ fileId: UUID) -> ScanCacheState {
@@ -89,6 +89,7 @@ extension AppModel {
         let ref = SheetRef(fileId: fileId, sheetId: sheetId)
         selectedThumbId = nil
         scanJob = ScanJob(fileId: fileId, fileName: file.name, sheetId: sheetId)
+        streamingSheet = ref
         let store = scanStore
         scanTask = Task {
             let request = ScanRequest(
@@ -109,11 +110,12 @@ extension AppModel {
                     scanJob?.framesScanned = scanned
                     scanJob?.frameCount = frameCount
                 case .scenes(let spans):
-                    // At most once a second: each update rebuilds the sheet.
+                    // At most once a second: each update rebuilds the sheet
+                    // (scenes keep their ids, so the views mostly stay).
                     let now = clock.now
                     if lastApplied.map({ now - $0 >= .seconds(1) }) ?? true {
                         lastApplied = now
-                        update { $0.replaceScenes(ref, with: spans) }
+                        updateWithoutSaving { $0.replaceScenes(ref, with: spans) }
                     }
                 case .finished(let data):
                     ended = true
@@ -142,6 +144,7 @@ extension AppModel {
         let index = library.sheets[ref.fileId]?.firstIndex { $0.id == ref.sheetId }
         let wasCurrent = library.currentSheetId == ref.sheetId
         scanJob = nil
+        streamingSheet = nil
         update { library in
             library.sheets[ref.fileId]?.removeAll { $0.id == ref.sheetId }
             if wasCurrent { library.currentSheetId = library.sheets[ref.fileId]?.first?.id }
@@ -169,6 +172,7 @@ extension AppModel {
         guard scanJob?.sheetId == ref.sheetId else { return }
         let job = scanJob
         scanJob = nil
+        streamingSheet = nil
         update { library in
             let wasCurrent = library.currentSheetId == ref.sheetId
             library.sheets[ref.fileId]?.removeAll { $0.id == ref.sheetId }
@@ -202,5 +206,35 @@ extension AppModel {
         guard let data = (try? scanStore?.load(fileId)) ?? nil, data.complete else { return nil }
         scanData[fileId] = data
         return data
+    }
+
+    /// Experimental → Apply to current sheet: detects IN and OUT for the
+    /// current movie (sequentially, through the DecodeGate like every
+    /// decode) and recaptures the current interval sheet's thumbs between
+    /// them, with the movie's IN and OUT, as one undo step.
+    func applyAutomaticInOut() {
+        guard !isDetectingInOut, let ref = currentRef, let file = currentFile else { return }
+        checkMovieFile(file.id)
+        guard !missing.contains(file.id) else {
+            toast = "\(file.name): the movie is missing."
+            return
+        }
+        // The entry may have followed its bookmark.
+        let url = library.file(file.id)?.url ?? file.url
+        isDetectingInOut = true
+        Task {
+            defer { isDetectingInOut = false }
+            do {
+                let points = try await AutoInOut.detect(url, ffmpeg: await ffmpegTools())
+                guard points.inFrame < points.outFrame else {
+                    showNotice("No IN/OUT found in \(file.name).")
+                    return
+                }
+                edit { $0.applyInOut(ref, inFrame: points.inFrame, outFrame: points.outFrame) }
+                showNotice("IN \(points.inFrame), OUT \(points.outFrame)")
+            } catch {
+                toast = "\(file.name): automatic IN/OUT failed: \(error.localizedDescription)"
+            }
+        }
     }
 }

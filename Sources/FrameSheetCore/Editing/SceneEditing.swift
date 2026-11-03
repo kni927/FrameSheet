@@ -142,10 +142,19 @@ extension Library {
     }
 
     /// Replaces a shot sheet's scenes and thumbs with a new scene list, for
-    /// a threshold change rebuilt from the scan cache.
+    /// a threshold change rebuilt from the scan cache and for the scene lists
+    /// a running scan streams. A scene that starts where one did keeps that
+    /// scene's id (and its thumb's), so views, selection and an expanded
+    /// child follow it.
     public mutating func replaceScenes(_ ref: SheetRef, with spans: [SceneSpan]) {
         withSheet(ref) { sheet, file in
-            let content = SceneList.shotSheetContent(spans, frameCount: file.frameCount)
+            var content = SceneList.shotSheetContent(spans, frameCount: file.frameCount)
+            let ids = Dictionary(sheet.scenes.map { ($0.start, $0.id) }, uniquingKeysWith: { first, _ in first })
+            for i in content.scenes.indices {
+                guard let id = ids[content.scenes[i].start] else { continue }
+                content.scenes[i].id = id
+                content.thumbs[i].id = id
+            }
             sheet.thumbs = content.thumbs
             sheet.scenes = content.scenes
         }

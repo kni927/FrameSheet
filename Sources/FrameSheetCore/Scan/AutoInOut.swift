@@ -69,6 +69,19 @@ public enum AutoInOut {
         }
     }
 
+    /// Detects IN and OUT for a movie entry and stores them in it, so a
+    /// default sheet made afterwards lies between them (Add movies with
+    /// Automatic IN/OUT on). Returns false, leaving the entry as it was, when
+    /// the detection gives no range (OUT not after IN).
+    @discardableResult
+    public static func apply(to file: inout MovieFile, ffmpeg: FFmpegTools?) async throws -> Bool {
+        let points = try await detect(file.url, ffmpeg: ffmpeg)
+        guard points.inFrame < points.outFrame else { return false }
+        file.inFrame = points.inFrame
+        file.outFrame = points.outFrame
+        return true
+    }
+
     /// Mean V of frames `first`…`last`, in order; with `stopAtThreshold`
     /// the first frame at or above the threshold is the last one read.
     private static func means(
@@ -83,8 +96,16 @@ public enum AutoInOut {
         case .avFoundation(let asset, let startTime, let orientation):
             guard let track = try await asset.loadTracks(withMediaType: .video).first else { return [] }
             let reader = try AVAssetReader(asset: asset)
+            var start = CMTime(seconds: startTime + (Double(first) - 0.25) / fps, preferredTimescale: 600_000)
+            // The OUT range starts inside the movie: in an open-GOP file the
+            // read starts at a closed GOP before it (frames before `first`
+            // are skipped below).
+            if first > 0, let closed = await ClosedGOPStart.time(
+                track, atOrBefore: start, notBefore: start - ClosedGOPStart.maximumPreRoll), closed < start {
+                start = closed
+            }
             reader.timeRange = CMTimeRange(
-                start: CMTime(seconds: startTime + (Double(first) - 0.25) / fps, preferredTimescale: 600_000),
+                start: start,
                 end: CMTime(seconds: startTime + (Double(last) + 0.75) / fps, preferredTimescale: 600_000))
             let (w, h) = orientation.swapsAxes ? (size.height, size.width) : (size.width, size.height)
             let output = AVAssetReaderTrackOutput(track: track, outputSettings: [

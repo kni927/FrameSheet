@@ -308,7 +308,7 @@ private struct FrameInfoSection: View {
                     }
                     .labelsHidden()
                     .fixedSize()
-                    .help("Frame number, or with the movie's last frame number")
+                    .help("Frame number, or with the movie's last frame number (9920 / 17604)")
                     .disabled(mode == .hidden)
                 }
             }
@@ -319,6 +319,9 @@ private struct FrameInfoSection: View {
             LabeledSlider(
                 title: "Size", value: model.setting(\.frameInfoSize), range: 1...100,
                 help: "Relative to thumb height")
+            LabeledSlider(
+                title: "Max size", value: model.setting(\.frameInfoMaxSize), range: Defaults.frameInfoMaxSizeRange,
+                unit: " pt", help: "Largest label: pt per 1000 pt of print width")
             ColorRow(title: "Color", value: model.setting(\.frameInfoColor), keepsOpacity: false)
             ColorRow(title: "Background", value: model.setting(\.frameInfoBackground), keepsOpacity: true)
             LabeledSlider(
@@ -599,6 +602,39 @@ private struct NamingSection: View {
     }
 }
 
+/// Gives back the keyboard focus a text field takes on its own. AppKit
+/// makes the first text field of a window the first responder when the
+/// window opens (and SwiftUI may again when the panel reappears), and the
+/// field editor then takes the single-key shortcuts (G, M, 1, 3). Focus
+/// stays only when a click or Tab brought it.
+private struct FocusOnlyWhenClicked: ViewModifier {
+    var focused: FocusState<Bool>.Binding
+
+    func body(content: Content) -> some View {
+        content.onChange(of: focused.wrappedValue) { _, isFocused in
+            guard isFocused, !Self.isFocusGesture(NSApp.currentEvent) else { return }
+            focused.wrappedValue = false
+            // Should SwiftUI not hand the resignation to AppKit (the focus
+            // came from AppKit), end the field editor's turn directly.
+            Task { @MainActor in
+                guard !focused.wrappedValue, let window = NSApp.keyWindow, window.firstResponder is NSText
+                else { return }
+                window.makeFirstResponder(nil)
+            }
+        }
+    }
+
+    /// A click, or Tab moving through the key views.
+    static func isFocusGesture(_ event: NSEvent?) -> Bool {
+        guard let event else { return false }
+        switch event.type {
+        case .leftMouseDown, .leftMouseUp, .rightMouseDown, .otherMouseDown: return true
+        case .keyDown: return event.keyCode == 48
+        default: return false
+        }
+    }
+}
+
 /// The tokens a template may hold, under the fields.
 private struct TokenLegend: View {
     static let tokens: [(token: String, meaning: String)] = [
@@ -645,6 +681,7 @@ private struct TemplateField: View {
                 .font(Theme.bodySm)
                 .focused($focused)
                 .onChange(of: focused) { _, isFocused in model.isEditingText = isFocused }
+                .modifier(FocusOnlyWhenClicked(focused: $focused))
                 .help(Self.tokensHelp)
             let preview = previewName(template)
             Text(preview)
@@ -805,6 +842,17 @@ private struct ExperimentalSection: View {
             SwitchRow(
                 title: "Automatic IN/OUT", isOn: model.setting(\.automaticInOut),
                 help: "Skip dark frames at the start and end of movies added from now on")
+            // The switch acts on movies added later; this applies the same
+            // detection to the movie shown now.
+            HStack {
+                Spacer(minLength: 0)
+                Button(model.isDetectingInOut ? "Detecting…" : "Apply to current sheet") {
+                    model.applyAutomaticInOut()
+                }
+                .controlSize(.small)
+                .disabled(model.isDetectingInOut || model.currentSheet?.type != .interval)
+                .help("Detect IN/OUT now and recapture this sheet between them")
+            }
         }
     }
 }

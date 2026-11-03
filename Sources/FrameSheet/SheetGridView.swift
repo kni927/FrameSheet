@@ -252,23 +252,27 @@ private struct ThumbView: View {
     }
 }
 
-/// The small badge on a thumb that shows the nearest decodable frame
-/// instead of the one it asked for.
+/// The small mark on a thumb that shows the nearest decodable frame
+/// instead of the one it asked for: drawn as a label of the hover overlay's
+/// bottom row (same font size, baseline and side margin as EXPAND and HIDE),
+/// in the bottom-right corner, faint white at rest and solid white under the
+/// pointer (owner, 2026-11-03).
 private struct NearestFrameMarker: View {
     let size: CGSize
+    @State private var hovering = false
 
     var body: some View {
-        // Small and half transparent (owner, 2026-11-03): a hint, not a
-        // warning.
-        let unit = min(max(size.height * 0.06, 7), 11)
-        Image(systemName: "arrow.uturn.backward")
-            .font(.system(size: unit * 0.7, weight: .bold))
-            .foregroundStyle(Theme.crust)
-            .frame(width: unit * 1.4, height: unit * 1.4)
-            .background(Circle().fill(Theme.warning))
-            .opacity(0.55)
-            .padding(unit * 0.4)
+        let unit = HoverOverlay.unit(for: size)
+        // A symbol inside Text sits on the text baseline, as the labels do;
+        // the frame and paddings are OverlayButton's and HoverOverlay's.
+        Text(Image(systemName: "arrow.uturn.backward"))
+            .font(Theme.condensed(unit, weight: .semibold))
+            .modifier(OverlayLabel(active: hovering))
+            .padding(.horizontal, unit * 0.3)
+            .frame(minWidth: unit * 1.7, minHeight: unit * 1.6, alignment: .trailing)
             .contentShape(Rectangle())
+            .onHover { hovering = $0 }
+            .padding(unit * 0.3)
             .accessibilityLabel("Nearest decodable frame")
     }
 }
