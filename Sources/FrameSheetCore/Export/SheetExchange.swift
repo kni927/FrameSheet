@@ -185,7 +185,8 @@ public struct SheetExchange: Sendable, Equatable {
         columnCount = sheet.columnCount
         if sheet.type == .shot {
             let frameById = Dictionary(sheet.thumbs.map { ($0.id, $0.frameNumber) }, uniquingKeysWith: { a, _ in a })
-            scenes = sheet.scenes.filter { includeHidden || !$0.hidden }.map {
+            // A scene counts as hidden when it or its thumb is.
+            scenes = SceneList.timelineScenes(of: sheet, includeHidden: includeHidden).map {
                 ExchangeScene(start: $0.start, length: $0.length, frameNumber: frameById[$0.id], colorArray: $0.colorRGB)
             }
         } else {

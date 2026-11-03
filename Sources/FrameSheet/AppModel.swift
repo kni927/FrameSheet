@@ -649,7 +649,8 @@ final class AppModel {
     }
 
     /// Reads PNGs and JSON files from FrameSheet or MoviePrint 0.2.x: each
-    /// becomes a new movie entry with an interval sheet (MoviePrint's
+    /// becomes a new movie entry with an interval sheet in grid view, or a
+    /// shot sheet in timeline view for a scene list (MoviePrint's
     /// `onImportMoviePrint`), all in one undo step. A movie that exists is
     /// probed like Add movies; one that does not shows as missing, for
     /// Locate.
@@ -668,10 +669,6 @@ final class AppModel {
                 }
                 guard let path = data.filePath, !path.isEmpty else {
                     errors.append("\(name): \(Self.importMessage(SheetExchangeError.noFilePath))")
-                    continue
-                }
-                guard !(data.frameNumbers ?? []).isEmpty else {
-                    errors.append("\(name): shot sheets come with T05.")
                     continue
                 }
                 let movie = URL(fileURLWithPath: path)

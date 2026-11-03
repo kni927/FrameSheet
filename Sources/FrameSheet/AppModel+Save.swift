@@ -15,7 +15,8 @@ struct SaveError: Error, LocalizedError {
     var errorDescription: String? { message }
 }
 
-/// Save Sheet, Save thumb, individual thumbs and Export JSON (§12).
+/// Save Sheet, Save thumb, individual thumbs, Export JSON and Export EDL
+/// (§12).
 extension AppModel {
     /// The folder saved files go to for a movie (or none).
     func outputFolder(for file: MovieFile?) -> URL {
@@ -309,6 +310,37 @@ extension AppModel {
                 overwrite: settings.overwrite, exists: { FileManager.default.fileExists(atPath: $0.path) })
             let data = SheetExchange(file: file, sheet: sheet, includeHidden: settings.showHiddenThumbs).jsonData()
             try data.write(to: url, options: .atomic)
+            showNotice("Exported \(url.lastPathComponent)")
+        } catch {
+            toast = "\(name) could not be written: \(error.localizedDescription)"
+        }
+    }
+
+    /// Export EDL in a shot sheet's menu: `<file>-<sheet>.edl` with the
+    /// visible scenes, in the output folder, " edit N" unless overwriting.
+    func exportEDL(_ ref: SheetRef) {
+        guard let file = library.file(ref.fileId), let sheet = library.sheet(ref.sheetId, of: ref.fileId),
+              sheet.type == .shot
+        else { return }
+        let name = EDLExport.fileName(movieFileName: file.name, sheetName: sheet.name)
+        guard file.fps > 0 else {
+            toast = "\(file.name): the frame rate is unknown, so no EDL can be written."
+            return
+        }
+        guard let text = EDLExport.text(file: file, sheet: sheet),
+              !SceneList.timelineScenes(of: sheet, includeHidden: false).isEmpty
+        else {
+            toast = "\(sheet.name) has no visible scenes to export."
+            return
+        }
+        let settings = library.settings
+        do {
+            let folder = outputFolder(for: file)
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            let url = FileNaming.outputURL(
+                folder: folder, baseName: String(name.dropLast(".edl".count)), fileExtension: "edl",
+                overwrite: settings.overwrite, exists: { FileManager.default.fileExists(atPath: $0.path) })
+            try Data(text.utf8).write(to: url, options: .atomic)
             showNotice("Exported \(url.lastPathComponent)")
         } catch {
             toast = "\(name) could not be written: \(error.localizedDescription)"

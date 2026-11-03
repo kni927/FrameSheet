@@ -507,6 +507,184 @@ private func makePNG(width: Int = 2, height: Int = 1) throws -> Data {
     }
 }
 
+@Suite struct EDLExportTests {
+    /// A shot sheet; the scene at index `hiddenScene` is hidden itself, the
+    /// one at `hiddenThumb` through its thumb.
+    private func shotSheet(
+        _ spans: [(Int, Int)], hiddenScene: Int? = nil, hiddenThumb: Int? = nil
+    ) -> Sheet {
+        var sheet = Sheet(name: "Sheet-2", type: .shot, view: .timeline)
+        for (i, span) in spans.enumerated() {
+            let thumb = Thumb(frameNumber: span.0 + span.1 / 2, index: i, hidden: i == hiddenThumb)
+            sheet.thumbs.append(thumb)
+            sheet.scenes.append(Scene(
+                id: thumb.id, start: span.0, length: span.1, colorRGB: [1, 2, 3], hidden: i == hiddenScene))
+        }
+        return sheet
+    }
+
+    private func movie(fps: Double) -> MovieFile {
+        MovieFile(
+            url: URL(fileURLWithPath: "/Volumes/Media/film.mp4"), duration: 4000, frameCount: 100_000, fps: fps,
+            width: 1920, height: 1080, size: 1, fourCC: "avc1")
+    }
+
+    @Test func twentyFourFPSWithHiddenScenes() throws {
+        let sheet = shotSheet(
+            [(0, 48), (48, 30), (78, 1450), (1528, 10), (86400, 24)], hiddenScene: 1, hiddenThumb: 3)
+        let text = try #require(EDLExport.text(file: movie(fps: 24), sheet: sheet))
+        #expect(text == """
+            TITLE: film.mp4
+            FCM: NON-DROP FRAME
+
+            001  000       V     C        00:00:00:00 00:00:02:00 00:00:00:00 00:00:02:00
+            * FROM CLIP NAME: film.mp4
+
+            002  001       V     C        00:00:03:06 00:01:03:16 00:00:03:06 00:01:03:16
+            * FROM CLIP NAME: film.mp4
+
+            003  000       V     C        01:00:00:00 01:00:01:00 01:00:00:00 01:00:01:00
+            * FROM CLIP NAME: film.mp4
+
+            """)
+    }
+
+    /// 29.97 fps: seconds and frames each floored from the fractional
+    /// values, as MoviePrint's `frameCountToTimeCode` does (non-drop).
+    @Test func fractionalFPS() throws {
+        let sheet = shotSheet([(0, 30), (30, 29), (59, 1740), (1799, 1197)])
+        let text = try #require(EDLExport.text(file: movie(fps: 29.97), sheet: sheet))
+        #expect(text == """
+            TITLE: film.mp4
+            FCM: NON-DROP FRAME
+
+            001  000       V     C        00:00:00:00 00:00:01:00 00:00:00:00 00:00:01:00
+            * FROM CLIP NAME: film.mp4
+
+            002  001       V     C        00:00:01:00 00:00:01:29 00:00:01:00 00:00:01:29
+            * FROM CLIP NAME: film.mp4
+
+            003  000       V     C        00:00:01:29 00:01:00:00 00:00:01:29 00:01:00:00
+            * FROM CLIP NAME: film.mp4
+
+            004  001       V     C        00:01:00:00 00:01:39:28 00:01:00:00 00:01:39:28
+            * FROM CLIP NAME: film.mp4
+
+            """)
+    }
+
+    @Test func numberingNamingAndOtherSheets() {
+        let many = EDLExport.text(clipName: "a.mov", scenes: (0..<1001).map { (start: $0, length: 1) }, fps: 25)
+        #expect(many.contains("\n1001  000       V     C        00:00:40:00 00:00:40:01 "))
+        #expect(EDLExport.timecode(25 * 3600 * 100, fps: 25) == "100:00:00:00")
+        #expect(EDLExport.fileName(movieFileName: "film.mp4", sheetName: "Sheet-1") == "film.mp4-Sheet-1.edl")
+        #expect(EDLExport.fileName(movieFileName: "a.mov", sheetName: "x/y") == "a.mov-x-y.edl")
+        let interval = Sheet(name: "Sheet-1", type: .interval, thumbs: [Thumb(frameNumber: 0, index: 0)])
+        #expect(EDLExport.text(file: movie(fps: 25), sheet: interval) == nil)
+        #expect(EDLExport.text(clipName: "a.mov", scenes: [], fps: 25) == "TITLE: a.mov\nFCM: NON-DROP FRAME\n\n")
+    }
+}
+
+@Suite struct ShotSheetExchangeTests {
+    /// Three scenes, the middle one hidden through its thumb; the last
+    /// thumb was scrubbed off the middle frame.
+    private func fixture() -> (MovieFile, Sheet) {
+        var file = MovieFile(
+            url: URL(fileURLWithPath: "/Volumes/Media/Movies/film #2.mov"), duration: 60, frameCount: 1500,
+            fps: 25, width: 1920, height: 1080, size: 1, fourCC: "avc1")
+        file.transform.cropLeft = 8
+        var sheet = Sheet(name: "Sheet-4", type: .shot, view: .timeline, columnCount: 6)
+        let spans = [(0, 101, [200, 10, 10]), (101, 400, [10, 200, 10]), (501, 999, [10, 10, 200])]
+        for (i, span) in spans.enumerated() {
+            let frame = i == 2 ? 700 : span.0 + span.1 / 2
+            let thumb = Thumb(frameNumber: frame, index: i, hidden: i == 1)
+            sheet.thumbs.append(thumb)
+            sheet.scenes.append(Scene(id: thumb.id, start: span.0, length: span.1, colorRGB: span.2))
+        }
+        return (file, sheet)
+    }
+
+    private func checkImported(_ data: SheetExchange, scenes expected: [(Int, Int, [Int])]) throws {
+        var library = Library()
+        let ref = try library.importSheet(data)
+        let sheet = try #require(library.sheet(ref.sheetId, of: ref.fileId))
+        #expect(sheet.type == .shot && sheet.view == .timeline)
+        #expect(sheet.scenes.map(\.start) == expected.map { $0.0 })
+        #expect(sheet.scenes.map(\.length) == expected.map { $0.1 })
+        #expect(sheet.scenes.map(\.colorRGB) == expected.map { $0.2 })
+        #expect(sheet.scenes.allSatisfy { !$0.hidden })
+        // One thumb per scene at its middle frame, sharing the scene's id.
+        #expect(sheet.thumbs.map(\.frameNumber) == expected.map { $0.0 + $0.1 / 2 })
+        #expect(sheet.thumbs.map(\.index) == Array(expected.indices))
+        #expect(sheet.thumbs.map(\.id) == sheet.scenes.map(\.id))
+        #expect(library.currentSheetId == ref.sheetId)
+    }
+
+    @Test func jsonRoundTrip() throws {
+        let (file, sheet) = fixture()
+        let data = SheetExchange(file: file, sheet: sheet, includeHidden: false, appVersion: "3.0.0")
+        #expect(data.frameNumbers == nil)
+        #expect(data.scenes == [
+            ExchangeScene(start: 0, length: 101, frameNumber: 50, colorArray: [200, 10, 10]),
+            ExchangeScene(start: 501, length: 999, frameNumber: 700, colorArray: [10, 10, 200]),
+        ])
+        let json = data.jsonData()
+        let object = try #require(try JSONSerialization.jsonObject(with: json) as? [String: Any])
+        #expect(Set(object.keys) == ["filePath", "transformObject", "columnCount", "sceneArray"])
+        let text = String(decoding: json, as: UTF8.self)
+        #expect(text.contains(
+            "\"sceneArray\": [\n\t\t{\n\t\t\t\"start\": 0,\n\t\t\t\"length\": 101,\n\t\t\t\"frameNumber\": 50,\n\t\t\t\"colorArray\": [\n\t\t\t\t200,"))
+        var expected = data
+        expected.version = nil
+        let read = try SheetExchange(fileData: json)
+        #expect(read == expected)
+        try checkImported(read, scenes: [(0, 101, [200, 10, 10]), (501, 999, [10, 10, 200])])
+
+        let all = SheetExchange(file: file, sheet: sheet, includeHidden: true)
+        #expect(all.scenes?.map(\.start) == [0, 101, 501])
+    }
+
+    @Test func pngRoundTrip() throws {
+        let (file, sheet) = fixture()
+        let data = SheetExchange(file: file, sheet: sheet, includeHidden: false, appVersion: "3.0.0")
+        let entries = Dictionary(uniqueKeysWithValues: data.pngTextEntries().map { ($0.keyword, $0.text) })
+        #expect(entries["frameNumberArray"] == "undefined")
+        #expect(entries["sceneArray"] == #"[{"start":0,"length":101,"frameNumber":50,"colorArray":[200,10,10]},{"start":501,"length":999,"frameNumber":700,"colorArray":[10,10,200]}]"#)
+        let read = try SheetExchange(fileData: data.embedded(in: makePNG()))
+        #expect(read == data)
+        #expect(read.isFrameSheet)
+        try checkImported(read, scenes: [(0, 101, [200, 10, 10]), (501, 999, [10, 10, 200])])
+    }
+
+    /// A synthetic sample in MoviePrint 0.2.23's shapes: PNG chunks with a
+    /// bare version, "undefined" frame list and OpenCV's fractional mean
+    /// colors, and the tab-indented JSON with no frameNumberArray; a scene
+    /// without colors imports gray.
+    @Test func moviePrintSceneArray() throws {
+        let scenes = #"[{"start":0,"length":57,"frameNumber":28,"colorArray":[12.4,40.5,99.6]},{"start":57,"length":243,"frameNumber":178,"colorArray":[0,0,0]},{"start":300,"length":1,"frameNumber":300}]"#
+        let expected = [(0, 57, [12, 41, 100]), (57, 243, [0, 0, 0]), (300, 1, [128, 128, 128])]
+        let png = try PNGText.inserting([
+            ("version", "0.2.23"),
+            ("filePath", "%2FVolumes%2FMedia%2FMovies%2Fsample.mov"),
+            ("transformObject", #"{"cropTop":0,"cropLeft":0,"cropBottom":0,"cropRight":0,"rotationFlag":3,"aspectRatioInv":null}"#),
+            ("columnCount", "4"),
+            ("frameNumberArray", "undefined"),
+            ("sceneArray", scenes),
+        ], into: makePNG())
+        let fromPNG = try SheetExchange(fileData: png)
+        #expect(!fromPNG.isFrameSheet)
+        #expect(fromPNG.frameNumbers == nil)
+        #expect(fromPNG.filePath == "/Volumes/Media/Movies/sample.mov")
+        #expect(fromPNG.scenes?.count == 3)
+        try checkImported(fromPNG, scenes: expected)
+
+        let json = "{\n\t\"filePath\": \"/Volumes/Media/Movies/sample.mov\",\n\t\"transformObject\": {\n\t\t\"cropTop\": 0\n\t},\n\t\"columnCount\": 4,\n\t\"sceneArray\": \(scenes)\n}"
+        let fromJSON = try SheetExchange(fileData: Data(json.utf8))
+        #expect(fromJSON.scenes == fromPNG.scenes)
+        try checkImported(fromJSON, scenes: expected)
+    }
+}
+
 @Suite struct PrintHeaderTests {
     @Test func headerGeometry() {
         func header(_ path: Bool, _ details: Bool, _ timeline: Bool) -> GridGeometry {

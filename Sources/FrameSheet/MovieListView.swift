@@ -203,6 +203,9 @@ private struct SheetRow: View {
                 .disabled(sheet.type == .interval)
             Button("Duplicate") { model.duplicateSheet(ref) }
             Button("Export JSON") { model.exportJSON(ref) }
+            Button("Export EDL") { model.exportEDL(ref) }
+                .disabled(sheet.type != .shot)
+                .help("Write the visible scenes as a CMX3600 edit list (shot sheets)")
             Divider()
             Button("Delete", role: .destructive) { model.deleteSheet(ref) }
         }
