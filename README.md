@@ -6,7 +6,7 @@ FrameSheet is a macOS app that makes video contact sheets (MoviePrints).
 [MoviePrint](https://github.com/fakob/MoviePrint_v004) v0.2.23 natively for
 Apple Silicon — many movies at once, interval, shot-detection and face sheets,
 editable thumbs and scenes, and export as PNG/JPG, JSON and EDL. The target
-behaviour is in [docs/V3_SPEC.md](docs/V3_SPEC.md). The released app is v2
+behavior is in [docs/V3_SPEC.md](docs/V3_SPEC.md). The released app is v2
 (tag `v2.3.1`), a settings-to-one-image contact sheet generator.
 
 ## Status

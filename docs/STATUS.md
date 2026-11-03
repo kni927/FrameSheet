@@ -11,7 +11,7 @@ Updated: 2026-11-03
 
 FrameSheet: macOS contact-sheet app, v2.3.1 released. v3 is a rebuild that
 reproduces MoviePrint v0.2.23 for Apple Silicon: decisions 14–22 in
-`docs/DECISIONS.md`, target behaviour in `docs/V3_SPEC.md`.
+`docs/DECISIONS.md`, target behavior in `docs/V3_SPEC.md`.
 
 ## Next
 
@@ -22,18 +22,14 @@ reproduces MoviePrint v0.2.23 for Apple Silicon: decisions 14–22 in
   legibility pass (done) → T04 save, header, naming, PNG/JSON export and
   import (done) → T05 shot scan, timeline, cut/merge, EDL → T06 player view →
   T07 faces Lv1 → T08 transforms, Save All, polish → version and release TASK.
-- Next TASK before or with T05 (owner, 2026-11-03): partly decodable files
+- In progress, T04b (TF #01; owner, 2026-11-03): partly decodable files
   (KNOWN_ISSUES 5) — AVFoundation stays the default, a Settings option fetches
   frames AVFoundation cannot decode with ffmpeg; the scrub must not silently
   move a confirmed frame to a keyframe; fix the ffmpeg path's half-frame time
   offset (one frame off on open-GOP files). Needs `run-all.sh quick`.
 - Next UI step (owner): move some right-panel settings to the Settings window.
-- Spec gaps for the HQ from T04: header without the app icon, right-aligned
-  with a left option; details separated by spaces; timecode formats for frame
-  info; collapsible panel sections; "Save sheet" / "Import Sheet…" labels;
-  Undo/Redo in the toolbar; PNG/JSON import from every entry point.
 - Spelling: the owner wants en-US; proposal with Upstream HQ (2026-11-03),
-  CLAUDE.md and V3_SPEC.md still use en-GB.
+  `docs/V3_SPEC.md` is en-US since 2026-11-03; CLAUDE.md still uses en-GB.
 - Tooltips on every control, kept short (owner, 2026-11-02/03).
 - Not yet tried by the owner: Rename/Delete sheet, ⌃⌘F, the scrub at the
   smallest window size, ⌘Z while renaming, MoviePrint 0.2.23 files (only
