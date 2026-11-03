@@ -7,7 +7,10 @@ struct SettingsWindow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             CacheSection()
-            PanelSection(title: "ffmpeg") { FFmpegRow() }
+            PanelSection(title: "ffmpeg") {
+                FFmpegRow()
+                ExactFramesRow()
+            }
         }
         .padding(.vertical, Theme.space2)
         .frame(width: 460, alignment: .topLeading)
@@ -85,5 +88,37 @@ private struct FFmpegRow: View {
         }
         .font(Theme.panelCaption)
         .foregroundStyle(Theme.textMuted)
+    }
+}
+
+/// Fetch exact frames with ffmpeg (decision 25): frames AVFoundation cannot
+/// decode exactly come from ffmpeg, one by one.
+private struct ExactFramesRow: View {
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        let available = model.canFetchExactFramesWithFFmpeg
+        VStack(alignment: .leading, spacing: Theme.space1) {
+            Toggle(
+                "Fetch exact frames with ffmpeg",
+                isOn: Binding(
+                    get: { model.library.settings.exactFramesWithFFmpeg },
+                    set: { model.setExactFramesWithFFmpeg($0) })
+            )
+            .toggleStyle(.checkbox)
+            .disabled(!available)
+            .help("Decode frames AVFoundation misses with ffmpeg")
+            Text("Frames AVFoundation cannot decode exactly, as in some open-GOP H.264 files, are decoded with ffmpeg.")
+                .font(Theme.panelCaption)
+                .foregroundStyle(Theme.textMuted)
+            if !available, !model.isFindingFFmpeg {
+                Text(model.ffmpeg?.tools == nil
+                    ? "Needs ffmpeg, which was not found."
+                    : "Needs ffprobe next to ffmpeg.")
+                    .font(Theme.panelCaption)
+                    .foregroundStyle(Theme.warning)
+            }
+        }
+        .padding(.top, Theme.space2)
     }
 }

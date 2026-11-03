@@ -183,6 +183,9 @@ public enum Defaults {
     public static let columnCount = 4
     public static let secondsPerRow = 120.0
     public static let thumbnailCacheMB = 256
+    /// Whether frames AVFoundation cannot decode exactly are fetched with
+    /// ffmpeg (decision 25); flip here once the measurement decides.
+    public static let exactFramesWithFFmpeg = true
 }
 
 public enum FrameInfo: String, Codable, Sendable, CaseIterable {
@@ -352,6 +355,9 @@ public struct Settings: Codable, Sendable, Equatable {
     public var thumbnailCacheMB = Defaults.thumbnailCacheMB
     /// User-chosen ffmpeg path (§10); nil means discover it.
     public var ffmpegPath: String?
+    /// Fetch a frame AVFoundation cannot decode exactly (open-GOP files)
+    /// with ffmpeg, frame by frame, when ffmpeg is available (decision 25).
+    public var exactFramesWithFFmpeg = Defaults.exactFramesWithFFmpeg
 
     // Output (§6), MoviePrint's defaults (`app/utils/constants.js`).
     /// Folder path for saved prints; nil means the Desktop.
@@ -393,6 +399,7 @@ public struct Settings: Codable, Sendable, Equatable {
         case marginHorizontal, marginVertical, marginsLinked
         case showHeader, showPathInHeader, showDetailsInHeader, showTimelineInHeader, headerAlignment
         case cornerRadius, showHiddenThumbs, frameInfo, thumbnailCacheMB, ffmpegPath
+        case exactFramesWithFFmpeg
         case frameInfoColor, frameInfoBackground, frameInfoPosition, frameInfoSize
         case frameInfoFontFamily, frameInfoMarginHorizontal, frameInfoMarginVertical, frameInfoMarginsLinked
         case frameInfoTimecodeFormat
@@ -427,6 +434,8 @@ public struct Settings: Codable, Sendable, Equatable {
         frameInfo = try c.decodeIfPresent(FrameInfo.self, forKey: .frameInfo) ?? d.frameInfo
         thumbnailCacheMB = try c.decodeIfPresent(Int.self, forKey: .thumbnailCacheMB) ?? d.thumbnailCacheMB
         ffmpegPath = try c.decodeIfPresent(String.self, forKey: .ffmpegPath)
+        exactFramesWithFFmpeg = try c.decodeIfPresent(Bool.self, forKey: .exactFramesWithFFmpeg)
+            ?? d.exactFramesWithFFmpeg
         frameInfoColor = try c.decodeIfPresent(RGBA.self, forKey: .frameInfoColor) ?? d.frameInfoColor
         frameInfoBackground = try c.decodeIfPresent(RGBA.self, forKey: .frameInfoBackground) ?? d.frameInfoBackground
         frameInfoPosition = try c.decodeIfPresent(FrameInfoPosition.self, forKey: .frameInfoPosition) ?? d.frameInfoPosition

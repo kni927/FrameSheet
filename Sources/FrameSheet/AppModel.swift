@@ -109,6 +109,13 @@ final class AppModel {
     @ObservationIgnored private var scrubFrames: [(key: String, image: CGImage)] = []
     private static let scrubFrameLimit = 16
     @ObservationIgnored private var scrubDecode: Task<Void, Never>?
+    /// Whether the scrub's frames decoded exactly, by frame, as the live
+    /// preview found them; a confirmed frame that did not is not stored.
+    @ObservationIgnored private var scrubExact: [Int: Bool] = [:]
+    /// Thumbs moved to the nearest decodable frame (decision 11), by thumb
+    /// id: the frame asked for and the frame shown. View state, not saved;
+    /// the marker shows while the thumb still shows that frame.
+    private(set) var nearestThumbs: [UUID: (requested: Int, shown: Int)] = [:]
 
     init() {
         let store = (try? LibraryStore.defaultURL()).map(LibraryStore.init)
@@ -285,10 +292,68 @@ final class AppModel {
     }
 
     /// Sets (or with nil clears) the user's ffmpeg path and searches again.
+    /// AVFoundation backends are dropped too: their exact-frame fallback
+    /// names the old ffmpeg.
     func setFFmpegPath(_ path: String?) {
         updateSettings { $0.ffmpegPath = path }
-        backends = backends.filter { $0.value.kind != .ffmpeg }
+        backends = [:]
         findFFmpeg()
+    }
+
+    /// The exact-frame fallback can run: an ffmpeg with ffprobe next to it.
+    var canFetchExactFramesWithFFmpeg: Bool { ffmpeg?.tools?.ffprobe != nil }
+
+    /// Settings → Fetch exact frames with ffmpeg (decision 25). The movies'
+    /// backends open again with the new choice; turned on, thumbs that were
+    /// moved to the nearest decodable frame go back to the frame they asked
+    /// for and decode again.
+    func setExactFramesWithFFmpeg(_ on: Bool) {
+        guard on != library.settings.exactFramesWithFFmpeg else { return }
+        cancelScrub()
+        backends = backends.filter { $0.value.kind == .ffmpeg }
+        if on, !nearestThumbs.isEmpty {
+            let moved = nearestThumbs
+            nearestThumbs = [:]
+            document.update { library in
+                for (fileId, sheets) in library.sheets {
+                    for s in sheets.indices {
+                        for t in sheets[s].thumbs.indices {
+                            let thumb = sheets[s].thumbs[t]
+                            if let entry = moved[thumb.id], thumb.frameNumber == entry.shown {
+                                library.sheets[fileId]![s].thumbs[t].frameNumber = entry.requested
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        if on {
+            // Images were also cached under the frames asked for (see
+            // `load`), showing the nearest decodable frame.
+            forgetImages()
+        } else {
+            failed.removeAll()
+        }
+        updateSettings { $0.exactFramesWithFFmpeg = on }
+        if on { for file in library.files { loadPoster(file) } }
+    }
+
+    /// The frame a thumb asked for when it shows the nearest decodable frame
+    /// instead; nil for a thumb that shows its own frame.
+    func nearestFrame(of thumb: Thumb) -> Int? {
+        guard let entry = nearestThumbs[thumb.id], entry.shown == thumb.frameNumber else { return nil }
+        return entry.requested
+    }
+
+    /// Why a frame can be shown only as the nearest decodable one, for the
+    /// marker's tooltip and the scrub's toast.
+    var exactFrameHint: String {
+        if library.settings.exactFramesWithFFmpeg && canFetchExactFramesWithFFmpeg {
+            return "ffmpeg could not decode it exactly either"
+        }
+        return canFetchExactFramesWithFFmpeg
+            ? "turn on Fetch exact frames with ffmpeg in Settings"
+            : "the exact frame needs ffmpeg"
     }
 
     func chooseFFmpeg() {
@@ -390,7 +455,9 @@ final class AppModel {
     /// Opens a movie and probes it: the one path for Add movies, import,
     /// Locate and Replace movie.
     private func openMovie(_ url: URL) async throws -> any DecodeBackend {
-        try await DecoderRouter.open(url, ffmpeg: await ffmpegTools())
+        let tools = await ffmpegTools()
+        return try await DecoderRouter.open(
+            url, ffmpeg: tools, exactFallback: library.settings.exactFramesWithFFmpeg)
     }
 
     /// Clear movie list (and Option-drop): one undo step; undo brings the
@@ -903,13 +970,52 @@ final class AppModel {
     }
 
     /// Release (or Return, or a click in a sticky scrub) confirms with one
-    /// undo step; over the Cancel bar it cancels.
+    /// undo step; over the Cancel bar it cancels. A frame that does not
+    /// decode exactly is not stored (the thumb keeps its frame) and the toast
+    /// says so; one the preview has not decoded yet is decoded first.
     func endScrub() {
         guard let session = scrub else { return }
+        let exact = scrubExact[session.frame]
         cancelScrub()
         guard !session.overCancel else { return }
+        switch exact {
+        case true?:
+            applyScrub(session)
+        case false?:
+            refuseScrub(session)
+        case nil:
+            Task {
+                guard let file = library.file(session.ref.fileId) else { return }
+                do {
+                    let backend = try await backend(for: file)
+                    let decoded = try await backend.frame(session.frame, maxWidth: Self.thumbWidth)
+                    if decoded.isExact {
+                        store(decoded.image, file: file.id, frame: decoded.actualFrame, width: Self.thumbWidth)
+                        applyScrub(session)
+                    } else {
+                        refuseScrub(session)
+                    }
+                } catch {
+                    // Not decodable at all: stored as before; loading the
+                    // thumb reports the failure.
+                    applyScrub(session)
+                }
+            }
+        }
+    }
+
+    private func applyScrub(_ session: ScrubSession) {
         let id = edit { $0.applyScrub(session.ref, thumb: session.thumbId, frame: session.frame, action: session.action) }
         selectedThumbId = id ?? session.thumbId
+    }
+
+    /// The confirmed frame did not decode exactly: nothing changes.
+    private func refuseScrub(_ session: ScrubSession) {
+        let kept = library.sheet(session.ref.sheetId, of: session.ref.fileId)?
+            .thumbs.first { $0.id == session.thumbId }?.frameNumber
+        toast = "Frame \(session.frame) could not be decoded exactly"
+            + (kept.map { ", so the thumb keeps frame \($0)" } ?? "")
+            + " (\(exactFrameHint))."
     }
 
     func cancelScrub() {
@@ -917,6 +1023,7 @@ final class AppModel {
         scrubImage = nil
         scrubPending = nil
         scrubFrames.removeAll()
+        scrubExact.removeAll()
     }
 
     /// Width the live frame is decoded at: its on-screen pixels, in steps of
@@ -944,12 +1051,14 @@ final class AppModel {
                     scrubImage = cached
                     continue
                 }
-                if let thumb = cachedImage(file: file.id, frame: frame, width: Self.thumbWidth) {
+                if let thumb = cachedImage(file: file.id, frame: frame, width: Self.thumbWidth),
+                   scrubExact[frame] != false {
                     scrubImage = thumb
                 }
                 guard let backend = try? await backend(for: file),
                       let decoded = try? await backend.frame(frame, maxWidth: width)
                 else { continue }
+                if scrub?.thumbId == session.thumbId { scrubExact[frame] = decoded.isExact }
                 scrubFrames.removeAll { $0.key == key }
                 scrubFrames.append((key, decoded.image))
                 if scrubFrames.count > Self.scrubFrameLimit { scrubFrames.removeFirst() }
@@ -1046,9 +1155,14 @@ final class AppModel {
     }
 
     /// Moves thumbs to the frame the retry decoded; a correction, not an
-    /// edit, so it records no undo step.
+    /// edit, so it records no undo step. The moved thumbs get the marker.
     private func retarget(_ fileId: UUID, sheet sheetId: UUID, from: Int, to: Int) {
         guard let s = library.sheets[fileId]?.firstIndex(where: { $0.id == sheetId }) else { return }
+        for thumb in library.sheets[fileId]![s].thumbs where thumb.frameNumber == from {
+            // A thumb moved twice keeps the frame it first asked for.
+            let requested = nearestFrame(of: thumb) ?? from
+            nearestThumbs[thumb.id] = (requested, to)
+        }
         update { library in
             for t in library.sheets[fileId]![s].thumbs.indices
             where library.sheets[fileId]![s].thumbs[t].frameNumber == from {

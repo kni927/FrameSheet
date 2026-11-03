@@ -28,6 +28,9 @@ public struct MediaInfo: Sendable, Equatable {
 
 public enum DecoderKind: String, Sendable {
     case avFoundation = "AVFoundation"
+    /// An `AVAssetReader` read from one GOP earlier, for a frame the exact
+    /// image-generator request missed (decision 25).
+    case avFoundationReader = "AVFoundation reader"
     case ffmpeg
 }
 
@@ -38,6 +41,12 @@ public struct DecodedFrame: Sendable {
     /// ±0.5 s retry (decision 11).
     public var actualFrame: Int
     public var retried: Bool
+    /// The decoder that produced the image: the reader or ffmpeg for a
+    /// frame the AVFoundation backend fetched with a fallback (decision 25).
+    public var decoder: DecoderKind = .avFoundation
+
+    /// The image shows the requested frame.
+    public var isExact: Bool { actualFrame == requestedFrame }
 }
 
 public struct FrameResult: Sendable {

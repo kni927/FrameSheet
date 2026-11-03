@@ -1,6 +1,8 @@
+import AVFoundation
 import CoreGraphics
 import Foundation
 import Testing
+import VideoToolbox
 @testable import FrameSheetCore
 
 @Suite struct FFmpegLocatorTests {
@@ -100,15 +102,17 @@ import Testing
 
     static let frameCount = 50
 
-    private static func makeClip(_ name: String, _ codecArgs: [String]) async throws -> URL {
+    private static func makeClip(
+        _ name: String, _ codecArgs: [String], rate: Int = 25, frames: Int = frameCount
+    ) async throws -> URL {
         let tools = try #require(Self.tools)
         let dir = FileManager.default.temporaryDirectory.appending(path: "FrameSheetClips-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         let url = dir.appending(path: name)
         let result = try await ProcessRunner.run(tools.ffmpeg, [
             "-hide_banner", "-loglevel", "error", "-y",
-            "-f", "lavfi", "-i", "color=c=black:s=320x180:r=25:d=2,format=yuv420p,geq=lum='16+219*mod(floor(N/pow(2,floor(X*6/W))),2)':cb=128:cr=128",
-            "-frames:v", "\(frameCount)",
+            "-f", "lavfi", "-i", "color=c=black:s=320x180:r=\(rate):d=\(frames / rate + 1),format=yuv420p,geq=lum='16+219*mod(floor(N/pow(2,floor(X*6/W))),2)':cb=128:cr=128",
+            "-frames:v", "\(frames)",
         ] + codecArgs + [url.path])
         #expect(result.status == 0, "\(result.stderrText)")
         return url
@@ -214,6 +218,298 @@ import Testing
         let frame = try #require(results.first { $0.frameNumber == Self.frameCount - 1 }).result.get()
         #expect(Self.frameNumber(in: frame.image) == frame.actualFrame)
         #expect(frame.actualFrame == Self.frameCount - 1)
+    }
+
+    // MARK: Open GOP (decision 25)
+
+    static let openGOPFrames = 64
+
+    /// An open-GOP H.264 movie like the one KNOWN_ISSUES 5 describes: 24 fps,
+    /// a keyframe every 16 frames, of which only the first is an IDR frame;
+    /// the others are I frames with a recovery point that the muxer marks
+    /// as sync samples, each with three leading B frames (13–15, 29–31,
+    /// 45–47) that are shown before it and reference the GOP before.
+    private static func makeOpenGOPClip() async throws -> URL {
+        try await makeClip("open-gop.mov", [
+            "-c:v", "libx264", "-crf", "18", "-pix_fmt", "yuv420p",
+            "-x264-params", "open-gop=1:keyint=16:min-keyint=16:scenecut=0:bframes=3:b-adapt=0:log-level=error",
+        ], rate: 24, frames: openGOPFrames)
+    }
+
+    /// Every frame of the clip through the batch, by request index.
+    private func decodeAll(_ backend: any DecodeBackend) async throws -> [Int: DecodedFrame] {
+        var decoded: [Int: DecodedFrame] = [:]
+        for await result in backend.frames(Array(0..<Self.openGOPFrames), maxWidth: 160) {
+            decoded[result.index] = try result.result.get()
+        }
+        #expect(decoded.count == Self.openGOPFrames)
+        return decoded
+    }
+
+    /// The frames whose read from one GOP earlier starts at the IDR frame 0:
+    /// the leading frames of keyframe 16 and the rest of its GOP. The
+    /// earlier-GOP reader recovers these (see
+    /// `openGOPEarlierGOPReaderIsExact`).
+    static let idrStartedFrames = Set(13..<29).subtracting([16])
+
+    /// How many frames each decoder delivered.
+    private static func counts(_ decoded: [Int: DecodedFrame]) -> [DecoderKind: Int] {
+        decoded.values.reduce(into: [:]) { $0[$1.decoder, default: 0] += 1 }
+    }
+
+    /// Without the ffmpeg fallback the exact request and the earlier-GOP
+    /// read still miss frames of this clip (the clip reproduces the
+    /// failure), the read recovers at least the frames whose previous
+    /// keyframe is the IDR frame, and every frame names the frame it shows.
+    @Test(.enabled(if: DecodeIntegrationTests.tools != nil)) func openGOPWithoutFallbackIsTruthful() async throws {
+        let clip = try await Self.makeOpenGOPClip()
+        let backend = try await DecoderRouter.open(clip, ffmpeg: Self.tools, exactFallback: false)
+        #expect(backend.kind == .avFoundation)
+        #expect(backend.info.frameCount == Self.openGOPFrames)
+        let decoded = try await decodeAll(backend)
+        var inexact: [Int] = []
+        var exact: Set<Int> = []
+        for (index, frame) in decoded {
+            #expect(frame.requestedFrame == index)
+            #expect(Self.frameNumber(in: frame.image) == frame.actualFrame, "frame \(index)")
+            #expect(frame.decoder != .ffmpeg)
+            if frame.isExact { exact.insert(index) } else { inexact.append(index) }
+            if frame.decoder == .avFoundationReader { #expect(frame.isExact, "frame \(index)") }
+        }
+        print("openGOP without ffmpeg: decoders \(Self.counts(decoded)); inexact \(inexact.sorted())")
+        #expect(!inexact.isEmpty, "AVFoundation decoded every frame of the open-GOP clip exactly")
+        #expect(exact.isSuperset(of: Self.idrStartedFrames), "missed \(Self.idrStartedFrames.subtracting(exact).sorted())")
+        #expect(Self.counts(decoded)[.avFoundationReader, default: 0] > 0)
+        // A single request takes the same path.
+        let read = try await backend.frame(14, maxWidth: 160)
+        #expect(read.decoder == .avFoundationReader)
+        #expect(read.actualFrame == 14)
+        #expect(Self.frameNumber(in: read.image) == 14)
+        if let first = inexact.min() {
+            let single = try await backend.frame(first, maxWidth: 160)
+            #expect(Self.frameNumber(in: single.image) == single.actualFrame)
+            #expect(!single.isExact)
+        }
+    }
+
+    /// With the fallback every frame is exact: the exact request first, then
+    /// the earlier-GOP read, then ffmpeg.
+    @Test(.enabled(if: DecodeIntegrationTests.tools != nil)) func openGOPWithFallbackIsExact() async throws {
+        let clip = try await Self.makeOpenGOPClip()
+        let backend = try await DecoderRouter.open(clip, ffmpeg: Self.tools, exactFallback: true)
+        #expect(backend.kind == .avFoundation)
+        let decoded = try await decodeAll(backend)
+        for (index, frame) in decoded {
+            #expect(frame.actualFrame == index, "frame \(index)")
+            #expect(Self.frameNumber(in: frame.image) == index, "frame \(index)")
+            if Self.idrStartedFrames.contains(index) { #expect(frame.decoder != .ffmpeg, "frame \(index)") }
+        }
+        let counts = Self.counts(decoded)
+        print("openGOP with ffmpeg: decoders \(counts)")
+        #expect(counts[.avFoundationReader, default: 0] > 0)
+        #expect(counts[.ffmpeg, default: 0] > 0)
+        for number in [14, 29, 47] {
+            let single = try await backend.frame(number, maxWidth: 160)
+            #expect(single.actualFrame == number)
+            #expect(Self.frameNumber(in: single.image) == number)
+        }
+    }
+
+    /// Presentation time (track time) of a full sync sample before the
+    /// frame at `time`, found with a sample cursor stepping back in decode
+    /// order: `syncsBack` 1 is the sync sample the frame's decode starts
+    /// from (for a leading B frame, the I frame shown after it), 2 the one
+    /// before that (one GOP earlier). Sample cursors work in media time, so
+    /// times go through the edit's mapping (`offset` = track time − media
+    /// time). Nil when the track has no sample cursors; the first sample's
+    /// time when there are not enough sync samples.
+    static func syncTime(
+        _ track: AVAssetTrack, before time: CMTime, syncsBack: Int, offset: CMTime
+    ) -> CMTime? {
+        guard let cursor = track.makeSampleCursor(presentationTimeStamp: time - offset) else { return nil }
+        var syncFound = 0
+        while true {
+            if cursor.currentSampleSyncInfo.sampleIsFullSync.boolValue {
+                syncFound += 1
+                if syncFound == syncsBack { return cursor.presentationTimeStamp + offset }
+            }
+            if cursor.stepInDecodeOrder(byCount: -1) == 0 { return cursor.presentationTimeStamp + offset }
+        }
+    }
+
+    /// Track time minus media time of the track's first non-empty edit
+    /// (zero without an edit list).
+    static func mediaOffset(_ track: AVAssetTrack) async throws -> CMTime {
+        let segments = try await track.load(.segments)
+        guard let segment = segments.first(where: { !$0.isEmpty }) else { return .zero }
+        return segment.timeMapping.target.start - segment.timeMapping.source.start
+    }
+
+    struct ReaderRead {
+        var image: CGImage?
+        /// Presentation times of the frames the reader delivered, in order.
+        var delivered: [CMTime] = []
+        var error: String?
+    }
+
+    /// The frame shown at `target` through an `AVAssetReader` (output
+    /// provider API) whose range starts at `start` and ends one frame after
+    /// the target, decoding forward; a reader error ends the read and is
+    /// kept.
+    static func readFrame(
+        _ asset: AVURLAsset, _ track: AVAssetTrack, from start: CMTime, target: CMTime,
+        frameDuration: CMTime, width: Int, height: Int
+    ) async throws -> ReaderRead {
+        let reader = try AVAssetReader(asset: asset)
+        reader.timeRange = CMTimeRange(start: start, end: target + frameDuration)
+        let output = AVAssetReaderTrackOutput(track: track, outputSettings: [
+            kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
+            kCVPixelBufferWidthKey as String: width,
+            kCVPixelBufferHeightKey as String: height,
+        ])
+        let provider = reader.outputProvider(for: output)
+        try reader.start()
+        let slack = frameDuration.seconds / 4
+        var read = ReaderRead()
+        do {
+            while let sample = try await provider.next() {
+                let pts = sample.presentationTimeStamp
+                let image: CGImage? = sample.withUnsafeSampleBuffer { buffer in
+                    guard let pixels = CMSampleBufferGetImageBuffer(buffer) else { return nil }
+                    var image: CGImage?
+                    VTCreateCGImageFromCVPixelBuffer(pixels, options: nil, imageOut: &image)
+                    return image
+                }
+                guard let image else { continue }
+                read.delivered.append(pts)
+                if abs(pts.seconds - target.seconds) < slack {
+                    read.image = image
+                    break
+                }
+                if pts.seconds > target.seconds + slack { break }
+            }
+        } catch {
+            read.error = "\((error as NSError).code)/\(((error as NSError).userInfo[NSUnderlyingErrorKey] as? NSError)?.code ?? 0)"
+        }
+        reader.cancelReading()
+        return read
+    }
+
+    /// HQ hypothesis (TASK T04b, item 6): the frames an exact
+    /// AVAssetImageGenerator request misses come out exactly from an
+    /// AVAssetReader that starts one GOP earlier and decodes forward. For
+    /// comparison the same read also starts at the frame's own sync sample
+    /// and at the start of the movie.
+    ///
+    /// Found on macOS 27.2 (2026-11-03): the sample cursor reports every
+    /// keyframe (0, 16, 32, 48) as a full sync sample, none as partial. The
+    /// exact generator misses every frame from 13 on except the keyframes
+    /// (48 of 64). A reader starting at a non-IDR keyframe fails with
+    /// AVErrorDecodeFailed (-11821, underlying -12137) after at most that
+    /// keyframe, so the earlier-GOP read recovers only the GOP whose
+    /// previous keyframe is the IDR frame 0 (15 of 48); a reader from the
+    /// start of the movie recovers all 48. Kept as the record of the limit
+    /// of the backend's step 2 (`EarlierGOPReader`), which is why step 3
+    /// (ffmpeg) remains; a known issue, so the test notices when the read
+    /// starts to work.
+    @Test(.enabled(if: DecodeIntegrationTests.tools != nil)) func openGOPEarlierGOPReaderIsExact() async throws {
+        let clip = try await Self.makeOpenGOPClip()
+        let asset = AVURLAsset(url: clip)
+        let track = try #require(try await asset.loadTracks(withMediaType: .video).first)
+        let (timeRange, canCursor) = try await track.load(.timeRange, .canProvideSampleCursors)
+        #expect(canCursor)
+        let offset = try await Self.mediaOffset(track)
+        let fps = 24.0
+        let frameDuration = CMTime(value: 1, timescale: 24)
+        func start(of frame: Int) -> CMTime {
+            timeRange.start + CMTime(value: CMTimeValue(frame), timescale: 24)
+        }
+        func number(_ time: CMTime) -> Int { Int(((time - timeRange.start).seconds * fps).rounded()) }
+
+        // The sync table as the sample cursor reports it.
+        if let cursor = track.makeSampleCursorAtFirstSampleInDecodeOrder() {
+            var table: [String] = []
+            repeat {
+                let sync = cursor.currentSampleSyncInfo
+                if sync.sampleIsFullSync.boolValue || sync.sampleIsPartialSync.boolValue {
+                    table.append("\(number(cursor.presentationTimeStamp + offset))\(sync.sampleIsFullSync.boolValue ? "F" : "")\(sync.sampleIsPartialSync.boolValue ? "P" : "")")
+                }
+            } while cursor.stepInDecodeOrder(byCount: 1) == 1
+            print("openGOP sync samples (frame, F full / P partial): \(table); edit offset \(offset.seconds) s")
+        }
+
+        // Exact generator requests, as the backend makes them (frame middle,
+        // zero tolerance); a frame counts as failed when the request throws
+        // or the image shows another number.
+        var failed: [Int] = []
+        for frame in 0..<Self.openGOPFrames {
+            let generator = AVAssetImageGenerator(asset: asset)
+            generator.requestedTimeToleranceBefore = .zero
+            generator.requestedTimeToleranceAfter = .zero
+            generator.maximumSize = CGSize(width: 160, height: 0)
+            let middle = timeRange.start + CMTime(seconds: (Double(frame) + 0.5) / fps, preferredTimescale: 600_000)
+            if let result = try? await generator.image(at: middle), Self.frameNumber(in: result.image) == frame {
+                continue
+            }
+            failed.append(frame)
+        }
+        print("openGOP exact generator failed \(failed.count): \(failed)")
+
+        var recovered: [String: [Int]] = [:]
+        var notRecovered: [String: [String]] = [:]
+        let variants: [(String, (Int) -> CMTime?)] = [
+            ("previous GOP", { Self.syncTime(track, before: start(of: $0), syncsBack: 2, offset: offset) }),
+            ("own GOP", { Self.syncTime(track, before: start(of: $0), syncsBack: 1, offset: offset) }),
+            ("movie start", { _ in timeRange.start }),
+        ]
+        for (name, from) in variants {
+            for frame in failed {
+                let begin = try #require(from(frame))
+                let read = try await Self.readFrame(
+                    asset, track, from: begin, target: start(of: frame), frameDuration: frameDuration,
+                    width: 160, height: 90)
+                if let image = read.image, Self.frameNumber(in: image) == frame {
+                    recovered[name, default: []].append(frame)
+                } else {
+                    let got = read.image.map { "\(Self.frameNumber(in: $0))" } ?? "none"
+                    notRecovered[name, default: []].append(
+                        "\(frame)->\(got) from \(number(begin)), read \(read.delivered.map(number)), error \(read.error ?? "-")")
+                }
+            }
+            print("openGOP reader from \(name): recovered \(recovered[name]?.count ?? 0) of \(failed.count); not recovered \(notRecovered[name] ?? [])")
+        }
+        #expect(!failed.isEmpty, "the exact generator decoded every frame of the open-GOP clip")
+        #expect(notRecovered["movie start"] == nil, "a read from the start missed \(notRecovered["movie start"] ?? [])")
+        withKnownIssue("a reader starting at a non-IDR keyframe fails to decode (-11821/-12137)") {
+            #expect(notRecovered["previous GOP"] == nil, "earlier-GOP read missed \(notRecovered["previous GOP"] ?? [])")
+        }
+    }
+
+    /// The ffmpeg path is frame-exact on the open-GOP clip, leading frames
+    /// included (a seek to the frame itself returned frame 16 for 14).
+    @Test(.enabled(if: DecodeIntegrationTests.tools != nil)) func ffmpegIsExactOnOpenGOP() async throws {
+        let clip = try await Self.makeOpenGOPClip()
+        let backend = try await FFmpegBackend.open(clip, tools: try #require(Self.tools))
+        #expect(backend.info.frameCount == Self.openGOPFrames)
+        let decoded = try await decodeAll(backend)
+        for (index, frame) in decoded {
+            #expect(frame.actualFrame == index, "frame \(index)")
+            #expect(Self.frameNumber(in: frame.image) == index, "frame \(index)")
+        }
+    }
+
+    @Test func ffmpegLogParsing() {
+        let log = """
+            [info] Stream mapping:
+            [h264 @ 0x1] [error] mmco: unref short failure
+            [Parsed_showinfo_1 @ 0x2] [info] config in time_base: 1/12288, frame_rate: 24/1
+            [Parsed_showinfo_1 @ 0x2] [info] n:   0 pts:   8704 pts_time:0.708333 duration:    512
+            [Parsed_showinfo_1 @ 0x2] [info] n:   1 pts:   9216 pts_time:0.75    duration:    512
+            """
+        let parsed = FFmpegBackend.parseLog(log)
+        #expect(parsed.pts == 0.708333)
+        #expect(parsed.error == "mmco: unref short failure")
+        #expect(FFmpegBackend.parseLog("[info] nothing").pts == nil)
     }
 
     @Test func mkvWithoutFFmpegExplains() async throws {

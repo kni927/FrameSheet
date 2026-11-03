@@ -226,8 +226,9 @@ extension AppModel {
                     message: "Saving thumb \(i + 1) of \(individual.count)…",
                     fraction: Double(i) / Double(individual.count))
                 let frame = try await backend.frame(thumb.frameNumber, maxWidth: max(1, backend.info.width))
+                // Named by the frame decoded, like the window's label.
                 _ = try await writeThumb(
-                    frame.image, frameNumber: thumb.frameNumber, template: settings.individualThumbNameTemplate,
+                    frame.image, frameNumber: frame.actualFrame, template: settings.individualThumbNameTemplate,
                     folder: thumbsFolder, file: file, sheet: sheet, settings: settings)
             }
         }
@@ -248,7 +249,9 @@ extension AppModel {
     }
 
     /// Save thumb in the hover overlay: the frame at the movie's own size,
-    /// named by the single-thumb template, in the output folder.
+    /// named by the single-thumb template, in the output folder. It decodes
+    /// through the movie's backend, as the window does, so with the exact-
+    /// frame fallback on the saved frame is the window's.
     func saveThumb(_ thumbId: UUID) {
         guard let file = currentFile, let sheet = currentSheet,
               let thumb = sheet.thumbs.first(where: { $0.id == thumbId })
@@ -261,7 +264,7 @@ extension AppModel {
                 let folder = outputFolder(for: file)
                 try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
                 let url = try await writeThumb(
-                    frame.image, frameNumber: thumb.frameNumber, template: settings.singleThumbNameTemplate,
+                    frame.image, frameNumber: frame.actualFrame, template: settings.singleThumbNameTemplate,
                     folder: folder, file: file, sheet: sheet, settings: settings)
                 showNotice("Saved \(url.lastPathComponent)")
                 if settings.openFinderAfterSaving { NSWorkspace.shared.activateFileViewerSelecting([url]) }

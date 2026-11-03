@@ -111,6 +111,14 @@ private struct ThumbView: View {
                 RoundedRectangle(cornerRadius: cornerRadius).fill(Theme.crust.opacity(0.65))
             }
         }
+        .overlay(alignment: .topTrailing) {
+            // Window only, not in the saved print: the thumb shows the
+            // nearest decodable frame (decision 11), labeled by that frame.
+            if let requested = model.nearestFrame(of: thumb), !showOverlay {
+                NearestFrameMarker(size: size)
+                    .help("Nearest decodable frame (frame \(requested) asked for; \(model.exactFrameHint))")
+            }
+        }
         .overlay {
             if showOverlay {
                 HoverOverlay(file: file, sheet: sheet, thumb: thumb, size: size, onHoverButton: onHoverButton)
@@ -149,6 +157,24 @@ private struct ThumbView: View {
             model.moveThumb(dragged, onto: thumb.id, after: location.x > size.width / 2)
             return true
         } isTargeted: { isDropTarget = $0 }
+    }
+}
+
+/// The small badge on a thumb that shows the nearest decodable frame
+/// instead of the one it asked for.
+private struct NearestFrameMarker: View {
+    let size: CGSize
+
+    var body: some View {
+        let unit = min(max(size.height * 0.09, 9), 16)
+        Image(systemName: "arrow.uturn.backward")
+            .font(.system(size: unit * 0.7, weight: .bold))
+            .foregroundStyle(Theme.crust)
+            .frame(width: unit * 1.4, height: unit * 1.4)
+            .background(Circle().fill(Theme.warning))
+            .padding(unit * 0.4)
+            .contentShape(Rectangle())
+            .accessibilityLabel("Nearest decodable frame")
     }
 }
 

@@ -16,13 +16,20 @@ public final class FFmpegBackend: DecodeBackend {
     public let info: MediaInfo
     private let tools: FFmpegTools
     private let path: String
+    /// Presentation time of frame 0: the video stream's start time.
+    private let startTime: Double
+    /// Frames that can be decoded before a frame shown earlier (ffprobe's
+    /// `has_b_frames`).
+    private let reorderDepth: Int
 
     static let concurrency = 5
 
-    private init(tools: FFmpegTools, path: String, info: MediaInfo) {
+    private init(tools: FFmpegTools, path: String, info: MediaInfo, startTime: Double, reorderDepth: Int) {
         self.tools = tools
         self.path = path
         self.info = info
+        self.startTime = startTime
+        self.reorderDepth = reorderDepth
     }
 
     public static func open(_ url: URL, tools: FFmpegTools) async throws -> FFmpegBackend {
@@ -67,7 +74,10 @@ public final class FFmpegBackend: DecodeBackend {
         let info = MediaInfo(
             duration: duration, frameCount: frameCount, fps: fps, width: width, height: height,
             fourCC: fourCC, size: size)
-        return FFmpegBackend(tools: tools, path: path, info: info)
+        let start = Double(stream.start_time ?? "") ?? Double(probe.format?.start_time ?? "") ?? 0
+        return FFmpegBackend(
+            tools: tools, path: path, info: info, startTime: start.isFinite ? start : 0,
+            reorderDepth: max(0, stream.has_b_frames ?? 0))
     }
 
     // MARK: - Probe helpers
@@ -76,6 +86,7 @@ public final class FFmpegBackend: DecodeBackend {
         struct Format: Decodable {
             var duration: String?
             var size: String?
+            var start_time: String?
         }
         struct Stream: Decodable {
             var codec_type: String?
@@ -87,6 +98,8 @@ public final class FFmpegBackend: DecodeBackend {
             var r_frame_rate: String?
             var nb_frames: String?
             var duration: String?
+            var start_time: String?
+            var has_b_frames: Int?
             var side_data_list: [SideData]?
             var tags: [String: String]?
 
@@ -132,51 +145,108 @@ public final class FFmpegBackend: DecodeBackend {
 
     // MARK: - Frames
 
-    /// Seek to half a frame before the frame's start: ffmpeg's accurate
-    /// input seek then returns the first frame at or after that time, which
-    /// is the requested one.
-    private func seconds(of frame: Int) -> Double {
-        let fps = info.fps > 0 ? info.fps : 25
-        return max(0, (Double(frame) - 0.5) / fps)
+    private var frameRate: Double { info.fps > 0 ? info.fps : 25 }
+
+    /// How far before a frame's time the input seek lands, first try and
+    /// second. ffmpeg's demuxers seek to the last keyframe whose decode time
+    /// is at or before the seek point; a leading frame of an open GOP (shown
+    /// before its I frame, decoded after it) lies after that I frame's
+    /// decode time, so a seek to the frame itself starts at that I frame and
+    /// returns the I frame. Seeking back by twice the reorder depth and a
+    /// few frames reaches the keyframe before; the second try, 3 s back,
+    /// covers streams with longer reordering.
+    private var seekMargins: [Double] {
+        let frames = Double(max(6, 2 * (reorderDepth + 2)))
+        return [max(0.25, frames / frameRate), 3]
     }
 
+    /// The frame number of a presentation time (rounded, so 6.9999 is 7).
+    private func frameNumber(at pts: Double) -> Int {
+        max(0, Int(((pts - startTime) * frameRate).rounded()))
+    }
+
+    /// Frame-exact on constant-frame-rate files: input-seeks a little before
+    /// the frame (see `seekMargins`), keeps the original timestamps
+    /// (`-copyts`) and lets `select` pass the first frame from half a frame
+    /// before the frame's time on. `showinfo` reports that frame's
+    /// timestamp, so the result names the frame actually decoded: when it
+    /// is a later one (the seek landed past the frame), the second margin
+    /// tries again.
     public func frame(_ frameNumber: Int, maxWidth: Int) async throws -> DecodedFrame {
-        let start = seconds(of: frameNumber)
-        let first = try await extract(at: start, maxWidth: maxWidth)
-        if let image = first.image {
-            return DecodedFrame(image: image, requestedFrame: frameNumber, actualFrame: frameNumber, retried: false)
+        let fps = frameRate
+        let target = Double(frameNumber) / fps
+        let lowerBound = startTime + (Double(frameNumber) - 0.5) / fps
+        var firstError = ""
+        let margins = seekMargins
+        for (attempt, margin) in margins.enumerated() {
+            let result = try await extract(seek: max(0, target - margin), from: lowerBound, maxWidth: maxWidth)
+            if attempt == 0 { firstError = result.error }
+            guard let image = result.image else { break }
+            let actual = result.pts.map(self.frameNumber(at:)) ?? frameNumber
+            if actual == frameNumber || attempt == margins.count - 1 {
+                return DecodedFrame(
+                    image: image, requestedFrame: frameNumber, actualFrame: actual,
+                    retried: actual != frameNumber, decoder: .ffmpeg)
+            }
         }
-        // No frame at or after the seek point: the frame count estimated
+        // No frame at or after the frame's time: the frame count estimated
         // from the duration can run past the last frame. Retry once 0.5 s
-        // earlier (decision 11) and keep the frame that comes back, the
-        // first one at or after the new seek point.
-        let fps = info.fps > 0 ? info.fps : 25
-        let retryStart = max(0, start - 0.5)
-        if let image = try await extract(at: retryStart, maxWidth: maxWidth).image {
-            let actual = max(0, Int((retryStart * fps - 1e-6).rounded(.up)))
-            return DecodedFrame(image: image, requestedFrame: frameNumber, actualFrame: actual, retried: true)
+        // earlier (decision 11) and keep the frame that comes back, named
+        // by its timestamp.
+        let retryBound = max(startTime, lowerBound - 0.5)
+        let retrySeek = max(0, retryBound - startTime - margins[0])
+        let retry = try await extract(seek: retrySeek, from: retryBound, maxWidth: maxWidth)
+        if let image = retry.image {
+            let actual = retry.pts.map(self.frameNumber(at:))
+                ?? max(0, Int(((retryBound - startTime) * fps - 1e-6).rounded(.up)))
+            return DecodedFrame(
+                image: image, requestedFrame: frameNumber, actualFrame: actual, retried: true, decoder: .ffmpeg)
         }
-        let reason = first.error.isEmpty ? "ffmpeg returned no image" : first.error
+        let reason = firstError.isEmpty ? "ffmpeg returned no image" : firstError
         throw DecodeError("Frame \(frameNumber): \(reason)")
     }
 
-    private func extract(at seconds: Double, maxWidth: Int) async throws -> (image: CGImage?, error: String) {
+    /// One ffmpeg run: the first frame whose timestamp is at or after
+    /// `lowerBound` (seconds, in the file's own timestamps), decoding from
+    /// the keyframe before `seek` (seconds from the start). Returns the
+    /// image, its timestamp and the error lines ffmpeg printed.
+    private func extract(
+        seek: Double, from lowerBound: Double, maxWidth: Int
+    ) async throws -> (image: CGImage?, pts: Double?, error: String) {
         // Even width for the scaler; never wider than the movie.
         let width = max(2, min(maxWidth, info.width > 0 ? info.width : maxWidth) / 2 * 2)
         let result = try await ProcessRunner.run(tools.ffmpeg, [
-            "-hide_banner", "-loglevel", "error", "-nostdin",
-            "-ss", String(format: "%.6f", seconds),
+            "-hide_banner", "-nostdin", "-nostats", "-loglevel", "level+info",
+            "-copyts",
+            "-ss", String(format: "%.6f", seek),
             "-i", path,
-            "-frames:v", "1", "-an", "-sn",
-            "-vf", "scale=\(width):-2",
+            "-frames:v", "1", "-an", "-sn", "-dn",
+            "-vf", "select='gte(t,\(String(format: "%.6f", lowerBound)))',showinfo,scale=\(width):-2",
             "-f", "image2pipe", "-c:v", "png", "-",
         ], timeout: .seconds(60))
-        let error = result.stderrText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let log = Self.parseLog(result.stderrText)
         guard result.status == 0, !result.stdout.isEmpty,
               let source = CGImageSourceCreateWithData(result.stdout as CFData, nil),
               let image = CGImageSourceCreateImageAtIndex(source, 0, nil)
-        else { return (nil, error) }
-        return (image, error)
+        else { return (nil, nil, log.error) }
+        return (image, log.pts, log.error)
+    }
+
+    /// The timestamp of the first frame `showinfo` passed and the error
+    /// lines, from ffmpeg's stderr at `-loglevel level+info`.
+    static func parseLog(_ text: String) -> (pts: Double?, error: String) {
+        var pts: Double?
+        var errors: [String] = []
+        for line in text.split(whereSeparator: \.isNewline) {
+            if pts == nil, line.contains("Parsed_showinfo"), line.contains(" n:"),
+               let range = line.range(of: "pts_time:") {
+                let value = line[range.upperBound...].prefix { !$0.isWhitespace }
+                pts = Double(value)
+            } else if let range = line.range(of: "[error] ") ?? line.range(of: "[fatal] ") {
+                errors.append(String(line[range.upperBound...]))
+            }
+        }
+        return (pts, errors.joined(separator: "\n"))
     }
 
     public func frames(_ frameNumbers: [Int], maxWidth: Int) -> AsyncStream<FrameResult> {
