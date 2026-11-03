@@ -1,7 +1,7 @@
 # FrameSheet v3 Specification
 
 FrameSheet v3 reproduces MoviePrint v0.2.23 (fakob/MoviePrint_v004, MIT) as a
-native Apple Silicon app. This document is the target behaviour; decisions
+native Apple Silicon app. This document is the target behavior; decisions
 behind it are in `docs/DECISIONS.md` (14–21). Values come from MoviePrint's
 source (`app/utils/constants.js`, `app/store/localStorage.js`,
 `app/utils/utils.js`, components) as read on 2026-11-01. Scan and cache
@@ -41,7 +41,7 @@ builds them.
   `shot` | `faces`), view (`grid` | `timeline`), `columnCount`,
   `secondsPerRow`, `parentSheetId`, thumbs, scenes.
 - **Thumb:** id, frame number, index, hidden, faces (per-frame face data).
-- **Scene:** id (= thumb id), start frame, length, mean colour, hidden.
+- **Scene:** id (= thumb id), start frame, length, mean color, hidden.
 - Names `Sheet-N` from a per-file counter (owner, 2026-11-03; MoviePrint's
   `MoviePrint-N` meant nothing to users); expanded sheets "Shot #n" or
   "Sequence a - b".
@@ -51,10 +51,13 @@ builds them.
 ## 4. Window layout
 
 - **Header bar:** Add movies (key A; open panel); "more options": Import
-  MoviePrint (JSON, or PNG with embedded data), Clear movie list.
+  Sheet… (JSON, or PNG with embedded data), Clear movie list. PNG and JSON
+  files are also imported when added by Add movies, drop or Open With (owner,
+  T04).
 - **Save:** a download button in the window toolbar (owner, 2026-11-03;
-  MoviePrint's footer is not reproduced): Save MoviePrint (key M); its menu:
-  Open output location, Save All MoviePrints.
+  MoviePrint's footer is not reproduced): Save sheet (key M); its menu:
+  Open output location, Save All sheets. Undo and Redo buttons sit in the
+  toolbar too (owner, T04).
 - **Left sidebar — movie list** (key 1): per movie poster frame ("S" badge once
   shot-scanned), name, folder, duration (timecode), size, W×H. Movie menu:
   Edit rotation/cropping/aspect ratio, Open file location (Finder), Replace
@@ -64,7 +67,7 @@ builds them.
   faces), Convert to interval, Duplicate, Export JSON, Export EDL (shot sheets),
   Delete.
 - **Right sidebar — settings** (key 3), §6: the per-sheet and output
-  sections, divided by lines. App-wide settings (thumbnail cache, ffmpeg) are
+  sections, divided by lines and collapsible (owner, T04). App-wide settings (thumbnail cache, ffmpeg) are
   in a Settings window (⌘,) (owner, 2026-11-03).
 - **Main area:** empty-state placeholder; grid view; timeline view. Drop
   overlay "ADD MOVIES TO LIST"; with Option held "CLEAR LIST AND ADD MOVIES".
@@ -77,7 +80,7 @@ builds them.
   Grid/timeline; Player view (key 2); Zoom out / Fit / Zoom in (0.25, 0.33,
   0.5, 0.75, 1, 2 … 8; default 1); Show hidden thumbs; Show header; cycle frame
   info (frames → timecode → none); Toggle face rectangles; Toggle images (mean
-  colours only); Optimise grid layout (columns = ceil(√n)).
+  colors only); Optimize grid layout (columns = ceil(√n)).
 - Progress and errors as toasts; long scans show Cancel in the toast.
 - **Menus:** standard App, File, Edit (Undo/Redo), View (full screen, fit,
   zoom), Window, Help; Settings… (⌘,) in the App menu.
@@ -91,7 +94,7 @@ builds them.
   `start + floor(length / 2)`; opens in timeline view; the threshold can change
   without rescanning.
 - **Faces:** grid only; frames that contain faces; initial sort by face size,
-  then optimised grid.
+  then optimized grid.
 - **Timeline view** for interval sheets: artificial scenes split at the
   midpoints between visible thumbs.
 - **Expand** (thumb or scene): child interval sheet of 16 thumbs inside that
@@ -108,10 +111,11 @@ headerHeightRatio 0.25, thumbInfoRatio 0.075.
 
 ### 5.2 Print header
 
-File name; optional folder path; optional details
-`TC | fps FPS | W × H | size | fourCC`; optional mini timeline with the IN/OUT
-range and thumb positions. MoviePrint's logo is replaced by the FrameSheet
-app icon (owner, 2026-11-01).
+File name; optional folder path (shown as `~/…`); optional details
+`TC  fps FPS  W × H  size  fourCC`, separated by spaces; optional mini
+timeline with the IN/OUT range and thumb positions. No logo or app icon;
+right-aligned by default, with a left-aligned option (owner, T04, replacing
+the 2026-11-01 app-icon choice).
 
 ## 6. Settings panel
 
@@ -131,15 +135,16 @@ app icon (owner, 2026-11-01).
   height × multiplier) and min scene width 0–10 s (stored as frames, default
   10 frames). Show header (default off) with Show file path / file details /
   timeline (default on); Rounded corners (on); Show hidden thumbs.
-- **Frame info:** Show frames (4-digit) / Show timecode (HH:MM:SS:FF) / Hide
-  (default). Font colour, background colour, presets from the Catppuccin
-  palette plus any colour and transparent. Position: TopLeft (default),
+- **Frame info:** Show frames (4-digit) / Show timecode / Hide (default);
+  the timecode format is selectable (HH:MM:SS:FF and other formats, owner,
+  T04). Font color, background color, presets from the Catppuccin
+  palette plus any color and transparent. Position: TopLeft (default),
   TopCenter, TopRight, CenterCenter, BottomLeft, BottomCenter, BottomRight.
   Size 1–100 (10). Margin 0–50 (0).
 - **Output:** folder (default Desktop; Change…; Same as movie file, off); size
   1024–16384 px in 1024 steps labelled "4096px (×Hpx)" plus "max" (default
   4096; in timeline view it is the height); format PNG (default) / JPG,
-  quality 0–100 (80); background colour (default transparent; alpha in PNG
+  quality 0–100 (80); background color (default transparent; alpha in PNG
   only). Save options: Overwrite (off); Include individual thumbs (off); Embed
   frame numbers (PNG, on); Embed file path (PNG, on); Open Finder after saving
   (off). Thumb format JPG (default) / PNG, quality 95.
@@ -178,7 +183,7 @@ app icon (owner, 2026-11-01).
 - Click selects; double-click toggles player view; drag to reorder (not on
   shot sheets).
 - **Timeline scenes:** Expand, Hide, Hide all before/after, Jump to cut
-  start/end, Scrub. Box background = mean colour with the frame image; the
+  start/end, Scrub. Box background = mean color with the frame image; the
   selected scene widens to full aspect width.
 
 ## 8. Keyboard
@@ -189,7 +194,7 @@ app icon (owner, 2026-11-01).
 | A | Add movies |
 | F | Detection chart |
 | G | Grid ↔ timeline |
-| M | Save MoviePrint |
+| M | Save sheet |
 | Space | Player view; shot sheets: toggle cut/merge vs change-thumb mode |
 | ← / → | Player ±10 frames |
 | ⇧ ← / → | ±1 frame |
@@ -227,14 +232,14 @@ Alt and Ctrl become Option and Control.
   macOS 27 `AVAssetReaderOutput.Provider` API.
 - **Shot scan** reads every frame at max 240 px (derived as above).
   - Mean method: difference = |mean V − previous mean V| (HSV V, 0–255); mean
-    colour = HSV mean converted to RGB.
-  - Histogram method: 32×32×32 HSV histogram, normalised, chi-square
-    (alternative) distance; colour = RGB mean.
-  - Stored per frame `{frameNumber, difference, meanColour}` in a per-file
+    color = HSV mean converted to RGB.
+  - Histogram method: 32×32×32 HSV histogram, normalized, chi-square
+    (alternative) distance; color = RGB mean.
+  - Stored per frame `{frameNumber, difference, meanColor}` in a per-file
     scan cache; scanned once per file; scenes stream to the UI during the scan.
   - Scene list: cut where difference ≥ threshold and ≥ 10 frames since the last
-    cut; within that window a larger difference moves the cut. Scene colour =
-    mean colour of the middle frame; the last scene grey.
+    cut; within that window a larger difference moves the cut. Scene color =
+    mean color of the middle frame; the last scene gray.
   - Detection chart: difference per frame, threshold line, and a "calculated
     threshold" from k-means (k = 3) on a 256-bin histogram (display only).
 - **Automatic IN/OUT:** scan the first and last min(300, length / 2) frames at
@@ -267,7 +272,7 @@ Alt and Ctrl become Option and Control.
 
 ## 11. Look
 
-- Content in the kni Design System (Catppuccin Mocha base): colour, spacing
+- Content in the kni Design System (Catppuccin Mocha base): color, spacing
   and radius tokens from the design system itself; dark appearance only.
 - Type: the system fonts (SF Pro, SF Mono, SF Pro Condensed) at the design
   system's sizes, instead of its IBM Plex (owner, 2026-11-03).
@@ -276,7 +281,7 @@ Alt and Ctrl become Option and Control.
 
 ## 12. Export, import, persistence
 
-- **Save MoviePrint:** render the sheet offscreen at the target size with
+- **Save sheet:** render the sheet offscreen at the target size with
   frames grabbed fresh at about 2× thumb size (capped at the original);
   PNG or JPG; limit 16384 px; timeline: size = height.
 - **PNG embedded data:** `tEXt` chunks before IEND, MoviePrint-compatible keys:
