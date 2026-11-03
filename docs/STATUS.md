@@ -26,10 +26,6 @@ reproduces MoviePrint v0.2.23 for Apple Silicon: decisions 14–22 in
 - T06 picks up from T05: Jump to cut and Cut should use the player's frame
   (MoviePrint does); Return in the timeline (cut here / merge at a cut) is a
   player key.
-- Spec gaps for the HQ from T05: scrub starts at the press point; EDL writes
-  the clip-name line for every event; timeline prints have no header;
-  "Add new sheet" uses the stored scan's method; Automatic IN/OUT moved to
-  the Grid section with a brightness threshold; naming presets with Custom.
 - Next UI step (owner): move some right-panel settings to the Settings window.
 - Hung runs: `scripts/check.sh` stops itself after 15 min; `scripts/check.sh
   stop` ends a run the sandbox cannot (owner, 2026-11-03).

@@ -128,7 +128,8 @@ the 2026-11-01 app-icon choice).
   differs from the current count. Default 16 thumbs.
 - **Timeline view:** Minutes per row 10–1800 s (default 120 s, per sheet);
   Natural flow (shot sheets, wrap by width; default off); Change scene count →
-  shot detection threshold 3–40 (default 6.0) and Add new MoviePrint.
+  shot detection threshold 3–40 (default 6.0) and Add new sheet (built from
+  the stored scan with the method it was scanned with; T05).
 - **Styling:** grid margin 0–20 (default 4); timeline only: scene width ratio
   0–100 (default 50; multiplier v / 55.5555 + 0.1 for v ≤ 50, else
   (v − 50) / 5.55555 + 1; print height = MoviePrint width, print width =
@@ -148,7 +149,7 @@ the 2026-11-01 app-icon choice).
   only). Save options: Overwrite (off); Include individual thumbs (off); Embed
   frame numbers (PNG, on); Embed file path (PNG, on); Open Finder after saving
   (off). Thumb format JPG (default) / PNG, quality 95.
-- **Naming scheme** with live preview: sheet `[MN].[ME]-[SN]`; single
+- **Naming scheme** with live preview and presets plus Custom… (T05): sheet `[MN].[ME]-[SN]`; single
   thumb `[MN].[ME]-frame[FN]`; individual thumbs `[MN].[ME]-[FN]`. Tokens
   `[MN]` movie name, `[ME]` extension, `[SN]` sheet name (MoviePrint's
   `[MPN]` is accepted as an alias), `[FN]` frame number
@@ -164,7 +165,7 @@ the 2026-11-01 app-icon choice).
 - **Fetch exact frames with ffmpeg** (Settings window, default on; disabled
   with a note without ffmpeg): step 3 of decision 25.
 - **Experimental:** shot detection method Mean (default) / Histogram; detection
-  chart (key F); automatic IN/OUT detection (off); input fields instead of
+  chart (key F); input fields instead of
   sliders.
 - **ffmpeg** (Settings window): found path and version; Choose… to set a path (§10).
 
@@ -179,9 +180,10 @@ the 2026-11-01 app-icon choice).
   (interval: frame midway to the neighbor; shot sheets: Jump to cut).
 - **Scrub** (drag the handle): overlay with the left neighbor, the live frame
   and the right neighbor, labeled CHANGE TO / ADD BEFORE / ADD AFTER, with a
-  hint naming the modifier keys. The drag starts at the thumb's own frame and
-  moves linearly toward the neighbors' frames (owner, T04b; MoviePrint maps
-  the pointer absolutely). Shift: from the left neighbor
+  hint naming the modifier keys. The drag starts at the press point, which
+  shows the thumb's own frame, and moves linearly toward the neighbors' frames
+  (owner, T04b/T05; MoviePrint maps the pointer absolutely); the preview names
+  the frame it shows. Shift: from the left neighbor
   to the current thumb, insert before. Option: from the current thumb to the
   right neighbor, insert after. Control (or the first/last thumb): extend to
   movie start/end. Release confirms; a top Cancel bar cancels. Shot sheets:
@@ -250,7 +252,8 @@ Alt and Ctrl become Option and Control.
     threshold" from k-means (k = 3) on a 256-bin histogram (display only).
 - **Automatic IN/OUT:** scan the first and last min(300, length / 2) frames at
   0.25 scale; IN = first frame with mean V ≥ 20, OUT = the same from the end;
-  fall back to the brightest frame.
+  fall back to the brightest frame. The option and its brightness threshold
+  sit in the Grid section (T05), not under Experimental.
 - **Timeline layout:** fill rows until the summed length exceeds
   `secondsPerRow × fps` with the movie's own fps (MoviePrint hard-codes 25 fps;
   owner, 2026-11-01); px per frame = minimum over rows of (width − 2 × margin ×
@@ -295,7 +298,8 @@ Alt and Ctrl become Option and Control.
 
 - **Save sheet:** render the sheet offscreen at the target size with
   frames grabbed fresh at about 2× thumb size (capped at the original);
-  PNG or JPG; limit 16384 px; timeline: size = height.
+  PNG or JPG; limit 16384 px; timeline: size = height, and timeline prints
+  have no header (T05).
 - **PNG embedded data:** `tEXt` chunks before IEND, MoviePrint-compatible keys:
   `version`, `filePath` (URI-encoded), `transformObject` (JSON),
   `columnCount`, `frameNumberArray` (JSON, non-shot) or `sceneArray` (JSON,
@@ -306,7 +310,8 @@ Alt and Ctrl become Option and Control.
 - **JSON export** `<file>-<sheet>.json` =
   `{filePath, transformObject, columnCount, frameNumberArray | sceneArray}`.
 - **EDL export** (shot sheets): CMX3600-style, `TITLE:`, `FCM: NON-DROP FRAME`,
-  events with `* FROM CLIP NAME:`; hidden scenes excluded.
+  events with `* FROM CLIP NAME:` on every event (MoviePrint omits it on the
+  last); hidden scenes excluded.
 - **Import** PNG or JSON, from FrameSheet v3 and from MoviePrint 0.2.x → a new
   file entry and sheet (frame list → interval/grid; scene array →
   shot/timeline); rotation ignored on import. Replace movie relinks a file.
