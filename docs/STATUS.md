@@ -19,17 +19,25 @@ reproduces MoviePrint v0.2.23 for Apple Silicon: decisions 14–22 in
   re-measure on the fastest Mac before raising defaults; re-check decode speed
   with the macOS 27 `AVAssetReaderOutput.Provider` API.
 - v3.0.0 order (owner, 2026-11-02): T03 interval editing (done) → T03b UI
-  legibility pass (done) → T04 Save MoviePrint, header, naming,
-  PNG/JSON export and import (in progress, TF #01) → T05 shot scan, timeline, cut/merge, EDL → T06
-  player view → T07 faces Lv1 → T08 transforms, Save All, polish → version
-  and release TASK.
+  legibility pass (done) → T04 save, header, naming, PNG/JSON export and
+  import (done) → T05 shot scan, timeline, cut/merge, EDL → T06 player view →
+  T07 faces Lv1 → T08 transforms, Save All, polish → version and release TASK.
+- Next TASK before or with T05 (owner, 2026-11-03): partly decodable files
+  (KNOWN_ISSUES 5) — AVFoundation stays the default, a Settings option fetches
+  frames AVFoundation cannot decode with ffmpeg; the scrub must not silently
+  move a confirmed frame to a keyframe; fix the ffmpeg path's half-frame time
+  offset (one frame off on open-GOP files). Needs `run-all.sh quick`.
+- Next UI step (owner): move some right-panel settings to the Settings window.
+- Spec gaps for the HQ from T04: header without the app icon, right-aligned
+  with a left option; details separated by spaces; timecode formats for frame
+  info; collapsible panel sections; "Save sheet" / "Import Sheet…" labels;
+  Undo/Redo in the toolbar; PNG/JSON import from every entry point.
+- Spelling: the owner wants en-US; proposal with Upstream HQ (2026-11-03),
+  CLAUDE.md and V3_SPEC.md still use en-GB.
 - Tooltips on every control, kept short (owner, 2026-11-02/03).
-- `docs/V3_SPEC.md` §6 Grid view still describes "Change thumb count"; T03b
-  made Rows a target with a Replace button (HQ to update).
-- Sheets are still named `MoviePrint-N` in code; the spec now says `Sheet-N`
-  (owner, 2026-11-03), for T04.
-- Not yet tried by the owner: Rename/Delete sheet, Locate, ⌃⌘F, the scrub at
-  the smallest window size, ⌘Z while renaming.
+- Not yet tried by the owner: Rename/Delete sheet, ⌃⌘F, the scrub at the
+  smallest window size, ⌘Z while renaming, MoviePrint 0.2.23 files (only
+  0.2.12 runs on the owner's Mac).
 - Builds and tests go through `scripts/check.sh` (`install` also installs
   and launches); it runs outside the sandbox without a dialog.
 

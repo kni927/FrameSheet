@@ -38,8 +38,16 @@ Sources/FrameSheetCore/          no SwiftUI or AppKit
 │   ├── EditHistory.swift        50-step undo/redo; EditableLibrary.edit
 │   ├── IntervalEditing.swift    thumb and sheet operations, interval scenes
 │   ├── Scrub.swift              pointer → frame mapping, scrub actions
-│   ├── GridLayout.swift         optimised columns, stats line, zoom, frame info
+│   ├── GridLayout.swift         optimized columns, stats line, zoom, frame info
 │   └── ThumbNavigation.swift    next/previous thumb, dimming, scrub layout
+├── Export/
+│   ├── FileNaming.swift         [MN] [ME] [SN] [FN] [TC] templates, " edit N"
+│   ├── PNGText.swift            tEXt chunks before IEND, CRC32
+│   ├── SheetExchange.swift      MoviePrint-compatible PNG/JSON data, import
+│   ├── PrintHeader.swift        header lines, mini timeline, metrics
+│   ├── PrintOutput.swift        output size and max, decode width, 8-bit encoding
+│   └── IncomingFiles.swift      route PNG/JSON to import, the rest to movies
+├── PathDisplay.swift            ~/… for paths under home
 └── Decode/
     ├── DecodeBackend.swift      protocol, MediaInfo, DecodedFrame, errors
     ├── AVFoundationBackend.swift  probe, zero-tolerance thumbs + ±0.5 s retry
@@ -53,7 +61,10 @@ Sources/FrameSheet/              the app
 ├── FrameSheetApp.swift          Window scene, menus, AppDelegate, key monitor
 ├── AppModel.swift               @Observable state over an EditableLibrary:
 │                                edits, selection, zoom, scrub, thumbnail
-│                                loading, debounced saving
+│                                loading, debounced saving, import, relink
+├── AppModel+Save.swift          Save sheet, Save thumb, each thumb, Export JSON
+├── PrintView.swift              the print (header, thumbs, frame info), drawn
+│                                in the window and by ImageRenderer for saving
 ├── ContentView.swift            split view, inspector, title and sidebar
 │                                toggle, drop target, toast
 ├── SheetToolbar.swift           sheet tools in the window toolbar
@@ -75,7 +86,8 @@ tools/spike/                     separate measurement package
 bookmark, probe data, IN/OUT, transform, scan state and a sheet counter),
 sheets per movie (`Sheet`: type, view, columns, seconds per row, parent,
 thumbs, scenes), global `Settings`, and the selection. Sheet names are
-`MoviePrint-N` from the per-movie counter. Interval sheets take N frame
+`Sheet-N` from the per-movie counter (libraries before version 2 have their
+`MoviePrint-N` names renamed on load). Interval sheets take N frame
 numbers evenly between IN and OUT with MoviePrint's own rounding. The app
 mutates the library on the main actor and saves it as JSON half a second
 after each change; it is loaded once on launch. Settings decode with defaults
@@ -110,6 +122,25 @@ software decode, and retries 0.5 s earlier when the frame count estimated
 from the duration runs past the last frame. Sequential scanning
 (`AVAssetReader`, shot and face scans) is not built yet; its design is in
 `docs/V3_SPEC.md` §10.
+
+Near the end of a movie the retry window is moved inside the movie (center at
+most end − 0.5 s). A file whose sync samples are open-GOP I frames decodes
+only partly with AVFoundation (KNOWN_ISSUES 5).
+
+## Saving and import
+
+`PrintView` draws the print once for both the window and the saved file: the
+window adds its interaction layer (hover, selection, placeholders, drag) on
+top. Save sheet decodes the print's frames fresh at twice the output thumb
+width (capped at the movie width) in small sequential batches through
+`DecodeGate`, renders with `ImageRenderer` (standard dynamic range), converts
+to 8-bit sRGB and encodes off the main actor; a PNG gets MoviePrint's `tEXt`
+chunks (`version` "FrameSheet x.y.z", `filePath`, `transformObject`,
+`columnCount`, `frameNumberArray`, `sceneArray`). Import reads those chunks
+or the JSON export (also MoviePrint 0.2.x files), adds a new movie entry and
+sheet, probes the movie and keeps the frame numbers. Every way files enter
+(Add movies, drop, Import Sheet…, Open With) goes through
+`AppModel.openFiles`, which sends PNG and JSON to import.
 
 ffmpeg is found in the order of §10 (user path, login-shell `command -v`,
 known directories), each candidate validated with `ffmpeg -version`;

@@ -42,3 +42,18 @@ history of this file up to tag v2.3.1.
 * **Workaround**: Since T03b all AVFoundation decodes pass one `DecodeGate`
   (one at a time), the shown images are pinned and reloads are throttled; no
   panic since. Raising the gate waits for a per-machine measurement.
+
+### 5. Open-GOP files decode only partly with AVFoundation
+* **Description**: In an H.264 file whose sync samples are non-IDR I frames
+  (open GOP, as some x264 muxers write), AVFoundation decoded 82 of 200
+  sampled frames exactly (2026-11-03): every keyframe and every frame of a
+  GOP without leading frames, but almost none in GOPs with leading frames.
+  The ±0.5 s retry then returns a nearby keyframe, so thumbs move to
+  keyframes; a scrubbed frame is stored as asked and then silently moved.
+  Software decoding fails the same way; reading from the start of the movie
+  works. ffmpeg decodes these frames.
+* **Reason**: AVFoundation starts decoding at the sync sample, and the leading
+  B frames after a non-IDR I frame reference the previous GOP (inferred from
+  the measurement; not documented by Apple).
+* **Workaround**: Thumbs show the nearest keyframe. A per-frame ffmpeg option
+  is planned for the next TASK.
