@@ -90,7 +90,7 @@ Questions from the owner
 ### Owner's second round (2026-11-03, after the first fixes)
 
 - Redraw loop gone in a quick try (after the DecodeGate and pinning fixes).
-- Concurrent decodes: the owner asked about 2–3; kept at 1 for now (one AVD engine on M1, panics), to be measured with the spike before raising.
+- Concurrent decodes: the owner asked about 2–3; kept at 1 for now (one AVD engine on the measured Mac, panics), to be measured with the spike before raising.
 - Fonts mostly fine. Section titles (Grid, Styling, …) larger and bolder; other text lighter.
 - Stats as two lines: large numbers on top ("4  5  19"), small labels under them ("columns  rows  count"); no "×" or "=" (4 × 5 ≠ 19 with hidden thumbs).
 - Rows slider always shown and usable (no separate Change thumb count step).

@@ -140,7 +140,7 @@ Branch `feature/avf-decode-backend`, one commit per stage:
   The `DecodeBackend` completions were extended to carry per-frame
   actual timestamps for this.
 - Notable finding: the "mp4" sample (Big Buck Bunny) is AV1, which
-  AVFoundation only decodes on M3+; on this M1 it correctly falls
+  AVFoundation only decodes on M3+; on this Mac (no AV1 hardware decode) it correctly falls
   back to ffmpeg — evidence the track-decodability probe routes by
   capability, not extension.
 
@@ -164,7 +164,7 @@ Branch `feature/avf-decode-backend`, one commit per stage:
   keyboard/Esc functional on the AVF path; nudge console shows the
   single re-extract via AVFoundation with a truthful snapped
   timestamp (38.000s requested → t=37.750s decoded → "0:37" label).
-- Measurements (ToS-4k-1920.mov, M1, medians): batch 16 frames
+- Measurements (ToS-4k-1920.mov, the owner's Mac, medians): batch 16 frames
   0.74s → 0.26s (~2.8×); single-frame nudge 131ms → 65ms (~2.0×).
 - Baseline sanity before adoption: cell count, snapped timestamps in
   labels, orientation, and a cross-backend frame-content comparison
@@ -176,7 +176,7 @@ Branch `feature/avf-decode-backend`, one commit per stage:
 
 ### Follow-up Suggestions
 
-- The committed baselines are machine-anchored (M1 VideoToolbox);
+- The committed baselines are machine-anchored (this Mac's VideoToolbox);
   regenerating on different hardware will produce different bytes —
   the README documents the policy, but CI on other machines would
   need its own baseline set.

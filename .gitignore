@@ -40,12 +40,3 @@ xcuserdata/
 /.build/
 /tools/spike/.build/
 .swiftpm/
-
-# FrameSheet
-bin/
-test_video.mp4
-test_output.png
-test_assets/
-docs/reference/
-build_assets/
-*.spec

@@ -21,7 +21,7 @@ This log details the features, design changes, and bug fixes implemented during 
 - **Routing**: AVFoundation is probed first; ffmpeg is a fallback for assets with no decodable video track (WebM/MKV — and AV1 on pre-M3 hardware). ffmpeg is no longer a hard dependency: the launch overlay became a dismissible notice, and a fallback-needed-but-missing load fails with a message naming the format and the `brew install ffmpeg` hint. The active backend is logged per load.
 - **Per-backend baselines** (`tests/baselines/`, new): default-settings outputs pinned for the AVF mov path and the ffmpeg-routed AV1 mp4; the smoke suite byte-compares against them and asserts deterministic reruns. A new all-frame-files-present check catches per-frame decode failures (it caught the zero-tolerance issue during Stage B verification).
 
-### Measured (Stage C — ToS-4k-1920.mov, M1, medians)
+### Measured (Stage C — ToS-4k-1920.mov, the owner's Mac, medians)
 - Full 16-frame batch extraction: **0.74s (ffmpeg) → 0.26s (AVFoundation), ~2.8×**.
 - Single-cell nudge extraction: **131ms (ffmpeg) → 65ms (AVFoundation), ~2.0×** — no process spawn; hits the resident asset.
 - WebM fallback unchanged: Sintel 888s source generates in ~1.5s via ffmpeg; duration-less WebM packet-scan fallback intact.
