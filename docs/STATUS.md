@@ -20,13 +20,13 @@ reproduces MoviePrint v0.2.23 for Apple Silicon: decisions 14–22 in
   with the macOS 27 `AVAssetReaderOutput.Provider` API.
 - v3.0.0 order (owner, 2026-11-02): T03 interval editing (done) → T03b UI
   legibility pass (done) → T04 save, header, naming, PNG/JSON export and
-  import (done) → T05 shot scan, timeline, cut/merge, EDL → T06 player view →
-  T07 faces Lv1 → T08 transforms, Save All, polish → version and release TASK.
-- In progress, T04b (TF #01; owner, 2026-11-03): partly decodable files
-  (KNOWN_ISSUES 5) — AVFoundation stays the default, a Settings option fetches
-  frames AVFoundation cannot decode with ffmpeg; the scrub must not silently
-  move a confirmed frame to a keyframe; fix the ffmpeg path's half-frame time
-  offset (one frame off on open-GOP files). Needs `run-all.sh quick`.
+  import (done) → T04b frames AVFoundation cannot decode (done, decision 25)
+  → T05 shot scan, timeline, cut/merge, EDL → T06 player view → T07 faces Lv1
+  → T08 transforms, Save All, polish → version and release TASK.
+- Spec gaps for the HQ from T04b: the three decode steps and the Settings
+  option (decision 25); the inexact marker; SAVE at the top center of the hover
+  overlay; the scrub starts at the thumb's own frame and names its modifier
+  keys; the thumbnail cache is an LRU cache.
 - Next UI step (owner): move some right-panel settings to the Settings window.
 - Spelling: the owner wants en-US; proposal with Upstream HQ (2026-11-03),
   `docs/V3_SPEC.md` is en-US since 2026-11-03; CLAUDE.md still uses en-GB.

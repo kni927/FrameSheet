@@ -98,16 +98,14 @@ struct ScrubOverlay: View {
             : session.sticky
                 ? "Click to confirm  ·  Esc cancels  ·  " + modifiers
                 : "Release to confirm  ·  " + modifiers
-        if let text = Optional(text) {
-            Text(text)
-                .font(Theme.caption)
-                .foregroundStyle(Theme.textMuted)
-                .lineLimit(1)
-                .minimumScaleFactor(0.8)
-                .truncationMode(.middle)
-                .frame(width: rect.width, height: rect.height)
-                .offset(x: rect.minX, y: rect.minY)
-        }
+        Text(text)
+            .font(Theme.caption)
+            .foregroundStyle(Theme.textMuted)
+            .lineLimit(1)
+            .minimumScaleFactor(0.8)
+            .truncationMode(.middle)
+            .frame(width: rect.width, height: rect.height)
+            .offset(x: rect.minX, y: rect.minY)
     }
 }
 

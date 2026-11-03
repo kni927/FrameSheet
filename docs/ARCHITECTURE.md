@@ -17,7 +17,7 @@ graph TD
     R -->|default| AV[AVFoundationBackend<br/>AVAssetImageGenerator, VideoToolbox]
     R -->|no decodable track, hev1| FF[FFmpegBackend<br/>system ffmpeg/ffprobe]
     M -->|discover ffmpeg| FL[FFmpegLocator]
-    AV --> C[ThumbnailCache NSCache]
+    AV --> C[ThumbnailCache LRU]
     FF --> C
     C --> V
     V -->|layout| G[GridGeometry]
@@ -56,7 +56,7 @@ Sources/FrameSheetCore/          no SwiftUI or AppKit
     ├── DecoderRouter.swift      AVFoundation first, ffmpeg fallback
     ├── FFmpegLocator.swift      user path → login shell → known directories
     ├── ProcessRunner.swift      shell-free Process with timeout/cancel
-    └── ThumbnailCache.swift     NSCache limited by pixel bytes (256 MB)
+    └── ThumbnailCache.swift     LRU cache limited by pixel bytes (256 MB)
 Sources/FrameSheet/              the app
 ├── FrameSheetApp.swift          Window scene, menus, AppDelegate, key monitor
 ├── AppModel.swift               @Observable state over an EditableLibrary:
@@ -125,7 +125,15 @@ from the duration runs past the last frame. Sequential scanning
 
 Near the end of a movie the retry window is moved inside the movie (center at
 most end − 0.5 s). A file whose sync samples are open-GOP I frames decodes
-only partly with AVFoundation (KNOWN_ISSUES 5).
+only partly with AVFoundation (KNOWN_ISSUES 5), so a frame the generator
+misses goes through `EarlierGOPReader` (an `AVAssetReader` from the previous
+sync sample) and then, with the Settings option on, `FFmpegFrameFallback`
+(decision 25); every `DecodedFrame` names its decoder and whether it is exact,
+and the app marks inexact thumbs and refuses an inexact scrub. The ffmpeg path
+seeks a little early and picks the frame by its pts (`select` + `showinfo`), so
+it is frame-exact, including leading B frames. `ThumbnailCache` is a
+least-recently-used cache that drops images only past its byte limit (an
+`NSCache` dropped them under memory pressure, so other sheets redrew).
 
 ## Saving and import
 

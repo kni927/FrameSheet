@@ -374,3 +374,36 @@ the player view (T06), not earlier as a disabled control.
 #### Rationale
 "MoviePrint" is the original app's brand and means nothing to FrameSheet
 users.
+
+### 25. Frames AVFoundation cannot decode exactly: three steps per frame (2026-11-03)
+
+#### Context
+In open-GOP H.264 files whose sync samples are non-IDR I frames, AVFoundation
+decodes only part of the frames exactly (KNOWN_ISSUES 5). Decision 10 routes a
+whole file to ffmpeg only when AVFoundation has no decodable video track, so
+such a file stays on AVFoundation.
+
+#### Decision
+Each requested frame of an open file goes through up to three steps, one at a
+time inside `DecodeGate`:
+1. the exact `AVAssetImageGenerator` request;
+2. if it fails or returns a later frame, an `AVAssetReader` read from just
+   before the previous sync sample, keeping only the target frame (always on;
+   it succeeds where the previous keyframe is IDR or the previous GOP has no
+   leading frames);
+3. if that fails, a per-frame ffmpeg fetch, when the Settings option "Fetch
+   exact frames with ffmpeg" is on (default on) and ffmpeg is found;
+   otherwise the ±0.5 s retry, whose frame is shown with its real number and a
+   marker (decision 11).
+A scrubbed frame that cannot be decoded exactly is not stored; the thumb keeps
+its frame and a toast says why. Saving uses the same path. Decision 10 stands:
+this concerns frames of a file already open, not routing the file.
+
+#### Rationale
+Measured on an open-GOP file from the owner's files (2026-11-03): the
+generator decoded 11 of 63 sampled frames exactly; step 2 recovered 25 of the
+52 others at about 20–27 ms per frame (13–18 ms to fail); ffmpeg recovered all
+at about 93 ms (640 px) to 387 ms (1920 px). Step 2 keeps hardware decoding
+and needs no ffmpeg, so it goes first; ffmpeg covers the rest. Frames the
+generator decodes exactly never reach step 2, so normal files cost nothing
+extra (owner approved the three steps in TF #01's chat).

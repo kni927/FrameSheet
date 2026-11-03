@@ -18,9 +18,10 @@ which you can edit:
 - **Hover a thumb** for IN, OUT, insert before/after, EXPAND, HIDE and SAVE
   (each button has a tooltip); hold ⌥ and IN/OUT turn into ◀ HIDE / HIDE ▶,
   which hide every thumb before or after it.
-- **Drag the handle** in the middle of a thumb to scrub: CHANGE TO by default,
-  ⇧ for ADD BEFORE, ⌥ for ADD AFTER, ⌃ to reach the start or end of the movie;
-  drop on the Cancel bar to cancel. A quick click on the handle keeps the scrub
+- **Drag the handle** in the middle of a thumb to scrub from its own frame:
+  CHANGE TO by default, ⇧ for ADD BEFORE, ⌥ for ADD AFTER, ⌃ to reach the
+  start or end of the movie (the overlay names the keys); drop on the Cancel
+  bar to cancel. A quick click on the handle keeps the scrub
   open: move to pick, click to confirm, Esc to cancel. With a thumb selected,
   Return scrubs with the arrow keys.
 - **Drag a thumb** onto another to reorder; ⇧⌥←/→ move the selection.
@@ -44,7 +45,10 @@ which you can edit:
   frame info (font, size, colors, position, timecode format), output and file
   names; each section opens with its chevron. The movie list (1) renames,
   duplicates, deletes and exports sheets. The thumbnail cache and ffmpeg are
-  in Settings (⌘,).
+  in Settings (⌘,), with **Fetch exact frames with ffmpeg** (on by default):
+  some files (open-GOP H.264) have frames AVFoundation cannot decode, and
+  ffmpeg fetches those; without it such thumbs show the nearest decodable
+  frame with a marker.
 - ⌘Z / ⇧⌘Z undo and redo up to 50 edits.
 
 Shot detection, the player view and faces come in later versions.

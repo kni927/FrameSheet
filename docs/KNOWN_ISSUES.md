@@ -48,12 +48,16 @@ history of this file up to tag v2.3.1.
   (open GOP, as some x264 muxers write), AVFoundation decoded 82 of 200
   sampled frames exactly (2026-11-03): every keyframe and every frame of a
   GOP without leading frames, but almost none in GOPs with leading frames.
-  The ±0.5 s retry then returns a nearby keyframe, so thumbs move to
-  keyframes; a scrubbed frame is stored as asked and then silently moved.
-  Software decoding fails the same way; reading from the start of the movie
-  works. ffmpeg decodes these frames.
-* **Reason**: AVFoundation starts decoding at the sync sample, and the leading
-  B frames after a non-IDR I frame reference the previous GOP (inferred from
-  the measurement; not documented by Apple).
-* **Workaround**: Thumbs show the nearest keyframe. A per-frame ffmpeg option
-  is planned for the next TASK.
+  Software decoding fails the same way; an `AVAssetReader` that starts at a
+  non-IDR keyframe stops with -11821/-12137, so reading from the previous GOP
+  recovers only about half of the missed frames; reading from the start of the
+  movie works. ffmpeg decodes these frames.
+* **Reason**: Inferred from the measurements, not documented by Apple: the
+  file's sample table marks the non-IDR I frames as full sync samples (none as
+  partial sync), so AVFoundation starts decoding there and fails on frames that
+  need the previous GOP.
+* **Workaround**: Since T04b (decision 25) a missed frame is read from the
+  previous GOP and then, with "Fetch exact frames with ffmpeg" on (default),
+  fetched with ffmpeg, so every frame is exact (ffmpeg 0.1–0.4 s per frame).
+  Without ffmpeg or with the option off, the nearest decodable frame is shown
+  with its real number and a marker, and an inexact scrub is refused.
