@@ -54,17 +54,18 @@ Sources/FrameSheet/              the app
 ├── AppModel.swift               @Observable state over an EditableLibrary:
 │                                edits, selection, zoom, scrub, thumbnail
 │                                loading, debounced saving
-├── ContentView.swift            split view, window toolbar, drop target,
-│                                footer, toast
-├── FloatingToolbar.swift        sheet toolbar over the grid
+├── ContentView.swift            split view, inspector, title and sidebar
+│                                toggle, drop target, toast
+├── SheetToolbar.swift           sheet tools in the window toolbar
 ├── MovieListView.swift          movie rows, sheet rows, context menus, Locate
-├── SheetGridView.swift          grid, thumbs, hover overlay, frame info, reorder
+├── SheetGridView.swift          grid, thumbs, hover overlay, frame info,
+│                                reorder, placeholder rows
 ├── ScrubOverlay.swift           scrub overlay with neighbours and Cancel bar
-├── SettingsPanel.swift          grid, styling, frame info, cache, ffmpeg
-└── Theme.swift                  kni Design System tokens and fonts
+├── SettingsPanel.swift          right panel: grid, styling, frame info
+├── SettingsWindow.swift         Settings (⌘,): thumbnail cache, ffmpeg
+└── Theme.swift                  kni tokens, system fonts, panel and toolbar styles
 Tests/FrameSheetCoreTests/       swift test (Swift Testing)
 assets/AppIcon.png               build.sh → .icns
-assets/fonts/                    IBM Plex Sans and Mono (OFL), bundled by build.sh
 tools/spike/                     separate measurement package
 ```
 
@@ -117,15 +118,22 @@ known directories), each candidate validated with `ffmpeg -version`;
 ## Display
 
 Views use the kni Design System through `Theme`: Catppuccin Mocha surfaces
-(base, mantle, crust) with 1 pt borders, the accent for selection only, Plex
-Sans and Plex Mono from `Contents/Resources/Fonts` (`ATSApplicationFontsPath`)
-with Hiragino Sans as the system fallback for Japanese.
-`GridGeometry` reproduces MoviePrint's grid sizes (thumb width = movie width
-× 0.25, margin from the margin ratio, rounded corners, header height) and
-scales the print to fit the main area at the current zoom (0.25 … 8). Thumbs are decoded at 640 px
-wide (posters at 320 px) into `ThumbnailCache`; views re-read the cache when
-`AppModel.imageGeneration` changes, and an image the cache has evicted is
-decoded again when a view asks for it.
+(base, mantle, crust) with 1 pt borders, the accent for selection only, and
+the system fonts (SF Pro, SF Pro Condensed, SF Mono; owner, 2026-11-03).
+Hover buttons follow MoviePrint (faint white over the thumb, solid white over
+the button, condensed text sized from the thumb). `GridGeometry` reproduces
+MoviePrint's grid sizes (thumb width = movie width × 0.25, separate horizontal
+and vertical margin ratios, corner radius ratio, header height) and scales the
+print to fit the main area at the current zoom (0.25 … 8), with fill-height
+and fill-width zooms. Rows in the panel are a target only: extra rows show as
+placeholders, fewer rows dim the thumbs past columns × rows, and Replace
+recaptures. Thumbs are decoded at 640 px wide (posters at 320 px) into
+`ThumbnailCache`; the current sheet's and the posters' images are also pinned
+outside the cache so eviction cannot start a reload loop, and a reload of the
+same image waits at least 2 s. All AVFoundation decodes pass one `DecodeGate`
+(one at a time), after two kernel panics in the hardware decoder driver under
+many parallel sessions (2026-11-02, 2026-11-03); raising it is pending a
+per-machine measurement.
 
 ## Dependencies
 

@@ -24,10 +24,14 @@ which you can edit:
   open: move to pick, click to confirm, Esc to cancel. With a thumb selected,
   Return scrubs with the arrow keys.
 - **Drag a thumb** onto another to reorder; ⇧⌥←/→ move the selection.
-- The toolbar over the grid adds interval sheets (2×2 … 6×6), duplicates the
-  sheet, zooms (⌘− / ⌘0 / ⌘=), shows hidden thumbs, cycles the frame info and
-  optimises the grid; the settings sidebar (3) sets columns, rows, margins and
-  frame info; the movie list (1) renames, duplicates and deletes sheets.
+- The window toolbar adds interval sheets (2×2 … 6×6), duplicates the sheet,
+  zooms (⌘− / ⌘0 / ⌘=, fit height, fit width), shows hidden thumbs, cycles the
+  frame info, optimizes the grid and toggles both sidebars (1, 3).
+- The settings panel (3) sets columns (rearranges live), target rows and
+  Replace (recaptures columns × rows thumbs), margins, corner radius and the
+  frame info font, size, colours and position; the movie list (1) renames,
+  duplicates and deletes sheets. The thumbnail cache and ffmpeg are in
+  Settings (⌘,).
 - ⌘Z / ⇧⌘Z undo and redo up to 50 edits.
 
 Saving prints, shot detection, the player view and faces come in later
@@ -70,6 +74,4 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 MoviePrint code ported into FrameSheet keeps its MIT notice
 ([docs/licenses/MoviePrint-LICENSE](docs/licenses/MoviePrint-LICENSE)); the
 Catppuccin palette is MIT as well
-([docs/licenses/Catppuccin-LICENSE](docs/licenses/Catppuccin-LICENSE)), and the
-bundled IBM Plex fonts are under the SIL Open Font License 1.1
-([docs/licenses/IBM-Plex-LICENSE](docs/licenses/IBM-Plex-LICENSE)).
+([docs/licenses/Catppuccin-LICENSE](docs/licenses/Catppuccin-LICENSE)).
