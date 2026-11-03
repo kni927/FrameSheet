@@ -140,7 +140,7 @@ private extension Library {
     @Test func addIntervalSheetPreset() {
         var (library, ref) = fixture()
         let sheet = library.addIntervalSheet(to: ref.fileId, columns: 3, rows: 3)!
-        #expect(sheet.name == "MoviePrint-2")
+        #expect(sheet.name == "Sheet-2")
         #expect(sheet.columnCount == 3)
         #expect(sheet.thumbs.count == 9)
         #expect(sheet.thumbs.first?.frameNumber == 0)
@@ -181,7 +181,7 @@ private extension Library {
         let duplicated = library.duplicateSheet(ref)
         let copy = try #require(duplicated)
         let copied = try #require(library.sheet(copy.sheetId, of: copy.fileId))
-        #expect(copied.name == "MoviePrint-2")
+        #expect(copied.name == "Sheet-2")
         #expect(copied.thumbs.map(\.frameNumber) == library.frames(ref))
         #expect(Set(copied.thumbs.map(\.id)).isDisjoint(with: library.thumbs(ref).map(\.id)))
         library.renameSheet(copy, to: "  Opening  ")

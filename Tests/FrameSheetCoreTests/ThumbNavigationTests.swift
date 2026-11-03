@@ -4,7 +4,7 @@ import Testing
 
 private func sheet(_ frames: [Int], hidden: Set<Int> = []) -> Sheet {
     Sheet(
-        name: "MoviePrint-1", type: .interval,
+        name: "Sheet-1", type: .interval,
         thumbs: frames.enumerated().map { Thumb(frameNumber: $1, index: $0, hidden: hidden.contains($0)) })
 }
 

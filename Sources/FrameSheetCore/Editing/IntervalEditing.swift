@@ -209,7 +209,7 @@ extension Library {
         return child
     }
 
-    /// A copy with new ids and the next `MoviePrint-N` name, placed after
+    /// A copy with new ids and the next `Sheet-N` name, placed after
     /// the original.
     @discardableResult
     public mutating func duplicateSheet(_ ref: SheetRef) -> SheetRef? {

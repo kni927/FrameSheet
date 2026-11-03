@@ -21,7 +21,9 @@ public struct LibraryStore: Sendable {
     public func load() throws -> Library {
         guard FileManager.default.fileExists(atPath: url.path) else { return Library() }
         let data = try Data(contentsOf: url)
-        return try JSONDecoder().decode(Library.self, from: data)
+        var library = try JSONDecoder().decode(Library.self, from: data)
+        library.migrate()
+        return library
     }
 
     public func save(_ library: Library) throws {

@@ -60,7 +60,7 @@ public struct MovieFile: Codable, Sendable, Identifiable, Equatable {
     public var inFrame: Int
     public var outFrame: Int
     public var scanState: ScanState
-    /// Next sheet number for `MoviePrint-N` names; never decreases, so a
+    /// Next sheet number for `Sheet-N` names; never decreases, so a
     /// deleted sheet's name is not reused (MoviePrint counts sheets the
     /// same way).
     public var sheetCounter: Int
@@ -257,6 +257,28 @@ public struct RGBA: Codable, Sendable, Equatable, Hashable {
     public static let clear = RGBA(red: 0, green: 0, blue: 0, alpha: 0)
 }
 
+/// Saved image format (MoviePrint `OUTPUT_FORMAT`).
+public enum ImageFormat: String, Codable, Sendable, CaseIterable {
+    case png, jpg
+
+    public var fileExtension: String { rawValue }
+    public var label: String { rawValue.uppercased() }
+}
+
+/// Saved print sizes (MoviePrint `MOVIEPRINT_WIDTH_HEIGHT`): 1024–16384 px
+/// in steps of 1024; 16384 is also the limit for "max".
+public enum OutputSize {
+    public static let defaultSize = 4096
+    public static let limit = 16384
+    public static let steps = Array(stride(from: 1024, through: limit, by: 1024))
+
+    /// The nearest step, for values from older or edited files.
+    public static func snapped(_ size: Int) -> Int {
+        let clamped = min(max(size, steps[0]), limit)
+        return Int((Double(clamped) / 1024).rounded()) * 1024
+    }
+}
+
 /// Global settings (§6). Only part of the panel exists yet; the values are
 /// kept with MoviePrint's defaults so later TASKs read them from here.
 /// Decoding tolerates missing keys so older library files keep loading.
@@ -299,6 +321,36 @@ public struct Settings: Codable, Sendable, Equatable {
     /// User-chosen ffmpeg path (§10); nil means discover it.
     public var ffmpegPath: String?
 
+    // Output (§6), MoviePrint's defaults (`app/utils/constants.js`).
+    /// Folder path for saved prints; nil means the Desktop.
+    public var outputFolder: String?
+    /// Save next to the movie instead of `outputFolder`.
+    public var outputSameFolderAsMovie = false
+    /// Width of a saved grid print (height in timeline view), one of
+    /// `OutputSize.steps`.
+    public var outputSize = OutputSize.defaultSize
+    /// Save at the largest size the frames allow instead of `outputSize`.
+    public var outputSizeMax = false
+    public var outputFormat: ImageFormat = .png
+    /// JPG quality 0–100.
+    public var outputQuality = 80
+    /// Print background; alpha applies to PNG only.
+    public var outputBackground = RGBA.clear
+    public var overwrite = false
+    public var includeIndividualThumbs = false
+    /// PNG only: embed the frame list (and transform and columns).
+    public var embedFrameNumbers = true
+    /// PNG only: embed the movie's path.
+    public var embedFilePath = true
+    public var openFinderAfterSaving = false
+    public var thumbFormat: ImageFormat = .jpg
+    /// JPG quality 0–100 for saved thumbs.
+    public var thumbQuality = 95
+    /// Naming scheme templates (`FileNaming`).
+    public var sheetNameTemplate = FileNaming.defaultSheetTemplate
+    public var singleThumbNameTemplate = FileNaming.defaultSingleThumbTemplate
+    public var individualThumbNameTemplate = FileNaming.defaultIndividualThumbTemplate
+
     public init() {}
 
     public var marginRatioHorizontal: Double { marginHorizontal / 200 }
@@ -311,6 +363,10 @@ public struct Settings: Codable, Sendable, Equatable {
         case cornerRadius, showHiddenThumbs, frameInfo, thumbnailCacheMB, ffmpegPath
         case frameInfoColor, frameInfoBackground, frameInfoPosition, frameInfoSize
         case frameInfoFontFamily, frameInfoMarginHorizontal, frameInfoMarginVertical, frameInfoMarginsLinked
+        case outputFolder, outputSameFolderAsMovie, outputSize, outputSizeMax, outputFormat, outputQuality
+        case outputBackground, overwrite, includeIndividualThumbs, embedFrameNumbers, embedFilePath
+        case openFinderAfterSaving, thumbFormat, thumbQuality
+        case sheetNameTemplate, singleThumbNameTemplate, individualThumbNameTemplate
     }
 
     /// Keys of earlier versions, read only to migrate them.
@@ -352,13 +408,36 @@ public struct Settings: Codable, Sendable, Equatable {
             ?? oldInfoMargin ?? d.frameInfoMarginVertical
         frameInfoMarginsLinked = try c.decodeIfPresent(Bool.self, forKey: .frameInfoMarginsLinked)
             ?? d.frameInfoMarginsLinked
+        outputFolder = try c.decodeIfPresent(String.self, forKey: .outputFolder)
+        outputSameFolderAsMovie = try c.decodeIfPresent(Bool.self, forKey: .outputSameFolderAsMovie)
+            ?? d.outputSameFolderAsMovie
+        outputSize = OutputSize.snapped(try c.decodeIfPresent(Int.self, forKey: .outputSize) ?? d.outputSize)
+        outputSizeMax = try c.decodeIfPresent(Bool.self, forKey: .outputSizeMax) ?? d.outputSizeMax
+        outputFormat = (try? c.decodeIfPresent(ImageFormat.self, forKey: .outputFormat)) ?? d.outputFormat
+        outputQuality = try c.decodeIfPresent(Int.self, forKey: .outputQuality) ?? d.outputQuality
+        outputBackground = try c.decodeIfPresent(RGBA.self, forKey: .outputBackground) ?? d.outputBackground
+        overwrite = try c.decodeIfPresent(Bool.self, forKey: .overwrite) ?? d.overwrite
+        includeIndividualThumbs = try c.decodeIfPresent(Bool.self, forKey: .includeIndividualThumbs)
+            ?? d.includeIndividualThumbs
+        embedFrameNumbers = try c.decodeIfPresent(Bool.self, forKey: .embedFrameNumbers) ?? d.embedFrameNumbers
+        embedFilePath = try c.decodeIfPresent(Bool.self, forKey: .embedFilePath) ?? d.embedFilePath
+        openFinderAfterSaving = try c.decodeIfPresent(Bool.self, forKey: .openFinderAfterSaving)
+            ?? d.openFinderAfterSaving
+        thumbFormat = (try? c.decodeIfPresent(ImageFormat.self, forKey: .thumbFormat)) ?? d.thumbFormat
+        thumbQuality = try c.decodeIfPresent(Int.self, forKey: .thumbQuality) ?? d.thumbQuality
+        sheetNameTemplate = try c.decodeIfPresent(String.self, forKey: .sheetNameTemplate) ?? d.sheetNameTemplate
+        singleThumbNameTemplate = try c.decodeIfPresent(String.self, forKey: .singleThumbNameTemplate)
+            ?? d.singleThumbNameTemplate
+        individualThumbNameTemplate = try c.decodeIfPresent(String.self, forKey: .individualThumbNameTemplate)
+            ?? d.individualThumbNameTemplate
     }
 }
 
 /// The whole document: movies in list order, their sheets, settings and
 /// the current selection.
 public struct Library: Codable, Sendable, Equatable {
-    public static let currentVersion = 1
+    /// 2: sheets are named `Sheet-N` (1 used `MoviePrint-N`).
+    public static let currentVersion = 2
 
     public var version = Library.currentVersion
     public var files: [MovieFile] = []
@@ -376,7 +455,7 @@ public struct Library: Codable, Sendable, Equatable {
         sheets[fileId]?.first { $0.id == sheetId }
     }
 
-    /// Adds a sheet to a file with the next `MoviePrint-N` name.
+    /// Adds a sheet to a file with the next `Sheet-N` name.
     @discardableResult
     public mutating func addSheet(
         to fileId: UUID, type: SheetType, view: SheetView = .grid, thumbs: [Thumb]
@@ -398,6 +477,22 @@ public struct Library: Codable, Sendable, Equatable {
             maxValue: file.frameCount, limitToMaxValue: true)
         let thumbs = frames.enumerated().map { Thumb(frameNumber: $1, index: $0) }
         return addSheet(to: fileId, type: .interval, thumbs: thumbs)
+    }
+
+    /// Brings a library decoded from an older file up to the current
+    /// version: version 1 named sheets `MoviePrint-N`.
+    public mutating func migrate() {
+        guard version < Library.currentVersion else { return }
+        if version < 2 {
+            for (fileId, list) in sheets {
+                sheets[fileId] = list.map { sheet in
+                    var sheet = sheet
+                    if let name = SheetNaming.migratedName(sheet.name) { sheet.name = name }
+                    return sheet
+                }
+            }
+        }
+        version = Library.currentVersion
     }
 
     public mutating func removeAll() {

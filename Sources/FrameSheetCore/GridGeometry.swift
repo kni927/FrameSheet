@@ -101,6 +101,10 @@ public struct GridGeometry: Equatable, Sendable {
     public let thumbMarginVertical: Double
     public let borderRadius: Double
     public let headerHeight: Double
+    /// Height of the header's logo band (MoviePrint `logoHeight`): the
+    /// header height with only the file name; the header lays out its
+    /// image and text in fractions of it.
+    public let logoHeight: Double
     public let printWidth: Double
     public let printHeight: Double
 
@@ -116,6 +120,7 @@ public struct GridGeometry: Equatable, Sendable {
                 + (input.showTimelineInHeader ? 1 : 0)) / 3
         let headerHeight = input.showHeader
             ? movieHeight * Self.headerHeightRatio * headerMultiplier * Self.thumbnailScale : 0
+        let logoHeight = movieHeight * Self.headerHeightRatio * Self.thumbnailScale
         let thumbWidth = movieWidth * Self.thumbnailScale
         let thumbMargin = movieWidth * input.marginRatioHorizontal * Self.thumbnailScale
         let marginVertical = movieWidth * input.marginRatioVertical * Self.thumbnailScale
@@ -142,6 +147,7 @@ public struct GridGeometry: Equatable, Sendable {
         thumbMarginVertical = marginVertical * scale
         self.borderRadius = borderRadius * scale
         self.headerHeight = headerHeight * scale
+        self.logoHeight = logoHeight * scale
         printWidth = originalWidth * scale + Self.minPrintWidthMargin
         printHeight = printWidth * printRatioInv
     }

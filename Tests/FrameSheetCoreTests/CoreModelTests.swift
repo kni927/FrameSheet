@@ -59,11 +59,11 @@ import Testing
 
     @Test func namesCountPerFile() throws {
         var (library, id) = libraryWithOneFile()
-        #expect(library.addDefaultIntervalSheet(to: id)?.name == "MoviePrint-1")
-        #expect(library.addDefaultIntervalSheet(to: id)?.name == "MoviePrint-2")
+        #expect(library.addDefaultIntervalSheet(to: id)?.name == "Sheet-1")
+        #expect(library.addDefaultIntervalSheet(to: id)?.name == "Sheet-2")
         library.sheets[id]?.removeLast()
-        #expect(library.addDefaultIntervalSheet(to: id)?.name == "MoviePrint-3")
-        #expect(SheetNaming.newSheetName(sheetCount: 0) == "MoviePrint-1")
+        #expect(library.addDefaultIntervalSheet(to: id)?.name == "Sheet-3")
+        #expect(SheetNaming.newSheetName(sheetCount: 0) == "Sheet-1")
     }
 
     @Test func defaultIntervalSheet() throws {

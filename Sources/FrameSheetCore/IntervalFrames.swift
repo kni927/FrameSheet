@@ -57,10 +57,28 @@ public enum IntervalFrames {
 }
 
 public enum SheetNaming {
-    /// MoviePrint's `getNewSheetName`: "MoviePrint-" + (count + 1).
-    public static func newSheetName(sheetCount: Int, prefix: String = "MoviePrint-") -> String {
+    public static let prefix = "Sheet-"
+    /// MoviePrint's default prefix, renamed to `Sheet-` (owner,
+    /// 2026-11-03); libraries saved before are migrated on load.
+    public static let moviePrintPrefix = "MoviePrint-"
+
+    /// MoviePrint's `getNewSheetName` with the `Sheet-` prefix:
+    /// "Sheet-" + (count + 1).
+    public static func newSheetName(sheetCount: Int, prefix: String = SheetNaming.prefix) -> String {
         "\(prefix)\(sheetCount + 1)"
     }
+
+    /// `Sheet-N` for a name that is exactly `MoviePrint-N`; nil otherwise.
+    public static func migratedName(_ name: String) -> String? {
+        guard name.hasPrefix(moviePrintPrefix) else { return nil }
+        let number = name.dropFirst(moviePrintPrefix.count)
+        guard !number.isEmpty, number.allSatisfy(\.isASCIIDigit) else { return nil }
+        return prefix + number
+    }
+}
+
+extension Character {
+    var isASCIIDigit: Bool { isASCII && isNumber }
 }
 
 public enum Timecode {
