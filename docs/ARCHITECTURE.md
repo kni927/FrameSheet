@@ -3,7 +3,7 @@
 ## System Overview
 
 FrameSheet v3 is a Swift package with a UI-free core library and a SwiftUI
-app. The core holds the document model, the layout maths, persistence and
+app. The core holds the document model, the layout math, persistence and
 the decode layer; the app holds the window, the views and the app state. v2
 (`src/`, a `swiftc`-only build) was removed with the v3 skeleton and stays
 at tag v2.3.1.
