@@ -140,6 +140,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard flags.subtracting(.shift).isEmpty else { return event }
         switch event.charactersIgnoringModifiers?.lowercased() {
         case "a": model.presentOpenPanel()
+        case "m": model.saveMoviePrint()
         case "1": model.showMovieList.toggle()
         case "3": model.showSettings.toggle()
         default: return event

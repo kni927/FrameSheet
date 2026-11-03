@@ -52,6 +52,47 @@ public enum PrintHeader {
         return text
     }
 
+    /// Sizes inside the header, from MoviePrint `ThumbGridHeader`'s ratios
+    /// of the logo band height L: a quarter of L as padding and text unit,
+    /// the image half of L high at the left, the text right-aligned at the
+    /// right, the timeline under both.
+    public struct Metrics: Equatable, Sendable {
+        /// `textRatio` × L: padding at the top, left and right, and the
+        /// size of the folder and details text.
+        public var unit: Double
+        /// `headerImageRatio` × L; the app icon is square.
+        public var imageSize: Double
+        /// The file name: 1.5 units, on a line of 1.8 units with half a
+        /// unit below it.
+        public var titleSize: Double
+        public var titleLineHeight: Double
+        public var titleSpacing: Double
+        /// Folder and details lines: 1.5 units each.
+        public var lineHeight: Double
+        /// 1.2 units.
+        public var timelineHeight: Double
+        /// MoviePrint shrinks the file name down to 1.2 units (0.8 of its
+        /// size) before cutting it.
+        public static let titleMinimumScale = 0.8
+
+        public init(logoHeight: Double) {
+            unit = logoHeight * 0.25
+            imageSize = logoHeight * 0.5
+            titleSize = unit * 1.5
+            titleLineHeight = unit * 1.8
+            titleSpacing = unit * 0.5
+            lineHeight = unit * 1.5
+            timelineHeight = unit * 1.2
+        }
+
+        /// Height the content takes from the top of the header; within the
+        /// header height for every combination of lines.
+        public func contentHeight(path: Bool, details: Bool, timeline: Bool) -> Double {
+            unit + titleLineHeight + titleSpacing + (path ? lineHeight : 0) + (details ? lineHeight : 0)
+                + (timeline ? timelineHeight : 0)
+        }
+    }
+
     /// Mini timeline positions as fractions (0–1) of the movie length.
     public struct Timeline: Equatable, Sendable {
         /// Start of the range from the lowest to the highest thumb frame

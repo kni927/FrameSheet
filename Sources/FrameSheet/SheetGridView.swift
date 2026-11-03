@@ -28,6 +28,11 @@ struct SheetGridView: View {
             ScrollView([.horizontal, .vertical]) {
                 ZStack(alignment: .topLeading) {
                     Color.clear
+                    // The print as it is saved; the interaction layer and
+                    // the placeholders lie over it.
+                    PrintView(file: file, thumbs: thumbs, geometry: geometry, settings: settings) { thumb in
+                        model.image(file: file.id, frame: thumb.frameNumber, width: AppModel.thumbWidth)
+                    }
                     ForEach(Array(thumbs.enumerated()), id: \.element.id) { index, thumb in
                         let frame = geometry.thumbFrame(at: index)
                         ThumbView(
@@ -66,20 +71,15 @@ struct SheetGridView: View {
         file: MovieFile, columns: Int, thumbCount: Int, settings: FrameSheetCore.Settings, size: CGSize, zoom: Double
     ) -> GridGeometry {
         GridGeometry(.init(
-            movieWidth: Double(file.width), movieHeight: Double(file.height),
-            aspectRatioInv: file.transform.aspectRatioInv, columnCount: columns,
-            thumbCount: thumbCount,
+            file: file, columnCount: columns, thumbCount: thumbCount, settings: settings,
             containerWidth: max(1, size.width - padding * 2 - GridGeometry.minPrintWidthMargin),
-            containerHeight: max(1, size.height - padding * 2),
-            zoom: zoom, marginRatioHorizontal: settings.marginRatioHorizontal,
-            marginRatioVertical: settings.marginRatioVertical, showHeader: settings.showHeader,
-            showPathInHeader: settings.showPathInHeader,
-            showDetailsInHeader: settings.showDetailsInHeader,
-            showTimelineInHeader: settings.showTimelineInHeader,
-            borderRadiusRatio: settings.borderRadiusRatio))
+            containerHeight: max(1, size.height - padding * 2), zoom: zoom))
     }
 }
 
+/// The interaction layer of one thumb over the print: tooltip, dimming,
+/// hover buttons, selection and drop target, selection by click and drag
+/// to reorder. The thumb itself is drawn by `PrintView`.
 private struct ThumbView: View {
     @Environment(AppModel.self) private var model
     let file: MovieFile
@@ -100,23 +100,17 @@ private struct ThumbView: View {
         let scrubbing = model.scrub?.thumbId == thumb.id
         let showOverlay = (hovering || scrubbing) && size.width >= Self.minOverlayWidth
             && (model.scrub == nil || scrubbing)
-        ZStack {
-            if let image = model.image(file: file.id, frame: thumb.frameNumber, width: AppModel.thumbWidth) {
-                Image(decorative: image, scale: 1)
-                    .resizable()
-                    .aspectRatio(contentMode: .fill)
-            } else {
-                Theme.surface
+        Color.clear
+        .frame(width: size.width, height: size.height)
+        .contentShape(Rectangle())
+        // Under the hover buttons: a tooltip on the whole thumb would replace
+        // their own tooltips.
+        .help("Frame \(thumb.frameNumber) · \(Timecode.string(frames: thumb.frameNumber, fps: file.fps))")
+        .overlay {
+            if dimmed {
+                RoundedRectangle(cornerRadius: cornerRadius).fill(Theme.crust.opacity(0.65))
             }
         }
-        .frame(width: size.width, height: size.height)
-        // On the image only: a tooltip on the whole thumb would replace the
-        // hover buttons' own tooltips.
-        .help("Frame \(thumb.frameNumber) · \(Timecode.string(frames: thumb.frameNumber, fps: file.fps))")
-        .overlay { FrameInfoLabel(file: file, thumb: thumb, thumbHeight: size.height) }
-        .overlay { if dimmed { Theme.crust.opacity(0.65) } }
-        .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
-        .opacity(thumb.hidden ? 0.3 : 1)
         .overlay {
             if showOverlay {
                 HoverOverlay(file: file, sheet: sheet, thumb: thumb, size: size, onHoverButton: onHoverButton)
@@ -139,7 +133,16 @@ private struct ThumbView: View {
             if !inside { onHoverButton(nil) }
         }
         .onTapGesture { model.selectedThumbId = thumb.id }
-        .draggable(thumb.id.uuidString)
+        .draggable(thumb.id.uuidString) {
+            // The thumb as the drag image; the cell itself is transparent.
+            if let image = model.image(file: file.id, frame: thumb.frameNumber, width: AppModel.thumbWidth) {
+                Image(decorative: image, scale: 1)
+                    .resizable()
+                    .aspectRatio(contentMode: .fill)
+                    .frame(width: size.width, height: size.height)
+                    .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
+            }
+        }
         .dropDestination(for: String.self) { items, location in
             // The left half drops before this thumb, the right half after.
             guard let dragged = items.first.flatMap(UUID.init(uuidString:)) else { return false }
@@ -149,59 +152,11 @@ private struct ThumbView: View {
     }
 }
 
-/// The frame number or timecode on a thumb, per the frame info settings.
-private struct FrameInfoLabel: View {
-    @Environment(AppModel.self) private var model
-    let file: MovieFile
-    let thumb: Thumb
-    let thumbHeight: CGFloat
-
-    var body: some View {
-        let settings = model.library.settings
-        if let text = FrameInfoText.text(settings.frameInfo, frame: thumb.frameNumber, fps: file.fps) {
-            let size = max(1, FrameInfoText.fontSize(size: settings.frameInfoSize, thumbHeight: thumbHeight))
-            Text(text)
-                .font(font(settings.frameInfoFontFamily, size: size))
-                .foregroundStyle(Color(settings.frameInfoColor))
-                .padding(.horizontal, size * 0.3)
-                .padding(.vertical, size * 0.1)
-                .background(Color(settings.frameInfoBackground))
-                .padding(.horizontal, settings.frameInfoMarginHorizontal)
-                .padding(.vertical, settings.frameInfoMarginVertical)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: alignment(settings.frameInfoPosition))
-                .allowsHitTesting(false)
-        }
-    }
-
-    /// The system designs, or an installed family by name (any family the
-    /// owner picks; a missing one falls back to the system font).
-    private func font(_ family: String, size: Double) -> Font {
-        switch family {
-        case FrameInfoFamily.system: Theme.sans(size, medium: true)
-        case FrameInfoFamily.systemCondensed: Theme.condensed(size, weight: .medium)
-        case FrameInfoFamily.systemMono: Theme.mono(size, medium: true)
-        default: Font.custom(family, size: size).weight(.medium)
-        }
-    }
-
-    private func alignment(_ position: FrameInfoPosition) -> Alignment {
-        switch position {
-        case .topLeft: .topLeading
-        case .topCenter: .top
-        case .topRight: .topTrailing
-        case .centerCenter: .center
-        case .bottomLeft: .bottomLeading
-        case .bottomCenter: .bottom
-        case .bottomRight: .bottomTrailing
-        }
-    }
-}
-
 /// Buttons over a hovered thumb (§7): IN and OUT on top, insert before and
-/// after at the sides, the scrub handle in the middle, EXPAND and Hide/Show
-/// at the bottom. Option-click on IN/OUT hides all before/after. Drawn as in
-/// MoviePrint: faint white over the thumb, solid white under the pointer,
-/// with a dark shadow instead of a backdrop (owner, 2026-11-03).
+/// after at the sides, the scrub handle in the middle, EXPAND, Hide/Show and
+/// Save thumb at the bottom. Option-click on IN/OUT hides all before/after.
+/// Drawn as in MoviePrint: faint white over the thumb, solid white under the
+/// pointer, with a dark shadow instead of a backdrop (owner, 2026-11-03).
 private struct HoverOverlay: View {
     @Environment(AppModel.self) private var model
     let file: MovieFile
@@ -260,6 +215,10 @@ private struct HoverOverlay: View {
                 ) {
                     onHoverButton(nil)
                     model.toggleHidden(thumb.id)
+                }
+                // At the end of the EXPAND and HIDE row, as MoviePrint's SAVE.
+                OverlayButton(systemImage: "arrow.down.to.line", help: "Save thumb at full size") {
+                    model.saveThumb(thumb.id)
                 }
             }
         }

@@ -3,9 +3,9 @@ import FrameSheetCore
 import SwiftUI
 
 /// Right sidebar (§6), grid parts: stats and columns of the current sheet,
-/// styling and frame info. The thumbnail cache and ffmpeg live in the
-/// Settings window; header, output, naming, face, timeline and experimental
-/// sections come with their TASKs.
+/// styling with the header, frame info, output and the naming scheme. The
+/// thumbnail cache and ffmpeg live in the Settings window; face, timeline
+/// and experimental sections come with their TASKs.
 struct SettingsPanel: View {
     @Environment(AppModel.self) private var model
 
@@ -17,6 +17,8 @@ struct SettingsPanel: View {
                 }
                 StylingSection()
                 FrameInfoSection()
+                OutputSection()
+                NamingSection()
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
@@ -159,6 +161,21 @@ private struct StylingSection: View {
             MarginRows(
                 horizontal: \.marginHorizontal, vertical: \.marginVertical, linkedKey: \.marginsLinked,
                 range: 0...20, horizontalHelp: "Space between columns", verticalHelp: "Space between rows")
+            let showHeader = model.library.settings.showHeader
+            SwitchRow(
+                title: "Show header", isOn: model.setting(\.showHeader),
+                help: "File name, details and timeline above the thumbs")
+            VStack(alignment: .leading, spacing: Theme.space2) {
+                SwitchRow(title: "File path", isOn: model.setting(\.showPathInHeader), help: "Movie's folder in the header")
+                SwitchRow(
+                    title: "File details", isOn: model.setting(\.showDetailsInHeader),
+                    help: "Duration, fps, size, file size and codec in the header")
+                SwitchRow(
+                    title: "Timeline", isOn: model.setting(\.showTimelineInHeader),
+                    help: "Mini timeline with the thumbs' positions in the header")
+            }
+            .padding(.leading, Theme.space4)
+            .disabled(!showHeader)
             LabeledSlider(
                 title: "Corner radius", value: model.setting(\.cornerRadius), range: 0...20, unit: " %",
                 help: "Corner radius, % of thumb width (0 = square)")
@@ -305,6 +322,7 @@ private struct ColorRow: View {
     let title: String
     @Binding var value: RGBA
     let keepsOpacity: Bool
+    var help: String?
 
     var body: some View {
         PanelRow(title) {
@@ -326,6 +344,7 @@ private struct ColorRow: View {
                 .help("Any colour")
             }
         }
+        .help(help ?? title)
     }
 
     private func choose(_ colour: RGBA) {
@@ -362,5 +381,197 @@ private struct Swatch: View {
             .contentShape(Circle())
         }
         .buttonStyle(.plain)
+    }
+}
+
+/// Output (§6): where and how Save MoviePrint, Save thumb and Export JSON
+/// write.
+private struct OutputSection: View {
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        let settings = model.library.settings
+        let folder = model.outputFolder(for: model.currentFile)
+        let isPNG = settings.outputFormat == .png
+        PanelSection(title: "Output") {
+            PanelRow("Folder") {
+                Text(settings.outputSameFolderAsMovie
+                     ? "Movie's folder" : (folder.path as NSString).abbreviatingWithTildeInPath)
+                    .font(Theme.detailCondensed)
+                    .foregroundStyle(Theme.textMuted)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .help(folder.path)
+                Button("Change…") { model.chooseOutputFolder() }
+                    .controlSize(.small)
+                    .help("Choose the folder for saved files")
+                    .disabled(settings.outputSameFolderAsMovie)
+            }
+            SwitchRow(
+                title: "Same as movie file", isOn: model.setting(\.outputSameFolderAsMovie),
+                help: "Save next to the movie instead")
+            SizeRows()
+            PanelRow("Format") {
+                FormatPicker(selection: model.setting(\.outputFormat), help: "Image format of the print")
+            }
+            LabeledSlider(
+                title: "Quality", value: intSetting(\.outputQuality), range: 0...100,
+                help: "JPG quality of the print")
+                .disabled(isPNG)
+            ColorRow(
+                title: "Background", value: model.setting(\.outputBackground), keepsOpacity: false,
+                help: "Print background; transparency applies to PNG only (JPG saves it opaque)")
+            SwitchRow(
+                title: "Overwrite", isOn: model.setting(\.overwrite),
+                help: "Replace a file of the same name; off adds \" edit N\"")
+            SwitchRow(
+                title: "Include individual thumbs", isOn: model.setting(\.includeIndividualThumbs),
+                help: "Also save each visible thumb at full size, in a folder named after the print")
+            SwitchRow(
+                title: "Embed frame numbers", isOn: model.setting(\.embedFrameNumbers),
+                help: "PNG only: embed the frames, columns and transform so the PNG can be imported")
+                .disabled(!isPNG)
+            SwitchRow(
+                title: "Embed file path", isOn: model.setting(\.embedFilePath),
+                help: "PNG only: embed the movie's path")
+                .disabled(!isPNG)
+            SwitchRow(
+                title: "Open Finder after saving", isOn: model.setting(\.openFinderAfterSaving),
+                help: "Show the saved file in the Finder")
+            PanelRow("Thumb format") {
+                FormatPicker(selection: model.setting(\.thumbFormat), help: "Image format of saved thumbs")
+            }
+            LabeledSlider(
+                title: "Thumb quality", value: intSetting(\.thumbQuality), range: 0...100,
+                help: "JPG quality of saved thumbs")
+                .disabled(settings.thumbFormat == .png)
+        }
+    }
+
+    private func intSetting(_ key: WritableKeyPath<FrameSheetCore.Settings, Int>) -> Binding<Double> {
+        Binding(
+            get: { Double(model.library.settings[keyPath: key]) },
+            set: { value in model.updateSettings { $0[keyPath: key] = Int(value.rounded()) } })
+    }
+}
+
+/// Output size: 1024–16384 px in steps of 1024, or max; the label gives
+/// the size the current sheet would be saved at.
+private struct SizeRows: View {
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        let settings = model.library.settings
+        let label = model.currentSavePlan.map { "\($0.width) px (× \($0.height) px)" }
+            ?? (settings.outputSizeMax ? "max" : "\(settings.outputSize) px")
+        VStack(alignment: .leading, spacing: 2) {
+            PanelRow("Size") {
+                Text(label)
+                    .font(Theme.mono(12))
+                    .foregroundStyle(Theme.textMuted)
+            }
+            HStack(spacing: Theme.space2) {
+                Slider(
+                    value: Binding(
+                        get: { Double(settings.outputSize) },
+                        set: { v in model.updateSettings { $0.outputSize = OutputSize.snapped(Int(v.rounded())) } }),
+                    in: Double(OutputSize.steps.first!)...Double(OutputSize.limit), step: 1024
+                )
+                .controlSize(.small)
+                .disabled(settings.outputSizeMax)
+                .help("Width of the saved print (limited so neither side exceeds 16384 px)")
+                Toggle("max", isOn: model.setting(\.outputSizeMax))
+                    .toggleStyle(.checkbox)
+                    .controlSize(.small)
+                    .help("Largest size within 16384 px on either side")
+            }
+        }
+    }
+}
+
+private struct FormatPicker: View {
+    @Binding var selection: ImageFormat
+    let help: String
+
+    var body: some View {
+        Picker("Format", selection: $selection) {
+            ForEach(ImageFormat.allCases, id: \.self) { format in
+                Text(format.label).tag(format)
+            }
+        }
+        .pickerStyle(.segmented)
+        .labelsHidden()
+        .fixedSize()
+        .help(help)
+    }
+}
+
+/// The three file-name templates with a live preview of the name each gives
+/// now (§6).
+private struct NamingSection: View {
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        let settings = model.library.settings
+        PanelSection(title: "Naming scheme") {
+            TemplateField(
+                title: "MoviePrint", key: \.sheetNameTemplate, isThumb: false,
+                fileExtension: settings.outputFormat.fileExtension)
+            TemplateField(
+                title: "Single thumb", key: \.singleThumbNameTemplate, isThumb: true,
+                fileExtension: settings.thumbFormat.fileExtension)
+            TemplateField(
+                title: "Individual thumbs", key: \.individualThumbNameTemplate, isThumb: true,
+                fileExtension: settings.thumbFormat.fileExtension)
+        }
+    }
+}
+
+private struct TemplateField: View {
+    @Environment(AppModel.self) private var model
+    let title: String
+    let key: WritableKeyPath<FrameSheetCore.Settings, String>
+    /// Thumb templates show a frame and warn without a frame token.
+    let isThumb: Bool
+    let fileExtension: String
+    @FocusState private var focused: Bool
+
+    static let tokensHelp = "[MN] movie name, [ME] extension, [SN] sheet name, [FN] frame number, [TC] timecode"
+
+    var body: some View {
+        let template = model.library.settings[keyPath: key]
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title)
+            TextField(title, text: model.setting(key))
+                .textFieldStyle(.roundedBorder)
+                .font(Theme.mono(12))
+                .focused($focused)
+                .onChange(of: focused) { _, isFocused in model.isEditingText = isFocused }
+                .help(Self.tokensHelp)
+            let preview = previewName(template)
+            Text(preview)
+                .font(Theme.detailCondensed)
+                .foregroundStyle(Theme.textMuted)
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .help("Preview: \(preview)")
+            if isThumb && FileNaming.templateLacksFrameToken(template) {
+                Label("Without [FN] or [TC] every thumb gets the same name", systemImage: "exclamationmark.triangle")
+                    .font(Theme.panelCaption)
+                    .foregroundStyle(Theme.warning)
+            }
+        }
+    }
+
+    /// The name for the current movie and sheet (and its first visible
+    /// thumb), or for an example movie when none is open.
+    private func previewName(_ template: String) -> String {
+        let file = model.currentFile
+        let sheet = model.currentSheet
+        let frame = isThumb ? (sheet?.visibleThumbs.first?.frameNumber ?? 0) : nil
+        let name = PrintOutput.baseName(
+            template: template, movieFileName: file?.name ?? "movie.mp4", sheetName: sheet?.name ?? "Sheet-1",
+            frameNumber: frame, fps: (file?.fps ?? 0) > 0 ? file!.fps : 25)
+        return "\(name).\(fileExtension)"
     }
 }

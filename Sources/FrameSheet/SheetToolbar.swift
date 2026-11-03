@@ -5,8 +5,8 @@ import SwiftUI
 /// toolbar, moved there by the owner, 2026-11-03), the parts that work on
 /// interval sheets: back to parent, add interval sheet, duplicate, zoom (with
 /// Fit height and Fit width when they would change the fit), show hidden
-/// thumbs, cycle frame info, optimize grid layout, then the right panel
-/// toggle. Disabled while no sheet is shown (not the toggle). Each group is
+/// thumbs, show header, cycle frame info, optimize grid layout, Save
+/// MoviePrint with its menu, then the right panel toggle. Disabled while no sheet is shown (not the toggle). Each group is
 /// one `ToolbarIconGroup` in a single toolbar item, so its icons touch; the
 /// items have no glass background.
 struct SheetToolbar: ToolbarContent {
@@ -114,6 +114,15 @@ struct SheetToolbar: ToolbarContent {
                     .help("Show hidden thumbs")
                     .disabled(noSheet)
                     Button {
+                        model.updateSettings { $0.showHeader.toggle() }
+                    } label: {
+                        Label("Show header", systemImage: "rectangle.topthird.inset.filled")
+                    }
+                    .buttonStyle(ToolbarIconStyle(selected: settings.showHeader, grouped: true))
+                    .accessibilityAddTraits(settings.showHeader ? .isSelected : [])
+                    .help("Show header")
+                    .disabled(noSheet)
+                    Button {
                         model.cycleFrameInfo()
                     } label: {
                         Label(
@@ -131,6 +140,27 @@ struct SheetToolbar: ToolbarContent {
                     .buttonStyle(ToolbarIconStyle(grouped: true))
                     .help("Optimize grid layout")
                     .disabled(noSheet)
+                }
+                // Save (decision 23): the download button, and a menu with
+                // the output location (Save All comes with T08).
+                ToolbarIconGroup {
+                    Button {
+                        model.saveMoviePrint()
+                    } label: {
+                        Label("Save MoviePrint", systemImage: "square.and.arrow.down")
+                    }
+                    .buttonStyle(ToolbarIconStyle(grouped: true))
+                    .help("Save MoviePrint (M)")
+                    .disabled(noSheet || model.isSaving)
+                    Menu {
+                        Button("Open Output Location") { model.openOutputLocation() }
+                    } label: {
+                        Label("Save options", systemImage: "chevron.down")
+                    }
+                    .menuStyle(.button)
+                    .menuIndicator(.hidden)
+                    .buttonStyle(ToolbarIconStyle(grouped: true))
+                    .help("More save options")
                 }
                 Button {
                     model.showSettings.toggle()

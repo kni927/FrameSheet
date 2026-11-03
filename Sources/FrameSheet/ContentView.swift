@@ -149,32 +149,71 @@ private struct DropOverlay: View {
     }
 }
 
+/// Save progress with Cancel, then the latest error, else a short notice.
 private struct Toast: View {
     @Environment(AppModel.self) private var model
 
     var body: some View {
-        if let message = model.toast {
-            HStack(alignment: .top, spacing: Theme.space3) {
-                Image(systemName: "exclamationmark.triangle").foregroundStyle(Theme.warning)
-                Text(message)
-                    .foregroundStyle(Theme.text)
-                    .textSelection(.enabled)
-                    .fixedSize(horizontal: false, vertical: true)
-                Button {
-                    model.toast = nil
-                } label: {
-                    Image(systemName: "xmark")
+        VStack(spacing: Theme.space2) {
+            if let progress = model.progress {
+                ToastCard {
+                    ProgressView(value: progress.fraction)
+                        .progressViewStyle(.linear)
+                        .frame(width: 120)
+                    Text(progress.message)
+                        .foregroundStyle(Theme.text)
+                        .monospacedDigit()
+                    Button("Cancel") { model.cancelSave() }
+                        .controlSize(.small)
+                        .help("Stop saving")
                 }
-                .buttonStyle(.plain)
-                .foregroundStyle(Theme.textMuted)
-                .help("Dismiss")
             }
+            if let message = model.toast {
+                ToastCard {
+                    Image(systemName: "exclamationmark.triangle").foregroundStyle(Theme.warning)
+                    Text(message)
+                        .foregroundStyle(Theme.text)
+                        .textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true)
+                    DismissButton { model.toast = nil }
+                }
+            } else if let message = model.notice {
+                ToastCard {
+                    Image(systemName: "checkmark.circle").foregroundStyle(Theme.success)
+                    Text(message)
+                        .foregroundStyle(Theme.text)
+                        .textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true)
+                    DismissButton { model.notice = nil }
+                }
+            }
+        }
+        .padding(.bottom, Theme.space6)
+    }
+}
+
+private struct ToastCard<Content: View>: View {
+    @ViewBuilder var content: Content
+
+    var body: some View {
+        HStack(alignment: .top, spacing: Theme.space3) { content }
             .font(Theme.bodySm)
             .padding(Theme.space3)
             .frame(maxWidth: 520)
             .background(Theme.mantle, in: RoundedRectangle(cornerRadius: Theme.radiusMd))
             .overlay(RoundedRectangle(cornerRadius: Theme.radiusMd).strokeBorder(Theme.border, lineWidth: 1))
-            .padding(.bottom, Theme.space6)
+    }
+}
+
+private struct DismissButton: View {
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: "xmark")
         }
+        .buttonStyle(.plain)
+        .foregroundStyle(Theme.textMuted)
+        .help("Dismiss")
     }
 }

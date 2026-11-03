@@ -179,6 +179,7 @@ private struct SheetRow: View {
             Button("Switch View") {}.disabled(true)
             Button("Convert to Interval") {}.disabled(true)
             Button("Duplicate") { model.duplicateSheet(ref) }
+            Button("Export JSON") { model.exportJSON(ref) }
             Divider()
             Button("Delete", role: .destructive) { model.deleteSheet(ref) }
         }

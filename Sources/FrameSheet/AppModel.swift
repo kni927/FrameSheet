@@ -38,8 +38,13 @@ final class AppModel {
     var library: Library { document.library }
     private(set) var ffmpeg: FFmpegDiscovery?
     private(set) var isFindingFFmpeg = false
-    /// Latest error or notice for the toast; nil hides it.
+    /// Latest error for the toast; nil hides it.
     var toast: String?
+    /// A short confirmation ("Saved …"), shown when no error is; clears
+    /// itself after a few seconds.
+    var notice: String?
+    /// A save in progress, shown in the toast with Cancel.
+    var progress: SaveProgress?
     var showMovieList = true
     var showSettings = true
     /// Missing movie files by id (checked on launch and on open).
@@ -81,6 +86,8 @@ final class AppModel {
     /// redraw. Pruned to what is on screen when the sheet changes.
     @ObservationIgnored private var pinned: [String: CGImage] = [:]
     @ObservationIgnored private var saveTask: Task<Void, Never>?
+    /// Save MoviePrint while it runs (one at a time).
+    @ObservationIgnored var saveJob: Task<Void, Never>?
     @ObservationIgnored private var discovery: Task<Void, Never>?
     @ObservationIgnored private var columnsAtDragStart: Int?
     /// Target rows set by the Rows slider for one sheet at one column count;
@@ -711,7 +718,7 @@ final class AppModel {
 
     // MARK: - Thumbnails
 
-    private func backend(for file: MovieFile) async throws -> any DecodeBackend {
+    func backend(for file: MovieFile) async throws -> any DecodeBackend {
         if let backend = backends[file.id] { return backend }
         guard !missing.contains(file.id) else { throw DecodeError("Movie is missing") }
         let backend = try await DecoderRouter.open(file.url, ffmpeg: await ffmpegTools())
@@ -719,7 +726,7 @@ final class AppModel {
         return backend
     }
 
-    private func cachedImage(file: UUID, frame: Int, width: Int) -> CGImage? {
+    func cachedImage(file: UUID, frame: Int, width: Int) -> CGImage? {
         pinned[Self.loadingKey(file, frame, width)] ?? cache.image(file: file, frame: frame, width: width)
     }
 
