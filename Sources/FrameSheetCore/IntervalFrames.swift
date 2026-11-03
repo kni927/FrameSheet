@@ -93,6 +93,30 @@ public enum Timecode {
         return parts.map { String(format: "%02d", $0) }.joined(separator: separator)
     }
 
+    /// The frame info timecode of a frame in `format`. `HH:MM:SS:FF` is
+    /// `string(frames:fps:)`; `HH:MM:SS` and `MM:SS` are it without the
+    /// frames (MM counts all minutes, so "75:03" past an hour);
+    /// `HH:MM:SS.mmm` is the frame's time at the movie's exact fps, so it
+    /// can differ from the frame-count formats at fractional rates (23.976).
+    public static func string(frames: Int, fps: Double, format: TimecodeFormat) -> String {
+        let f = max(1, Int(fps.rounded()))
+        let total = max(0, frames)
+        let seconds = total / f
+        switch format {
+        case .hoursMinutesSecondsFrames:
+            return string(frames: frames, fps: fps)
+        case .hoursMinutesSeconds:
+            return String(format: "%02d:%02d:%02d", seconds / 3600, (seconds / 60) % 60, seconds % 60)
+        case .minutesSeconds:
+            return String(format: "%02d:%02d", seconds / 60, seconds % 60)
+        case .hoursMinutesSecondsMilliseconds:
+            let rate = fps > 0 ? fps : 25
+            let ms = Int((Double(total) / rate * 1000).rounded(.down))
+            let s = ms / 1000
+            return String(format: "%02d:%02d:%02d.%03d", s / 3600, (s / 60) % 60, s % 60, ms % 1000)
+        }
+    }
+
     /// `HH:MM:SS` for a duration in seconds.
     public static func string(seconds: Double) -> String {
         let s = max(0, Int(seconds.rounded(.down)))

@@ -180,6 +180,11 @@ extension AppModel {
         let renderer = ImageRenderer(content: content)
         renderer.scale = 1
         renderer.isOpaque = settings.outputFormat == .jpg
+        // Standard range, non-linear: frames with HDR or extended-range
+        // content would otherwise let the renderer draw in a 16-bit float
+        // buffer. `ImageEncoding` writes 8-bit sRGB in any case.
+        renderer.allowedDynamicRange = .standard
+        renderer.colorMode = .nonLinear
         guard let image = renderer.cgImage else {
             throw SaveError("The \(plan.width) × \(plan.height) px print could not be rendered.")
         }

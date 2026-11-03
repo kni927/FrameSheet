@@ -274,6 +274,20 @@ import Testing
         #expect(unknown.showHeader)
     }
 
+    @Test func timecodeFormatDecodesTolerantly() throws {
+        #expect(Settings().frameInfoTimecodeFormat == .hoursMinutesSecondsFrames)
+        var ms = Settings()
+        ms.frameInfoTimecodeFormat = .hoursMinutesSecondsMilliseconds
+        let decoded = try JSONDecoder().decode(Settings.self, from: JSONEncoder().encode(ms))
+        #expect(decoded.frameInfoTimecodeFormat == .hoursMinutesSecondsMilliseconds)
+        let missing = try JSONDecoder().decode(Settings.self, from: Data(#"{"showHeader":true}"#.utf8))
+        #expect(missing.frameInfoTimecodeFormat == .hoursMinutesSecondsFrames)
+        let unknown = try JSONDecoder().decode(
+            Settings.self, from: Data(#"{"frameInfoTimecodeFormat":"feet","showHeader":true}"#.utf8))
+        #expect(unknown.frameInfoTimecodeFormat == .hoursMinutesSecondsFrames)
+        #expect(unknown.showHeader)
+    }
+
     @Test func settingsMigratesFormerKeys() throws {
         let json = #"{"marginSlider":10,"roundedCorners":false,"frameInfoFont":"condensed","frameInfoMargin":6}"#
         let old = try JSONDecoder().decode(Settings.self, from: Data(json.utf8))
@@ -312,5 +326,19 @@ import Testing
         #expect(Timecode.string(frames: 25 * 3661 + 7, fps: 25) == "01:01:01:07")
         #expect(Timecode.string(frames: 60, fps: 59.94) == "00:00:01:00")
         #expect(Timecode.string(seconds: 7325.9) == "02:02:05")
+    }
+
+    @Test func frameInfoFormats() {
+        let frame = 25 * 3661 + 7
+        #expect(Timecode.string(frames: frame, fps: 25, format: .hoursMinutesSecondsFrames) == "01:01:01:07")
+        #expect(Timecode.string(frames: frame, fps: 25, format: .hoursMinutesSeconds) == "01:01:01")
+        // Minutes count on past the hour.
+        #expect(Timecode.string(frames: frame, fps: 25, format: .minutesSeconds) == "61:01")
+        #expect(Timecode.string(frames: frame, fps: 25, format: .hoursMinutesSecondsMilliseconds) == "01:01:01.280")
+        #expect(Timecode.string(frames: 0, fps: 25, format: .hoursMinutesSecondsMilliseconds) == "00:00:00.000")
+        // Milliseconds use the exact rate: 24 frames at 23.976 fps are 1.001 s.
+        #expect(Timecode.string(frames: 24, fps: 23.976, format: .hoursMinutesSecondsMilliseconds) == "00:00:01.001")
+        #expect(Timecode.string(frames: -5, fps: 25, format: .minutesSeconds) == "00:00")
+        #expect(TimecodeFormat.allCases.map(\.label) == ["HH:MM:SS:FF", "HH:MM:SS", "MM:SS", "HH:MM:SS.mmm"])
     }
 }

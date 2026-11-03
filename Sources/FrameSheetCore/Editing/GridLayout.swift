@@ -35,12 +35,14 @@ public enum GridLayout {
 }
 
 public enum FrameInfoText {
-    /// The label on a thumb: 4-digit frame number, HH:MM:SS:FF timecode, or
-    /// nothing.
-    public static func text(_ mode: FrameInfo, frame: Int, fps: Double) -> String? {
+    /// The label on a thumb: 4-digit frame number, timecode in
+    /// `timecodeFormat` (HH:MM:SS:FF by default), or nothing.
+    public static func text(
+        _ mode: FrameInfo, frame: Int, fps: Double, timecodeFormat: TimecodeFormat = .hoursMinutesSecondsFrames
+    ) -> String? {
         switch mode {
         case .frames: String(format: "%04d", max(0, frame))
-        case .timecode: Timecode.string(frames: frame, fps: fps)
+        case .timecode: Timecode.string(frames: frame, fps: fps, format: timecodeFormat)
         case .hidden: nil
         }
     }

@@ -155,20 +155,66 @@ extension RGBA {
 }
 
 /// A section of a sidebar: its heading over the content, divided from the
-/// section above by a 1 pt line. Content text is regular weight.
-struct PanelSection<Content: View>: View {
+/// section above by a 1 pt line. Content text is regular weight. A section
+/// with `more` content has a chevron in its heading that shows that part
+/// below the main content; the expanded state is kept per section in the
+/// user defaults under `expandedKey` (owner, 2026-11-03).
+struct PanelSection<Content: View, More: View>: View {
     let title: String
     @ViewBuilder var content: Content
+    @ViewBuilder var more: More
+    private let hasMore: Bool
+    @AppStorage private var expanded: Bool
+
+    init(title: String, @ViewBuilder content: () -> Content) where More == EmptyView {
+        self.title = title
+        self.content = content()
+        self.more = EmptyView()
+        hasMore = false
+        _expanded = AppStorage(wrappedValue: false, "panelSectionUnused")
+    }
+
+    init(
+        title: String, expandedKey: String, @ViewBuilder content: () -> Content,
+        @ViewBuilder more: () -> More
+    ) {
+        self.title = title
+        self.content = content()
+        self.more = more()
+        hasMore = true
+        _expanded = AppStorage(wrappedValue: false, "panelSection.\(expandedKey).expanded")
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.space2) {
-            Text(title)
-                .font(Theme.sectionTitle)
-                .foregroundStyle(Theme.text)
-                .padding(.bottom, 2)
-            content
-                .font(Theme.bodySm)
-                .fontWeight(.regular)
+            HStack(spacing: Theme.space2) {
+                Text(title)
+                    .font(Theme.sectionTitle)
+                    .foregroundStyle(Theme.text)
+                Spacer(minLength: 0)
+                if hasMore {
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.15)) { expanded.toggle() }
+                    } label: {
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 11, weight: .semibold))
+                            .rotationEffect(.degrees(expanded ? 90 : 0))
+                            .foregroundStyle(Theme.textMuted)
+                            .frame(width: 22, height: 22)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .help(expanded ? "Fewer settings" : "More settings")
+                    .accessibilityLabel(expanded ? "Fewer settings" : "More settings")
+                }
+            }
+            .padding(.bottom, 2)
+            Group {
+                content
+                if hasMore && expanded { more }
+            }
+            .font(Theme.bodySm)
+            .fontWeight(.regular)
         }
         .padding(Theme.space3)
         .frame(maxWidth: .infinity, alignment: .leading)

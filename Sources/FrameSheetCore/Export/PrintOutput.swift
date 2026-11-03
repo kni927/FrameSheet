@@ -153,8 +153,10 @@ public enum ImageEncodingError: Error, Equatable {
 
 /// PNG and JPG files from a CGImage (ImageIO).
 public enum ImageEncoding {
-    /// JPG quality is 0–100.
+    /// JPG quality is 0–100. The image is written as 8 bits per channel
+    /// sRGB whatever it was rendered as (`normalized`).
     public static func data(_ image: CGImage, format: ImageFormat, quality: Int) throws -> Data {
+        let image = try normalized(image, format: format)
         let data = NSMutableData()
         let type = (format == .png ? "public.png" : "public.jpeg") as CFString
         guard let destination = CGImageDestinationCreateWithData(data, type, 1, nil) else {
@@ -167,5 +169,33 @@ public enum ImageEncoding {
         CGImageDestinationAddImage(destination, image, properties as CFDictionary)
         guard CGImageDestinationFinalize(destination) else { throw ImageEncodingError.encodingFailed }
         return data as Data
+    }
+
+    /// The image as 8 bits per channel sRGB: RGBA for a PNG with alpha, RGB
+    /// otherwise. ImageIO writes the image's own depth, so a print that
+    /// `ImageRenderer` returned at 16 bits (float) per channel became a 16-bit
+    /// PNG three times the size (owner, 2026-11-03). Images already 8-bit
+    /// sRGB pass unchanged.
+    public static func normalized(_ image: CGImage, format: ImageFormat) throws -> CGImage {
+        let srgb = CGColorSpace(name: CGColorSpace.sRGB)!
+        let hasAlpha = switch image.alphaInfo {
+        case .none, .noneSkipFirst, .noneSkipLast: false
+        default: true
+        }
+        let keepsAlpha = format == .png && hasAlpha
+        let isFloat = image.bitmapInfo.contains(.floatComponents)
+        if image.bitsPerComponent == 8, !isFloat, image.colorSpace?.name == CGColorSpace.sRGB,
+           format == .png || !hasAlpha {
+            return image
+        }
+        let alpha: CGImageAlphaInfo = keepsAlpha ? .premultipliedLast : .noneSkipLast
+        guard let context = CGContext(
+            data: nil, width: image.width, height: image.height, bitsPerComponent: 8, bytesPerRow: 0,
+            space: srgb, bitmapInfo: alpha.rawValue)
+        else { throw ImageEncodingError.encodingFailed }
+        context.interpolationQuality = .none
+        context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
+        guard let result = context.makeImage() else { throw ImageEncodingError.encodingFailed }
+        return result
     }
 }

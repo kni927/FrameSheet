@@ -75,7 +75,9 @@ private struct FrameInfoLabel: View {
     let thumbHeight: CGFloat
 
     var body: some View {
-        if let text = FrameInfoText.text(settings.frameInfo, frame: thumb.frameNumber, fps: file.fps) {
+        if let text = FrameInfoText.text(
+            settings.frameInfo, frame: thumb.frameNumber, fps: file.fps,
+            timecodeFormat: settings.frameInfoTimecodeFormat) {
             let size = max(1, FrameInfoText.fontSize(size: settings.frameInfoSize, thumbHeight: thumbHeight))
             Text(text)
                 .font(font(settings.frameInfoFontFamily, size: size))

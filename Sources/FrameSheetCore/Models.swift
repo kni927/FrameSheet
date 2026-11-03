@@ -189,6 +189,21 @@ public enum FrameInfo: String, Codable, Sendable, CaseIterable {
     case frames, timecode, hidden
 }
 
+/// How the frame info shows a timecode (owner, 2026-11-03); the `[TC]`
+/// file-name token stays `HH_MM_SS_FF`.
+public enum TimecodeFormat: String, Codable, Sendable, CaseIterable {
+    case hoursMinutesSecondsFrames, hoursMinutesSeconds, minutesSeconds, hoursMinutesSecondsMilliseconds
+
+    public var label: String {
+        switch self {
+        case .hoursMinutesSecondsFrames: "HH:MM:SS:FF"
+        case .hoursMinutesSeconds: "HH:MM:SS"
+        case .minutesSeconds: "MM:SS"
+        case .hoursMinutesSecondsMilliseconds: "HH:MM:SS.mmm"
+        }
+    }
+}
+
 /// Where the frame info sits on a thumb (MoviePrint `FRAMEINFO_POSITION`).
 public enum FrameInfoPosition: String, Codable, Sendable, CaseIterable {
     case topLeft, topCenter, topRight, centerCenter, bottomLeft, bottomCenter, bottomRight
@@ -332,6 +347,8 @@ public struct Settings: Codable, Sendable, Equatable {
     public var frameInfoMarginVertical: Double = 0
     /// The frame info margin sliders move together.
     public var frameInfoMarginsLinked = true
+    /// The timecode shown with frame info Timecode.
+    public var frameInfoTimecodeFormat: TimecodeFormat = .hoursMinutesSecondsFrames
     public var thumbnailCacheMB = Defaults.thumbnailCacheMB
     /// User-chosen ffmpeg path (§10); nil means discover it.
     public var ffmpegPath: String?
@@ -378,6 +395,7 @@ public struct Settings: Codable, Sendable, Equatable {
         case cornerRadius, showHiddenThumbs, frameInfo, thumbnailCacheMB, ffmpegPath
         case frameInfoColor, frameInfoBackground, frameInfoPosition, frameInfoSize
         case frameInfoFontFamily, frameInfoMarginHorizontal, frameInfoMarginVertical, frameInfoMarginsLinked
+        case frameInfoTimecodeFormat
         case outputFolder, outputSameFolderAsMovie, outputSize, outputSizeMax, outputFormat, outputQuality
         case outputBackground, overwrite, includeIndividualThumbs, embedFrameNumbers, embedFilePath
         case openFinderAfterSaving, thumbFormat, thumbQuality
@@ -424,6 +442,8 @@ public struct Settings: Codable, Sendable, Equatable {
             ?? oldInfoMargin ?? d.frameInfoMarginVertical
         frameInfoMarginsLinked = try c.decodeIfPresent(Bool.self, forKey: .frameInfoMarginsLinked)
             ?? d.frameInfoMarginsLinked
+        frameInfoTimecodeFormat = (try? c.decodeIfPresent(TimecodeFormat.self, forKey: .frameInfoTimecodeFormat))
+            ?? d.frameInfoTimecodeFormat
         outputFolder = try c.decodeIfPresent(String.self, forKey: .outputFolder)
         outputSameFolderAsMovie = try c.decodeIfPresent(Bool.self, forKey: .outputSameFolderAsMovie)
             ?? d.outputSameFolderAsMovie

@@ -10,15 +10,16 @@ public enum PrintHeader {
     /// least 2 % of the timeline wide.
     public static let minimumRangeWidth = 0.02
 
-    /// Between the details fields: an en space, wider than the single
-    /// spaces inside "23.98 FPS" and "1280 × 720" so the fields stand apart,
-    /// narrower than the em space tried first (owner, 2026-11-03: spaces
-    /// instead of MoviePrint's " | ").
-    public static let detailsSeparator = "\u{2002}"
+    /// Between the details fields: an en space and a six-per-em space,
+    /// about 0.67 em, wider than the single spaces inside "23.98 FPS" and
+    /// "1280 × 720" so the fields stand apart (owner, 2026-11-03: spaces
+    /// instead of MoviePrint's " | "; an em space was too wide, an en space
+    /// alone a little narrow, about 1.3 × it wanted).
+    public static let detailsSeparator = "\u{2002}\u{2006}"
 
     /// MoviePrint's `TC | fps FPS | W × H | size | fourCC` with
     /// `detailsSeparator`, e.g. "00:06:48:12  23.98 FPS  1280 × 720  39.2 MB
-    /// avc1" (en spaces).
+    /// avc1" (en + six-per-em spaces).
     public static func detailsLine(file: MovieFile) -> String {
         let fps = file.fps > 0 ? file.fps : 25
         return [

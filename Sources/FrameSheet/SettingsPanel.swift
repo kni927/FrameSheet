@@ -157,14 +157,13 @@ private struct StylingSection: View {
     @Environment(AppModel.self) private var model
 
     var body: some View {
-        PanelSection(title: "Styling") {
-            MarginRows(
-                horizontal: \.marginHorizontal, vertical: \.marginVertical, linkedKey: \.marginsLinked,
-                range: 0...20, horizontalHelp: "Space between columns", verticalHelp: "Space between rows")
-            let showHeader = model.library.settings.showHeader
+        let showHeader = model.library.settings.showHeader
+        // Show header always; the rest under More (owner, 2026-11-03).
+        PanelSection(title: "Styling", expandedKey: "styling") {
             SwitchRow(
                 title: "Show header", isOn: model.setting(\.showHeader),
                 help: "File name, details and timeline above the thumbs")
+        } more: {
             VStack(alignment: .leading, spacing: Theme.space2) {
                 SwitchRow(title: "File path", isOn: model.setting(\.showPathInHeader), help: "Movie's folder in the header")
                 SwitchRow(
@@ -187,6 +186,9 @@ private struct StylingSection: View {
             }
             .padding(.leading, Theme.space4)
             .disabled(!showHeader)
+            MarginRows(
+                horizontal: \.marginHorizontal, vertical: \.marginVertical, linkedKey: \.marginsLinked,
+                range: 0...20, horizontalHelp: "Space between columns", verticalHelp: "Space between rows")
             LabeledSlider(
                 title: "Corner radius", value: model.setting(\.cornerRadius), range: 0...20, unit: " %",
                 help: "Corner radius, % of thumb width (0 = square)")
@@ -255,7 +257,8 @@ private struct FrameInfoSection: View {
     @Environment(AppModel.self) private var model
 
     var body: some View {
-        PanelSection(title: "Frame info") {
+        // The mode always; the rest under More (owner, 2026-11-03).
+        PanelSection(title: "Frame info", expandedKey: "frameInfo") {
             Picker("Frame info", selection: model.setting(\.frameInfo)) {
                 Text("Frames").tag(FrameInfo.frames)
                 Text("Timecode").tag(FrameInfo.timecode)
@@ -264,6 +267,17 @@ private struct FrameInfoSection: View {
             .pickerStyle(.segmented)
             .labelsHidden()
             .help("Frame number, timecode or none")
+        } more: {
+            PanelRow("Timecode") {
+                Picker("Timecode", selection: model.setting(\.frameInfoTimecodeFormat)) {
+                    ForEach(TimecodeFormat.allCases, id: \.self) { format in
+                        Text(format.label).tag(format)
+                    }
+                }
+                .labelsHidden()
+                .fixedSize()
+                .help("Timecode format on thumbs (file names keep HH_MM_SS_FF)")
+            }
             PanelRow("Font") {
                 FontFamilyPicker(selection: model.setting(\.frameInfoFontFamily))
             }
@@ -404,11 +418,12 @@ private struct OutputSection: View {
         let settings = model.library.settings
         let folder = model.outputFolder(for: model.currentFile)
         let isPNG = settings.outputFormat == .png
-        PanelSection(title: "Output") {
+        // Folder and size always; the rest under More (owner, 2026-11-03).
+        PanelSection(title: "Output", expandedKey: "output") {
             PanelRow("Folder") {
                 Text(settings.outputSameFolderAsMovie
                      ? "Movie's folder" : PathDisplay.abbreviatingHome(folder.path))
-                    .font(Theme.detailCondensed)
+                    .font(Theme.panelCaption)
                     .foregroundStyle(Theme.textMuted)
                     .lineLimit(1)
                     .truncationMode(.middle)
@@ -422,6 +437,7 @@ private struct OutputSection: View {
                 title: "Same as movie file", isOn: model.setting(\.outputSameFolderAsMovie),
                 help: "Save next to the movie instead")
             SizeRows()
+        } more: {
             PanelRow("Format") {
                 FormatPicker(selection: model.setting(\.outputFormat), help: "Image format of the print")
             }
@@ -525,7 +541,10 @@ private struct NamingSection: View {
 
     var body: some View {
         let settings = model.library.settings
-        PanelSection(title: "Naming scheme") {
+        // Everything under More (owner, 2026-11-03).
+        PanelSection(title: "Naming scheme", expandedKey: "naming") {
+            EmptyView()
+        } more: {
             TemplateField(
                 title: "Sheet", key: \.sheetNameTemplate, isThumb: false,
                 fileExtension: settings.outputFormat.fileExtension)

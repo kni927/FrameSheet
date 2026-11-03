@@ -328,6 +328,8 @@ private extension Library {
         #expect(FrameInfoText.text(.frames, frame: 123_456, fps: 25) == "123456")
         #expect(FrameInfoText.text(.timecode, frame: 25 * 61 + 3, fps: 25) == "00:01:01:03")
         #expect(FrameInfoText.text(.hidden, frame: 1, fps: 25) == nil)
+        #expect(FrameInfoText.text(.timecode, frame: 25 * 61 + 3, fps: 25, timecodeFormat: .minutesSeconds) == "01:01")
+        #expect(FrameInfoText.text(.frames, frame: 42, fps: 25, timecodeFormat: .minutesSeconds) == "0042")
         #expect(FrameInfoText.next(after: .hidden) == .frames)
         #expect(abs(FrameInfoText.fontSize(size: 10, thumbHeight: 200) - 15) < 1e-9)
     }

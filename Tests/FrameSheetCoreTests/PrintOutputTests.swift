@@ -141,6 +141,44 @@ import Testing
         return context.makeImage()!
     }
 
+    /// IHDR bit depth and colour type of a PNG (bytes 24 and 25).
+    private func ihdr(_ png: Data) -> (bitDepth: UInt8, colourType: UInt8) {
+        let bytes = [UInt8](png)
+        return (bytes[24], bytes[25])
+    }
+
+    private func wideImage(width: Int, height: Int, alpha: Bool) -> CGImage {
+        let info = (alpha ? CGImageAlphaInfo.premultipliedLast : CGImageAlphaInfo.noneSkipLast).rawValue
+            | CGBitmapInfo.byteOrder16Little.rawValue | CGBitmapInfo.floatComponents.rawValue
+        let context = CGContext(
+            data: nil, width: width, height: height, bitsPerComponent: 16, bytesPerRow: 0,
+            space: CGColorSpace(name: CGColorSpace.extendedLinearSRGB)!, bitmapInfo: info)!
+        context.setFillColor(red: 0.5, green: 0.2, blue: 0.8, alpha: alpha ? 0.5 : 1)
+        context.fill(CGRect(x: 0, y: 0, width: width, height: height))
+        return context.makeImage()!
+    }
+
+    @Test func encodesEightBitsPerChannelSRGB() throws {
+        let wide = wideImage(width: 8, height: 4, alpha: true)
+        #expect(wide.bitsPerComponent == 16)
+        let png = try ImageEncoding.data(wide, format: .png, quality: 80)
+        #expect(ihdr(png).bitDepth == 8)
+        #expect(ihdr(png).colourType == 6)  // RGBA
+        let opaque = try ImageEncoding.data(wideImage(width: 8, height: 4, alpha: false), format: .png, quality: 80)
+        #expect(ihdr(opaque).bitDepth == 8)
+        #expect(ihdr(opaque).colourType == 2)  // RGB
+        let normalized = try ImageEncoding.normalized(wide, format: .jpg)
+        #expect(normalized.bitsPerComponent == 8)
+        #expect(normalized.colorSpace?.name == CGColorSpace.sRGB)
+        #expect(normalized.alphaInfo == .noneSkipLast)
+        let jpg = try ImageEncoding.data(wide, format: .jpg, quality: 80)
+        #expect(jpg.starts(with: [0xFF, 0xD8]))
+        // An 8-bit sRGB image is written as it is.
+        let plain = image(width: 8, height: 4, alpha: true)
+        #expect(try ImageEncoding.normalized(plain, format: .png) === plain)
+        #expect(ihdr(try ImageEncoding.data(plain, format: .png, quality: 80)).bitDepth == 8)
+    }
+
     @Test func encodesPNGWithEmbeddedDataAndJPG() throws {
         let png = try ImageEncoding.data(image(width: 8, height: 4, alpha: true), format: .png, quality: 80)
         #expect(png.starts(with: PNGText.signature))
