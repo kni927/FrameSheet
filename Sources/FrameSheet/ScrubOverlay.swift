@@ -91,10 +91,14 @@ struct ScrubOverlay: View {
 
     @ViewBuilder
     private func hint(in rect: CGRect) -> some View {
-        let text = session.sticky
-            ? "Move to scrub  ·  click to confirm  ·  Esc cancels"
-            : session.keyboard ? "← → step  ·  ⇧ ×10  ·  Return confirms  ·  Esc cancels" : nil
-        if let text {
+        // Pointer scrubs follow the modifiers live, so name them every time.
+        let modifiers = "⇧ add before  ·  ⌥ add after  ·  ⌃ range to the movie's start and end"
+        let text = session.keyboard
+            ? "← → step  ·  ⇧ ×10  ·  Return confirms  ·  Esc cancels"
+            : session.sticky
+                ? "Click to confirm  ·  Esc cancels  ·  " + modifiers
+                : "Release to confirm  ·  " + modifiers
+        if let text = Optional(text) {
             Text(text)
                 .font(Theme.caption)
                 .foregroundStyle(Theme.textMuted)
