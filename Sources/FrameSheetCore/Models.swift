@@ -186,6 +186,13 @@ public enum Defaults {
     /// Whether frames AVFoundation cannot decode exactly are fetched with
     /// ffmpeg (decision 25); flip here once the measurement decides.
     public static let exactFramesWithFFmpeg = true
+    /// Shot detection (§6, `DEFAULT_SCENE_DETECTION_THRESHOLD`).
+    public static let shotDetectionThreshold = 6.0
+    public static let shotDetectionThresholdRange = 3.0...40.0
+    /// Timeline view (§6): `DEFAULT_TIMELINEVIEW_WIDTH_SCALE` and
+    /// `DEFAULT_TIMELINEVIEW_MIN_DISPLAY_SCENE_LENGTH_IN_FRAMES`.
+    public static let timelineSceneWidthRatio = 50.0
+    public static let timelineMinSceneLength = 10
 }
 
 public enum FrameInfo: String, Codable, Sendable, CaseIterable {
@@ -359,6 +366,20 @@ public struct Settings: Codable, Sendable, Equatable {
     /// with ffmpeg, frame by frame, when ffmpeg is available (decision 25).
     public var exactFramesWithFFmpeg = Defaults.exactFramesWithFFmpeg
 
+    // Shot detection and timeline view (§6, §10).
+    /// Experimental: Mean (default) or Histogram.
+    public var shotDetectionMethod: ShotDetectionMethod = .mean
+    /// 3–40.
+    public var shotDetectionThreshold = Defaults.shotDetectionThreshold
+    /// Experimental: detect IN/OUT from the first and last frames.
+    public var automaticInOut = false
+    /// Shot sheets in timeline view wrap by width.
+    public var timelineNaturalFlow = false
+    /// Scene width ratio 0–100.
+    public var timelineSceneWidthRatio = Defaults.timelineSceneWidthRatio
+    /// Minimum scene width in frames (the slider shows 0–10 s).
+    public var timelineMinSceneLength = Defaults.timelineMinSceneLength
+
     // Output (§6), MoviePrint's defaults (`app/utils/constants.js`).
     /// Folder path for saved prints; nil means the Desktop.
     public var outputFolder: String?
@@ -400,6 +421,8 @@ public struct Settings: Codable, Sendable, Equatable {
         case showHeader, showPathInHeader, showDetailsInHeader, showTimelineInHeader, headerAlignment
         case cornerRadius, showHiddenThumbs, frameInfo, thumbnailCacheMB, ffmpegPath
         case exactFramesWithFFmpeg
+        case shotDetectionMethod, shotDetectionThreshold, automaticInOut
+        case timelineNaturalFlow, timelineSceneWidthRatio, timelineMinSceneLength
         case frameInfoColor, frameInfoBackground, frameInfoPosition, frameInfoSize
         case frameInfoFontFamily, frameInfoMarginHorizontal, frameInfoMarginVertical, frameInfoMarginsLinked
         case frameInfoTimecodeFormat
@@ -436,6 +459,19 @@ public struct Settings: Codable, Sendable, Equatable {
         ffmpegPath = try c.decodeIfPresent(String.self, forKey: .ffmpegPath)
         exactFramesWithFFmpeg = try c.decodeIfPresent(Bool.self, forKey: .exactFramesWithFFmpeg)
             ?? d.exactFramesWithFFmpeg
+        shotDetectionMethod = (try? c.decodeIfPresent(ShotDetectionMethod.self, forKey: .shotDetectionMethod))
+            ?? d.shotDetectionMethod
+        let range = Defaults.shotDetectionThresholdRange
+        shotDetectionThreshold = min(max(
+            (try? c.decodeIfPresent(Double.self, forKey: .shotDetectionThreshold)) ?? d.shotDetectionThreshold,
+            range.lowerBound), range.upperBound)
+        automaticInOut = (try? c.decodeIfPresent(Bool.self, forKey: .automaticInOut)) ?? d.automaticInOut
+        timelineNaturalFlow = (try? c.decodeIfPresent(Bool.self, forKey: .timelineNaturalFlow))
+            ?? d.timelineNaturalFlow
+        timelineSceneWidthRatio = (try? c.decodeIfPresent(Double.self, forKey: .timelineSceneWidthRatio))
+            ?? d.timelineSceneWidthRatio
+        timelineMinSceneLength = (try? c.decodeIfPresent(Int.self, forKey: .timelineMinSceneLength))
+            ?? d.timelineMinSceneLength
         frameInfoColor = try c.decodeIfPresent(RGBA.self, forKey: .frameInfoColor) ?? d.frameInfoColor
         frameInfoBackground = try c.decodeIfPresent(RGBA.self, forKey: .frameInfoBackground) ?? d.frameInfoBackground
         frameInfoPosition = try c.decodeIfPresent(FrameInfoPosition.self, forKey: .frameInfoPosition) ?? d.frameInfoPosition

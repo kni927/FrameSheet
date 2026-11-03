@@ -497,6 +497,10 @@ actor DecodeGate {
         await withCheckedContinuation { waiters.append($0) }
     }
 
+    /// Someone waits for the gate (a long holder, the shot scan, then lets
+    /// them go first).
+    var hasWaiters: Bool { !waiters.isEmpty }
+
     func release() {
         if waiters.isEmpty {
             busy = false
