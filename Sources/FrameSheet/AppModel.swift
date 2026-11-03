@@ -83,6 +83,10 @@ final class AppModel {
     /// on its typing.
     var isEditingText = false
     private(set) var scrubImage: CGImage?
+    /// The frame `scrubImage` was decoded for and the frame it shows (the
+    /// nearest decodable one when it did not decode exactly); nil while there
+    /// is no image. While a newer frame decodes, it still names the old one.
+    private(set) var scrubShown: (requested: Int, actual: Int)?
     /// Size of the main area, where the scrub overlay is drawn; the grid
     /// fills it.
     var mainAreaSize: CGSize = .zero
@@ -124,7 +128,7 @@ final class AppModel {
     /// Live scrub frames, kept apart from `cache`: display-size frames are
     /// several MB each, and filling the shared cache with them evicted the
     /// grid's thumbs, which then redrew. Only the most recent ones are kept.
-    @ObservationIgnored private var scrubFrames: [(key: String, image: CGImage)] = []
+    @ObservationIgnored private var scrubFrames: [(key: String, image: CGImage, actual: Int)] = []
     private static let scrubFrameLimit = 16
     @ObservationIgnored private var scrubDecode: Task<Void, Never>?
     /// Whether the scrub's frames decoded exactly, by frame, as the live
@@ -135,8 +139,9 @@ final class AppModel {
     /// the marker shows while the thumb still shows that frame.
     private(set) var nearestThumbs: [UUID: (requested: Int, shown: Int)] = [:]
     /// Images cached under the frame asked for that show another frame (the
-    /// retry's); turning the ffmpeg fallback on drops just these.
-    @ObservationIgnored private var inexactImages: Set<ImageKey> = []
+    /// retry's), with the frame they show; turning the ffmpeg fallback on
+    /// drops just these.
+    @ObservationIgnored private var inexactImages: [ImageKey: Int] = [:]
 
     struct ImageKey: Hashable {
         var file: UUID
@@ -374,7 +379,7 @@ final class AppModel {
     /// `load`) and puts the thumbs moved to the nearest decodable frame back
     /// on the frame they asked for, then loads what is now missing.
     private func refetchInexactImages() {
-        for key in inexactImages {
+        for key in inexactImages.keys {
             cache.remove(file: key.file, frame: key.frame, width: key.width)
             pinned[Self.loadingKey(key.file, key.frame, key.width)] = nil
             lastReload[Self.loadingKey(key.file, key.frame, key.width)] = nil
@@ -406,6 +411,12 @@ final class AppModel {
     func nearestFrame(of thumb: Thumb) -> Int? {
         guard let entry = nearestThumbs[thumb.id], entry.shown == thumb.frameNumber else { return nil }
         return entry.requested
+    }
+
+    /// The frame a cached image asked for as `frame` shows: `frame` itself,
+    /// or the nearest decodable frame when it did not decode exactly.
+    func shownFrame(file: UUID, frame: Int, width: Int) -> Int {
+        inexactImages[ImageKey(file: file, frame: frame, width: width)] ?? frame
     }
 
     /// Why a frame can be shown only as the nearest decodable one, for the
@@ -1075,7 +1086,14 @@ final class AppModel {
         scrub = ScrubSession(
             ref: ref, thumbId: thumb, mapping: mapping, frame: mapping.thumbFrame,
             modifiers: modifiers, keyboard: keyboard, lastX: x, lastY: y)
-        scrubImage = cachedImage(file: file.id, frame: own.frameNumber, width: Self.thumbWidth)
+        if let image = cachedImage(file: file.id, frame: own.frameNumber, width: Self.thumbWidth) {
+            showScrub(
+                image, requested: own.frameNumber,
+                actual: shownFrame(file: file.id, frame: own.frameNumber, width: Self.thumbWidth))
+        } else {
+            scrubImage = nil
+            scrubShown = nil
+        }
         if !keyboard { scrubMoved(x: x, y: y, modifiers: modifiers) }
         requestScrubFrame(scrub?.frame ?? own.frameNumber)
     }
@@ -1151,7 +1169,7 @@ final class AppModel {
                     let decoded = try await backend.frame(session.frame, maxWidth: Self.thumbWidth)
                     if decoded.isExact {
                         store(decoded.image, file: file.id, frame: decoded.actualFrame, width: Self.thumbWidth)
-                        inexactImages.remove(ImageKey(file: file.id, frame: decoded.actualFrame, width: Self.thumbWidth))
+                        inexactImages[ImageKey(file: file.id, frame: decoded.actualFrame, width: Self.thumbWidth)] = nil
                         applyScrub(session)
                     } else {
                         refuseScrub(session)
@@ -1182,6 +1200,7 @@ final class AppModel {
     func cancelScrub() {
         scrub = nil
         scrubImage = nil
+        scrubShown = nil
         scrubPending = nil
         scrubFrames.removeAll()
         scrubExact.removeAll()
@@ -1197,6 +1216,11 @@ final class AppModel {
         return max(Self.thumbWidth, min(stepped, max(Self.thumbWidth, file.width)))
     }
 
+    private func showScrub(_ image: CGImage, requested: Int, actual: Int) {
+        scrubImage = image
+        scrubShown = (requested, actual)
+    }
+
     /// Newest request wins: one decode in flight, and the latest position
     /// is decoded next.
     private func requestScrubFrame(_ frame: Int) {
@@ -1208,22 +1232,26 @@ final class AppModel {
                 scrubPending = nil
                 let width = scrubDecodeWidth
                 let key = Self.loadingKey(file.id, frame, width)
-                if let cached = scrubFrames.first(where: { $0.key == key })?.image {
-                    scrubImage = cached
+                if let cached = scrubFrames.first(where: { $0.key == key }) {
+                    showScrub(cached.image, requested: frame, actual: cached.actual)
                     continue
                 }
                 if let thumb = cachedImage(file: file.id, frame: frame, width: Self.thumbWidth),
                    scrubExact[frame] != false {
-                    scrubImage = thumb
+                    showScrub(
+                        thumb, requested: frame,
+                        actual: shownFrame(file: file.id, frame: frame, width: Self.thumbWidth))
                 }
                 guard let backend = try? await backend(for: file),
                       let decoded = try? await backend.frame(frame, maxWidth: width)
                 else { continue }
                 if scrub?.thumbId == session.thumbId { scrubExact[frame] = decoded.isExact }
                 scrubFrames.removeAll { $0.key == key }
-                scrubFrames.append((key, decoded.image))
+                scrubFrames.append((key, decoded.image, decoded.actualFrame))
                 if scrubFrames.count > Self.scrubFrameLimit { scrubFrames.removeFirst() }
-                if scrub?.thumbId == session.thumbId { scrubImage = decoded.image }
+                if scrub?.thumbId == session.thumbId {
+                    showScrub(decoded.image, requested: frame, actual: decoded.actualFrame)
+                }
             }
         }
     }
@@ -1298,9 +1326,9 @@ final class AppModel {
                     // finds it even before the thumb is retargeted (otherwise
                     // the reload-on-miss in `image` would loop).
                     store(frame.image, file: file.id, frame: frame.requestedFrame, width: width)
-                    inexactImages.remove(ImageKey(file: file.id, frame: frame.actualFrame, width: width))
+                    inexactImages[ImageKey(file: file.id, frame: frame.actualFrame, width: width)] = nil
                     if !frame.isExact {
-                        inexactImages.insert(ImageKey(file: file.id, frame: frame.requestedFrame, width: width))
+                        inexactImages[ImageKey(file: file.id, frame: frame.requestedFrame, width: width)] = frame.actualFrame
                     }
                     if frame.actualFrame != frame.requestedFrame, let sheetId {
                         retarget(file.id, sheet: sheetId, from: frame.requestedFrame, to: frame.actualFrame)

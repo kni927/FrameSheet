@@ -37,13 +37,23 @@ struct ScrubOverlay: View {
         .allowsHitTesting(session.keyboard || session.sticky)
     }
 
+    /// A neighbor's image may be the nearest decodable frame (decision 25):
+    /// then its label names both frames and it carries the thumbs' marker.
     private func neighbor(_ frame: Int, in rect: CGRect) -> some View {
-        VStack(spacing: Theme.space1) {
-            FrameImage(image: model.image(file: file.id, frame: frame, width: AppModel.thumbWidth))
+        let image = model.image(file: file.id, frame: frame, width: AppModel.thumbWidth)
+        let shown = image == nil ? frame : model.shownFrame(file: file.id, frame: frame, width: AppModel.thumbWidth)
+        return VStack(spacing: Theme.space1) {
+            FrameImage(image: image)
                 .frame(width: rect.width, height: rect.height)
                 .clipShape(RoundedRectangle(cornerRadius: Theme.radiusSm))
                 .opacity(0.6)
-            Text(FrameInfoText.text(.frames, frame: frame, fps: file.fps) ?? "")
+                .overlay(alignment: .bottomTrailing) {
+                    if shown != frame {
+                        NearestFrameMarker(size: rect.size)
+                            .help(NearestFrameMarker.help(asked: frame))
+                    }
+                }
+            Text(frameText(asked: frame, shown: shown))
                 .font(Theme.mono(12))
                 .foregroundStyle(Theme.textMuted)
                 .lineLimit(1)
@@ -58,13 +68,36 @@ struct ScrubOverlay: View {
             .frame(width: rect.width, height: rect.height)
             .clipShape(RoundedRectangle(cornerRadius: Theme.radiusSm))
             .overlay(RoundedRectangle(cornerRadius: Theme.radiusSm).strokeBorder(Theme.accent, lineWidth: 2))
+            .overlay(alignment: .bottomTrailing) {
+                if let shown = model.scrubShown, shown.actual != shown.requested {
+                    NearestFrameMarker(size: rect.size)
+                        .help(NearestFrameMarker.help(asked: shown.requested))
+                }
+            }
             .offset(x: rect.minX, y: rect.minY)
     }
 
+    /// "17527", or "17527 → shows 17522" when the image is the nearest
+    /// decodable frame instead of the one asked for (decision 25).
+    private func frameText(asked: Int, shown: Int) -> String {
+        let text = FrameInfoText.text(.frames, frame: asked, fps: file.fps) ?? ""
+        guard shown != asked else { return text }
+        return text + " → shows " + (FrameInfoText.text(.frames, frame: shown, fps: file.fps) ?? "")
+    }
+
     /// The action, frame number and timecode on one line, centered over the
-    /// live frame; in a narrow window the timecode truncates first.
+    /// live frame; in a narrow window the timecode truncates first. The
+    /// numbers name the frame the live image shows (decision 25): while a
+    /// newer frame decodes they stay on the image's frame, muted; when the
+    /// image is the nearest decodable frame, both frames are named and the
+    /// timecode is the shown frame's.
     private func label(in rect: CGRect) -> some View {
-        HStack(spacing: Theme.space2) {
+        let shown = model.scrubShown
+        let current = shown?.requested == session.frame
+        let asked = shown?.requested ?? session.frame
+        let actual = shown?.actual ?? session.frame
+        let color = current ? Theme.text : Theme.textMuted
+        return HStack(spacing: Theme.space2) {
             Text(session.action.label)
                 .font(Theme.sans(13, medium: true))
                 .foregroundStyle(Theme.onAccent)
@@ -73,14 +106,14 @@ struct ScrubOverlay: View {
                 .background(Theme.accent, in: RoundedRectangle(cornerRadius: Theme.radiusSm))
                 .fixedSize()
                 .layoutPriority(2)
-            Text(FrameInfoText.text(.frames, frame: session.frame, fps: file.fps) ?? "")
+            Text(frameText(asked: asked, shown: actual))
                 .font(Theme.mono(13, medium: true))
-                .foregroundStyle(Theme.text)
+                .foregroundStyle(color)
                 .fixedSize()
                 .layoutPriority(1)
-            Text(Timecode.string(frames: session.frame, fps: file.fps))
+            Text(Timecode.string(frames: actual, fps: file.fps))
                 .font(Theme.mono(13, medium: true))
-                .foregroundStyle(Theme.text)
+                .foregroundStyle(color)
                 .lineLimit(1)
                 .truncationMode(.tail)
         }

@@ -297,7 +297,7 @@ private struct ThumbView: View {
             // stays while hovering and its tooltip can show.
             if let requested = model.nearestFrame(of: thumb) {
                 NearestFrameMarker(size: size)
-                    .help("Nearest decodable frame (asked \(requested.formatted(.number.locale(Locale(identifier: "en_US")))))")
+                    .help(NearestFrameMarker.help(asked: requested))
             }
         }
         .overlay {
@@ -340,10 +340,15 @@ private struct ThumbView: View {
 /// instead of the one it asked for: drawn as a label of the hover overlay's
 /// bottom row (same font size, baseline and side margin as EXPAND and HIDE),
 /// in the bottom-right corner, faint white at rest and solid white under the
-/// pointer (owner, 2026-11-03).
-private struct NearestFrameMarker: View {
+/// pointer (owner, 2026-11-03). The scrub overlay marks its frames with it
+/// too.
+struct NearestFrameMarker: View {
     let size: CGSize
     @State private var hovering = false
+
+    static func help(asked requested: Int) -> String {
+        "Nearest decodable frame (asked \(requested.formatted(.number.locale(Locale(identifier: "en_US")))))"
+    }
 
     var body: some View {
         let unit = HoverOverlay.unit(for: size)
