@@ -20,7 +20,7 @@ reproduces MoviePrint v0.2.23 for Apple Silicon: decisions 14–22 in
   with the macOS 27 `AVAssetReaderOutput.Provider` API.
 - v3.0.0 order (owner, 2026-11-02): T03 interval editing (done) → T03b UI
   legibility pass (done) → T04 Save MoviePrint, header, naming,
-  PNG/JSON export and import → T05 shot scan, timeline, cut/merge, EDL → T06
+  PNG/JSON export and import (in progress, TF #01) → T05 shot scan, timeline, cut/merge, EDL → T06
   player view → T07 faces Lv1 → T08 transforms, Save All, polish → version
   and release TASK.
 - Tooltips on every control, kept short (owner, 2026-11-02/03).
