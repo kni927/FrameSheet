@@ -120,6 +120,19 @@ public final class AVFoundationBackend: DecodeBackend {
     }
 
     public func frame(_ frameNumber: Int, maxWidth: Int) async throws -> DecodedFrame {
+        await DecodeGate.shared.acquire()
+        do {
+            let frame = try await decodeFrame(frameNumber, maxWidth: maxWidth)
+            await DecodeGate.shared.release()
+            return frame
+        } catch {
+            await DecodeGate.shared.release()
+            throw error
+        }
+    }
+
+    /// Exact decode, then the retry; callers hold the gate.
+    private func decodeFrame(_ frameNumber: Int, maxWidth: Int) async throws -> DecodedFrame {
         let requested = time(of: frameNumber)
         do {
             let (image, _) = try await makeGenerator(maxWidth: maxWidth, exact: true).image(at: requested)
@@ -149,6 +162,9 @@ public final class AVFoundationBackend: DecodeBackend {
     public func frames(_ frameNumbers: [Int], maxWidth: Int) -> AsyncStream<FrameResult> {
         AsyncStream { continuation in
             let task = Task {
+                // The whole batch holds the gate: one hardware decode at a
+                // time across the app (see DecodeGate).
+                await DecodeGate.shared.acquire()
                 // One generator for the batch keeps the decoder warm between
                 // neighbouring requests; failures retry one by one afterwards.
                 let generator = makeGenerator(maxWidth: maxWidth, exact: true)
@@ -182,7 +198,7 @@ public final class AVFoundationBackend: DecodeBackend {
                     let number = frameNumbers[index]
                     // `frame` already retries with tolerance on failure.
                     do {
-                        let frame = try await self.frame(number, maxWidth: maxWidth)
+                        let frame = try await self.decodeFrame(number, maxWidth: maxWidth)
                         continuation.yield(FrameResult(index: index, frameNumber: number, result: .success(frame)))
                     } catch {
                         let message = (error as? DecodeError) ?? DecodeError(error.localizedDescription)
@@ -199,6 +215,7 @@ public final class AVFoundationBackend: DecodeBackend {
                         continuation.yield(FrameResult(index: index, frameNumber: number, result: .failure(message)))
                     }
                 }
+                await DecodeGate.shared.release()
                 continuation.finish()
             }
             continuation.onTermination = { _ in task.cancel() }
@@ -212,3 +229,31 @@ public struct RoutingError: Error, Sendable {
     public init(_ reason: String) { self.reason = reason }
 }
 
+
+/// Lets one AVFoundation decode run at a time across the app. Many
+/// concurrent AVAssetImageGenerator sessions (a reload storm while thumbs
+/// were being evicted and redrawn) twice ended in a kernel panic in the
+/// hardware video decoder driver (AppleAVD, in VTDecoderXPCService) on
+/// macOS 27.2; serialising keeps the driver's load flat.
+actor DecodeGate {
+    static let shared = DecodeGate()
+
+    private var busy = false
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+
+    func acquire() async {
+        if !busy {
+            busy = true
+            return
+        }
+        await withCheckedContinuation { waiters.append($0) }
+    }
+
+    func release() {
+        if waiters.isEmpty {
+            busy = false
+        } else {
+            waiters.removeFirst().resume()
+        }
+    }
+}
