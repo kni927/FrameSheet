@@ -21,7 +21,7 @@ reproduces MoviePrint v0.2.23 for Apple Silicon: decisions 14–22 in
 - v3.0.0 order (owner, 2026-11-02): T03 interval editing (done) → T03b UI
   legibility pass (done) → T04 save, header, naming, PNG/JSON export and
   import (done) → T04b frames AVFoundation cannot decode (done, decision 25)
-  → T05 shot scan, timeline, cut/merge, EDL → T06 player view → T07 faces Lv1
+  → T05 shot scan, timeline, cut/merge, EDL (in progress, TF #01) → T06 player view → T07 faces Lv1
   → T08 transforms, Save All, polish → version and release TASK.
 - Next UI step (owner): move some right-panel settings to the Settings window.
 - Tooltips on every control, kept short (owner, 2026-11-02/03).
