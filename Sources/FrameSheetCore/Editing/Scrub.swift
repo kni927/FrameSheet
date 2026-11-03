@@ -49,13 +49,18 @@ public struct ScrubMapping: Sendable {
     public var liveMinX: Double
     public var liveMaxX: Double
     public var containerWidth: Double
+    /// Where the pointer pressed the scrub handle. With it, the scrub starts
+    /// at the thumb's own frame wherever the handle lies (see
+    /// `frame(atX:modifiers:)`); without it, the pointer maps absolutely
+    /// over the live frame as in MoviePrint.
+    public var pressX: Double?
 
     /// Pointer room at the window edges for reaching the first and last frame.
     public static let sideMargin = 10.0
 
     public init(
         thumbFrame: Int, leftFrame: Int, rightFrame: Int, frameCount: Int, liveMinX: Double,
-        liveMaxX: Double, containerWidth: Double
+        liveMaxX: Double, containerWidth: Double, pressX: Double? = nil
     ) {
         self.thumbFrame = thumbFrame
         self.leftFrame = leftFrame
@@ -64,6 +69,7 @@ public struct ScrubMapping: Sendable {
         self.liveMinX = liveMinX
         self.liveMaxX = liveMaxX
         self.containerWidth = containerWidth
+        self.pressX = pressX
     }
 
     /// The frame for a pointer position. Over the live frame the pointer maps
@@ -71,7 +77,68 @@ public struct ScrubMapping: Sendable {
     /// Option: thumb → right neighbor). Left or right of it, the frame
     /// holds at that end, except with Control or on the first/last thumb,
     /// where it maps on to the start or end of the movie.
+    ///
+    /// With `pressX`, the map is relative to the press instead: piecewise
+    /// linear through the thumb's frame at `pressX`, reaching the bound on
+    /// each side (the neighbor, or with Control or on the first/last thumb
+    /// the movie start or end) at the same pointer distance the absolute
+    /// map takes from the thumb's position on the live frame to that bound.
+    /// When the window edge (less `sideMargin`) is nearer than that, the
+    /// side is compressed to reach its bound there. Pressed at the thumb's
+    /// position on the live frame, it is the absolute map.
     public func frame(atX x: Double, modifiers: ScrubModifiers) -> Int {
+        guard let pressX else { return absoluteFrame(atX: x, modifiers: modifiers) }
+        let low = Double(modifiers.contains(.option) ? thumbFrame : leftFrame)
+        let high = Double(modifiers.contains(.shift) ? thumbFrame : rightFrame)
+        let thumb = Double(thumbFrame)
+        let span = high - low
+        let liveWidth = max(0, liveMaxX - liveMinX)
+        // The absolute map's distances: thumb → bound over the live frame,
+        // bound → movie start or end beside it.
+        let toLow = span > 0 ? (thumb - low) / span * liveWidth : 0
+        let toHigh = span > 0 ? (high - thumb) / span * liveWidth : 0
+        let extendLow = modifiers.contains(.control) || thumbFrame == leftFrame
+        let extendHigh = modifiers.contains(.control) || thumbFrame == rightFrame
+        let value: Double
+        if x == pressX {
+            value = thumb
+        } else if x < pressX {
+            let outer = extendLow ? max(0, liveMinX - Self.sideMargin) : 0
+            let scale = Self.fit(toLow + outer, room: pressX - Self.sideMargin)
+            let lowX = pressX - toLow * scale
+            let startX = lowX - outer * scale
+            if x >= lowX {
+                value = IntervalFrames.mapRange(x, lowX, pressX, low, thumb)
+            } else if extendLow, x > startX {
+                value = IntervalFrames.mapRange(x, startX, lowX, 0, low)
+            } else {
+                value = extendLow ? 0 : low
+            }
+        } else {
+            let last = Double(max(0, frameCount - 1))
+            let outer = extendHigh ? max(0, containerWidth - Self.sideMargin - liveMaxX) : 0
+            let scale = Self.fit(toHigh + outer, room: containerWidth - Self.sideMargin - pressX)
+            let highX = pressX + toHigh * scale
+            let endX = highX + outer * scale
+            if x <= highX {
+                value = IntervalFrames.mapRange(x, pressX, highX, thumb, high)
+            } else if extendHigh, x < endX {
+                value = IntervalFrames.mapRange(x, highX, endX, high, last)
+            } else {
+                value = extendHigh ? last : high
+            }
+        }
+        return Int(value)
+    }
+
+    /// Scale that fits `distance` into `room` (1 when it fits already).
+    private static func fit(_ distance: Double, room: Double) -> Double {
+        guard distance > 0 else { return 1 }
+        return min(1, max(0, room) / distance)
+    }
+
+    /// MoviePrint's map, absolute over the live frame.
+    private func absoluteFrame(atX x: Double, modifiers: ScrubModifiers) -> Int {
         let low = Double(modifiers.contains(.option) ? thumbFrame : leftFrame)
         let high = Double(modifiers.contains(.shift) ? thumbFrame : rightFrame)
         let isFirst = thumbFrame == leftFrame

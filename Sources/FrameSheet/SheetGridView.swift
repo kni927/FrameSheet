@@ -111,17 +111,19 @@ private struct ThumbView: View {
                 RoundedRectangle(cornerRadius: cornerRadius).fill(Theme.crust.opacity(0.65))
             }
         }
-        .overlay(alignment: .topTrailing) {
-            // Window only, not in the saved print: the thumb shows the
-            // nearest decodable frame (decision 11), labeled by that frame.
-            if let requested = model.nearestFrame(of: thumb), !showOverlay {
-                NearestFrameMarker(size: size)
-                    .help("Nearest decodable frame (frame \(requested) asked for; \(model.exactFrameHint))")
-            }
-        }
         .overlay {
             if showOverlay {
                 HoverOverlay(file: file, sheet: sheet, thumb: thumb, size: size, onHoverButton: onHoverButton)
+            }
+        }
+        .overlay(alignment: .bottomTrailing) {
+            // Window only, not in the saved print: the thumb shows the
+            // nearest decodable frame (decision 11), labeled by that frame.
+            // The bottom-right corner holds no hover button, so the marker
+            // stays while hovering and its tooltip can show.
+            if let requested = model.nearestFrame(of: thumb) {
+                NearestFrameMarker(size: size)
+                    .help("Nearest decodable frame (frame \(requested) asked for; \(model.exactFrameHint))")
             }
         }
         .overlay {
@@ -178,9 +180,10 @@ private struct NearestFrameMarker: View {
     }
 }
 
-/// Buttons over a hovered thumb (§7): IN and OUT on top, insert before and
-/// after at the sides, the scrub handle in the middle, EXPAND, HIDE/SHOW and
-/// SAVE (thumb) at the bottom. Option-click on IN/OUT hides all before/after.
+/// Buttons over a hovered thumb (§7): IN, SAVE (thumb) and OUT on top,
+/// insert before and after at the sides, the scrub handle in the middle,
+/// EXPAND and HIDE/SHOW at the bottom, whose right corner is left free for
+/// the nearest-frame marker. Option-click on IN/OUT hides all before/after.
 /// Drawn as in MoviePrint: faint white over the thumb, solid white under the
 /// pointer, with a dark shadow instead of a backdrop (owner, 2026-11-03).
 private struct HoverOverlay: View {
@@ -200,21 +203,28 @@ private struct HoverOverlay: View {
     var body: some View {
         let isInterval = sheet.type == .interval
         VStack(spacing: 0) {
-            HStack {
-                OverlayButton(
-                    title: hideMode ? "◀ HIDE" : "IN",
-                    help: isInterval ? "IN — start here (⌥ hide before)" : "Hide all before",
-                    report: { onHoverButton($0 ? .inPoint : nil) }
-                ) {
-                    model.setInOut(.before, thumb: thumb.id, option: optionHeld)
+            ZStack {
+                HStack {
+                    OverlayButton(
+                        title: hideMode ? "◀ HIDE" : "IN",
+                        help: isInterval ? "IN — start here (⌥ hide before)" : "Hide all before",
+                        report: { onHoverButton($0 ? .inPoint : nil) }
+                    ) {
+                        model.setInOut(.before, thumb: thumb.id, option: optionHeld)
+                    }
+                    Spacer()
+                    OverlayButton(
+                        title: hideMode ? "HIDE ▶" : "OUT",
+                        help: isInterval ? "OUT — end here (⌥ hide after)" : "Hide all after",
+                        report: { onHoverButton($0 ? .outPoint : nil) }
+                    ) {
+                        model.setInOut(.after, thumb: thumb.id, option: optionHeld)
+                    }
                 }
-                Spacer()
-                OverlayButton(
-                    title: hideMode ? "HIDE ▶" : "OUT",
-                    help: isInterval ? "OUT — end here (⌥ hide after)" : "Hide all after",
-                    report: { onHoverButton($0 ? .outPoint : nil) }
-                ) {
-                    model.setInOut(.after, thumb: thumb.id, option: optionHeld)
+                // Between IN and OUT, so the bottom-right corner stays free
+                // for the nearest-frame marker (owner, 2026-11-03).
+                OverlayButton(title: "SAVE", help: "Save thumb (full size)") {
+                    model.saveThumb(thumb.id)
                 }
             }
             Spacer(minLength: 0)
@@ -231,16 +241,13 @@ private struct HoverOverlay: View {
             }
             Spacer(minLength: 0)
             // MoviePrint's arrangement: EXPAND at the left, HIDE in the
-            // middle, SAVE at the right.
+            // middle (MoviePrint's SAVE at the right moved to the top).
             ZStack {
                 HStack {
                     OverlayButton(title: "EXPAND", help: "Expand to 16 thumbs", report: { onHoverButton($0 ? .expand : nil) }) {
                         model.expand(thumb.id)
                     }
                     Spacer()
-                    OverlayButton(title: "SAVE", help: "Save thumb (full size)") {
-                        model.saveThumb(thumb.id)
-                    }
                 }
                 OverlayButton(
                     title: thumb.hidden ? "SHOW" : "HIDE", help: thumb.hidden ? "Show thumb" : "Hide thumb",

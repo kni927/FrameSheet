@@ -315,6 +315,27 @@ import VideoToolbox
         }
     }
 
+    /// The fallback turns on and off on an open backend (the Settings
+    /// toggle keeps movies open): a frame neither AVFoundation step decodes
+    /// comes from ffmpeg while it is on, and from the retry after it.
+    @Test(.enabled(if: DecodeIntegrationTests.tools != nil)) func exactFallbackTogglesOnAnOpenBackend() async throws {
+        let clip = try await Self.makeOpenGOPClip()
+        let backend = try #require(
+            try await DecoderRouter.open(clip, ffmpeg: Self.tools, exactFallback: false) as? AVFoundationBackend)
+        let decoded = try await decodeAll(backend)
+        let number = try #require(decoded.values.filter { !$0.isExact }.map(\.requestedFrame).min())
+        backend.setExactFallback(Self.tools)
+        let on = try await backend.frame(number, maxWidth: 160)
+        #expect(on.decoder == .ffmpeg)
+        #expect(on.actualFrame == number)
+        #expect(Self.frameNumber(in: on.image) == number)
+        backend.setExactFallback(nil)
+        let off = try await backend.frame(number, maxWidth: 160)
+        #expect(off.decoder != .ffmpeg)
+        #expect(!off.isExact)
+        #expect(Self.frameNumber(in: off.image) == off.actualFrame)
+    }
+
     /// Presentation time (track time) of a full sync sample before the
     /// frame at `time`, found with a sample cursor stepping back in decode
     /// order: `syncsBack` 1 is the sync sample the frame's decode starts
@@ -534,5 +555,32 @@ import VideoToolbox
         #expect(cache.image(file: id, frame: 4, width: 64) == nil)
         cache.removeAll()
         #expect(cache.image(file: id, frame: 3, width: 64) == nil)
+    }
+
+    /// Images stay until the limit is passed; then the least recently used
+    /// go first. One image can be dropped on its own.
+    @Test func evictsLeastRecentlyUsedOnlyPastTheLimit() throws {
+        let cache = ThumbnailCache(limitMB: 1)
+        let context = CGContext(
+            data: nil, width: 256, height: 256, bitsPerComponent: 8, bytesPerRow: 256 * 4,
+            space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+        let image = try #require(context.makeImage())
+        #expect(ThumbnailCache.cost(of: image) == 256 * 1024)
+        let id = UUID()
+        for frame in 0..<4 { cache.insert(image, file: id, frame: frame, width: 256) }
+        #expect(cache.totalBytes == 1024 * 1024)
+        #expect((0..<4).allSatisfy { cache.image(file: id, frame: $0, width: 256) != nil })
+        // Frame 0 is used again, so frame 1 is now the oldest.
+        _ = cache.image(file: id, frame: 0, width: 256)
+        cache.insert(image, file: id, frame: 4, width: 256)
+        #expect(cache.image(file: id, frame: 1, width: 256) == nil)
+        #expect([0, 2, 3, 4].allSatisfy { cache.image(file: id, frame: $0, width: 256) != nil })
+        #expect(cache.totalBytes == 1024 * 1024)
+        cache.remove(file: id, frame: 2, width: 256)
+        #expect(cache.image(file: id, frame: 2, width: 256) == nil)
+        #expect(cache.totalBytes == 768 * 1024)
+        // Re-inserting a key replaces its cost instead of adding to it.
+        cache.insert(image, file: id, frame: 3, width: 256)
+        #expect(cache.totalBytes == 768 * 1024)
     }
 }

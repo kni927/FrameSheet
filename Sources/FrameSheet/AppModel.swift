@@ -116,6 +116,15 @@ final class AppModel {
     /// id: the frame asked for and the frame shown. View state, not saved;
     /// the marker shows while the thumb still shows that frame.
     private(set) var nearestThumbs: [UUID: (requested: Int, shown: Int)] = [:]
+    /// Images cached under the frame asked for that show another frame (the
+    /// retry's); turning the ffmpeg fallback on drops just these.
+    @ObservationIgnored private var inexactImages: Set<ImageKey> = []
+
+    struct ImageKey: Hashable {
+        var file: UUID
+        var frame: Int
+        var width: Int
+    }
 
     init() {
         let store = (try? LibraryStore.defaultURL()).map(LibraryStore.init)
@@ -303,17 +312,44 @@ final class AppModel {
     /// The exact-frame fallback can run: an ffmpeg with ffprobe next to it.
     var canFetchExactFramesWithFFmpeg: Bool { ffmpeg?.tools?.ffprobe != nil }
 
-    /// Settings → Fetch exact frames with ffmpeg (decision 25). The movies'
-    /// backends open again with the new choice; turned on, thumbs that were
-    /// moved to the nearest decodable frame go back to the frame they asked
-    /// for and decode again.
+    /// Settings → Fetch exact frames with ffmpeg (decision 25). The open
+    /// movies keep their backends and every exact image stays cached: the
+    /// backends only switch the ffmpeg step on or off. Turned on, thumbs
+    /// that were moved to the nearest decodable frame go back to the frame
+    /// they asked for and only those decode again; turned off, nothing on
+    /// screen changes and later misses take the retry.
     func setExactFramesWithFFmpeg(_ on: Bool) {
         guard on != library.settings.exactFramesWithFFmpeg else { return }
         cancelScrub()
-        backends = backends.filter { $0.value.kind == .ffmpeg }
-        if on, !nearestThumbs.isEmpty {
-            let moved = nearestThumbs
-            nearestThumbs = [:]
+        updateSettings { $0.exactFramesWithFFmpeg = on }
+        Task {
+            let tools = on ? await ffmpegTools() : nil
+            // The choice may have flipped back while ffmpeg was looked up.
+            guard library.settings.exactFramesWithFFmpeg == on else { return }
+            for backend in backends.values {
+                (backend as? AVFoundationBackend)?.setExactFallback(tools)
+            }
+            // Frames that failed outright may decode now (on), or with the
+            // retry (off); they have no image, so nothing is redrawn.
+            failed.removeAll()
+            guard on else { return }
+            refetchInexactImages()
+        }
+    }
+
+    /// Drops only the images cached under a frame they do not show (see
+    /// `load`) and puts the thumbs moved to the nearest decodable frame back
+    /// on the frame they asked for, then loads what is now missing.
+    private func refetchInexactImages() {
+        for key in inexactImages {
+            cache.remove(file: key.file, frame: key.frame, width: key.width)
+            pinned[Self.loadingKey(key.file, key.frame, key.width)] = nil
+            lastReload[Self.loadingKey(key.file, key.frame, key.width)] = nil
+        }
+        inexactImages.removeAll()
+        let moved = nearestThumbs
+        nearestThumbs = [:]
+        if !moved.isEmpty {
             document.update { library in
                 for (fileId, sheets) in library.sheets {
                     for s in sheets.indices {
@@ -327,15 +363,9 @@ final class AppModel {
                 }
             }
         }
-        if on {
-            // Images were also cached under the frames asked for (see
-            // `load`), showing the nearest decodable frame.
-            forgetImages()
-        } else {
-            failed.removeAll()
-        }
-        updateSettings { $0.exactFramesWithFFmpeg = on }
-        if on { for file in library.files { loadPoster(file) } }
+        imageGeneration += 1
+        didChange()
+        for file in library.files { loadPoster(file) }
     }
 
     /// The frame a thumb asked for when it shows the nearest decodable frame
@@ -389,6 +419,7 @@ final class AppModel {
         cache.removeAll()
         pinned.removeAll()
         failed.removeAll()
+        inexactImages.removeAll()
         imageGeneration += 1
     }
 
@@ -471,6 +502,7 @@ final class AppModel {
         cache.removeAll()
         pinned.removeAll()
         failed.removeAll()
+        inexactImages.removeAll()
     }
 
     func removeMovie(_ fileId: UUID) {
@@ -910,7 +942,9 @@ final class AppModel {
         let layout = scrubLayout(for: file)
         let mapping = ScrubMapping(
             thumbFrame: own.frameNumber, leftFrame: left, rightFrame: right, frameCount: file.frameCount,
-            liveMinX: layout.live.minX, liveMaxX: layout.live.maxX, containerWidth: mainAreaSize.width)
+            liveMinX: layout.live.minX, liveMaxX: layout.live.maxX, containerWidth: mainAreaSize.width,
+            // A drag starts at the thumb's frame where the handle was pressed.
+            pressX: keyboard ? nil : x)
         selectedThumbId = thumb
         scrub = ScrubSession(
             ref: ref, thumbId: thumb, mapping: mapping, frame: own.frameNumber,
@@ -991,6 +1025,7 @@ final class AppModel {
                     let decoded = try await backend.frame(session.frame, maxWidth: Self.thumbWidth)
                     if decoded.isExact {
                         store(decoded.image, file: file.id, frame: decoded.actualFrame, width: Self.thumbWidth)
+                        inexactImages.remove(ImageKey(file: file.id, frame: decoded.actualFrame, width: Self.thumbWidth))
                         applyScrub(session)
                     } else {
                         refuseScrub(session)
@@ -1137,6 +1172,10 @@ final class AppModel {
                     // finds it even before the thumb is retargeted (otherwise
                     // the reload-on-miss in `image` would loop).
                     store(frame.image, file: file.id, frame: frame.requestedFrame, width: width)
+                    inexactImages.remove(ImageKey(file: file.id, frame: frame.actualFrame, width: width))
+                    if !frame.isExact {
+                        inexactImages.insert(ImageKey(file: file.id, frame: frame.requestedFrame, width: width))
+                    }
                     if frame.actualFrame != frame.requestedFrame, let sheetId {
                         retarget(file.id, sheet: sheetId, from: frame.requestedFrame, to: frame.actualFrame)
                     }

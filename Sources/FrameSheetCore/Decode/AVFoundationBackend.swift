@@ -20,20 +20,37 @@ public final class AVFoundationBackend: DecodeBackend {
     /// Reads the frames the exact image-generator request misses from one
     /// GOP earlier (decision 25).
     let reader: EarlierGOPReader
-    /// Fetches the frames AVFoundation cannot decode exactly (decision 25).
-    let fallback: FFmpegFrameFallback?
+    /// Fetches the frames AVFoundation cannot decode exactly (decision 25);
+    /// set and cleared by `setExactFallback` while the movie stays open.
+    private let fallbackState: Mutex<FFmpegFrameFallback?>
+    private let url: URL
 
     private static let retryTolerance = CMTime(seconds: 0.5, preferredTimescale: 600)
 
     private init(
-        asset: AVURLAsset, info: MediaInfo, startTime: Double, reader: EarlierGOPReader,
-        fallback: FFmpegFrameFallback?
+        asset: AVURLAsset, url: URL, info: MediaInfo, startTime: Double, reader: EarlierGOPReader,
+        fallback: FFmpegTools?
     ) {
         self.asset = asset
+        self.url = url
         self.info = info
         self.startTime = startTime
         self.reader = reader
-        self.fallback = fallback
+        fallbackState = Mutex(fallback.map { FFmpegFrameFallback(url: url, tools: $0) })
+    }
+
+    /// The ffmpeg fallback in use, if any.
+    var fallback: FFmpegFrameFallback? { fallbackState.withLock { $0 } }
+
+    /// Turns the ffmpeg fallback on (with `tools`) or off (nil) for later
+    /// requests, keeping the movie open (Settings → Fetch exact frames with
+    /// ffmpeg). The same tools keep the fallback already opened.
+    public func setExactFallback(_ tools: FFmpegTools?) {
+        fallbackState.withLock { current in
+            guard let tools else { current = nil; return }
+            if let current, current.tools == tools { return }
+            current = FFmpegFrameFallback(url: url, tools: tools)
+        }
     }
 
     /// Opens the movie, or throws `RoutingError` when the file should go to
@@ -89,8 +106,7 @@ public final class AVFoundationBackend: DecodeBackend {
             asset: asset, info: info, startTime: start, transform: transform,
             canProvideSampleCursors: canCursor)
         return AVFoundationBackend(
-            asset: asset, info: info, startTime: start, reader: reader,
-            fallback: fallback.map { FFmpegFrameFallback(url: url, tools: $0) })
+            asset: asset, url: url, info: info, startTime: start, reader: reader, fallback: fallback)
     }
 
     static func fourCCString(_ code: FourCharCode) -> String {

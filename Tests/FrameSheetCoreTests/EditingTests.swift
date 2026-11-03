@@ -253,6 +253,61 @@ private extension Library {
         #expect(last.frame(atX: 400, modifiers: []) == 999)
     }
 
+    /// Pressed on a handle away from the thumb's position on the live frame,
+    /// the scrub starts at the thumb's own frame (T04b): x 50 would be the
+    /// left neighbor in the absolute map.
+    @Test func pressStartsAtTheThumbsFrame() {
+        var m = mapping()
+        m.pressX = 50
+        #expect(m.frame(atX: 50, modifiers: []) == 500)
+        // Left: 100 points to the neighbor, but only 40 to the margin, so
+        // the side is compressed to reach 400 at x 10.
+        #expect(m.frame(atX: 30, modifiers: []) == 450)
+        #expect(m.frame(atX: 10, modifiers: []) == 400)
+        #expect(m.frame(atX: 0, modifiers: []) == 400)
+        // Right: the absolute map's 100 points to the neighbor, then holds.
+        #expect(m.frame(atX: 100, modifiers: []) == 550)
+        #expect(m.frame(atX: 150, modifiers: []) == 600)
+        #expect(m.frame(atX: 380, modifiers: []) == 600)
+        // Shift and Option keep the thumb's frame at the press.
+        #expect(m.frame(atX: 50, modifiers: .shift) == 500)
+        #expect(m.frame(atX: 50, modifiers: .option) == 500)
+        #expect(m.frame(atX: 250, modifiers: .option) == 600)  // 200 points to 600
+        #expect(m.frame(atX: 10, modifiers: .shift) == 400)  // compressed 200 → 40
+        #expect(m.frame(atX: 380, modifiers: .shift) == 500)
+        // Control: on past the neighbor to the movie's ends.
+        #expect(m.frame(atX: 200, modifiers: .control) == 800)  // 600 at 150, 999 at 250
+        #expect(m.frame(atX: 250, modifiers: .control) == 999)
+        #expect(m.frame(atX: 10, modifiers: .control) == 0)
+        #expect(m.frame(atX: 50, modifiers: .control) == 500)
+    }
+
+    /// Pressed at the thumb's position on the live frame, the relative map
+    /// is the absolute one.
+    @Test func pressAtTheThumbsPositionMatchesTheAbsoluteMap() {
+        let absolute = mapping()
+        var relative = absolute
+        relative.pressX = 200
+        let all: [ScrubModifiers] = [[], .control]
+        for modifiers in all {
+            for x in stride(from: 0.0, through: 410, by: 5) {
+                #expect(relative.frame(atX: x, modifiers: modifiers) == absolute.frame(atX: x, modifiers: modifiers),
+                        "x \(x)")
+            }
+        }
+        // First and last thumbs extend without Control.
+        var first = mapping(thumb: 100, left: 100, right: 200)
+        first.pressX = 300
+        #expect(first.frame(atX: 300, modifiers: []) == 100)
+        #expect(first.frame(atX: 10, modifiers: []) == 0)
+        #expect(first.frame(atX: 400, modifiers: []) == 200)
+        var last = mapping(thumb: 900, left: 800, right: 900)
+        last.pressX = 20
+        #expect(last.frame(atX: 20, modifiers: []) == 900)
+        #expect(last.frame(atX: 10, modifiers: []) == 800)
+        #expect(last.frame(atX: 400, modifiers: []) == 999)
+    }
+
     @Test func applyScrub() {
         var (library, ref) = fixture()
         let thumb = library.thumbs(ref)[1].id
