@@ -21,9 +21,18 @@ reproduces MoviePrint v0.2.23 for Apple Silicon: decisions 14–22 in
 - v3.0.0 order (owner, 2026-11-02): T03 interval editing (done) → T03b UI
   legibility pass (done) → T04 save, header, naming, PNG/JSON export and
   import (done) → T04b frames AVFoundation cannot decode (done, decision 25)
-  → T05 shot scan, timeline, cut/merge, EDL (in progress, TF #01) → T06 player view → T07 faces Lv1
-  → T08 transforms, Save All, polish → version and release TASK.
+  → T05 shot scan, timeline, cut/merge, EDL (done) → T06 player view → T07
+  faces Lv1 → T08 transforms, Save All, polish → version and release TASK.
+- T06 picks up from T05: Jump to cut and Cut should use the player's frame
+  (MoviePrint does); Return in the timeline (cut here / merge at a cut) is a
+  player key.
+- Spec gaps for the HQ from T05: scrub starts at the press point; EDL writes
+  the clip-name line for every event; timeline prints have no header;
+  "Add new sheet" uses the stored scan's method; Automatic IN/OUT moved to
+  the Grid section with a brightness threshold; naming presets with Custom.
 - Next UI step (owner): move some right-panel settings to the Settings window.
+- Hung runs: `scripts/check.sh` stops itself after 15 min; `scripts/check.sh
+  stop` ends a run the sandbox cannot (owner, 2026-11-03).
 - Tooltips on every control, kept short (owner, 2026-11-02/03).
 - Not yet tried by the owner: Rename/Delete sheet, ⌃⌘F, the scrub at the
   smallest window size, ⌘Z while renaming, MoviePrint 0.2.23 files (only

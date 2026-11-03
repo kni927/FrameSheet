@@ -46,7 +46,17 @@ Sources/FrameSheetCore/          no SwiftUI or AppKit
 │   ├── SheetExchange.swift      MoviePrint-compatible PNG/JSON data, import
 │   ├── PrintHeader.swift        header lines, mini timeline, metrics
 │   ├── PrintOutput.swift        output size and max, decode width, 8-bit encoding
-│   └── IncomingFiles.swift      route PNG/JSON to import, the rest to movies
+│   ├── IncomingFiles.swift      route PNG/JSON to import, the rest to movies
+│   └── EDLExport.swift          CMX3600 EDL of a shot sheet (MoviePrint)
+├── Scan/
+│   ├── ShotScanner.swift        one sequential pass (AVAssetReader output
+│   │                            provider or an ffmpeg BGRA pipe), events
+│   ├── ShotMetrics.swift        HSV, Mean and Histogram metrics, vImage 240 px
+│   ├── RawVideoPipe.swift       ffmpeg rawvideo reader
+│   ├── ScanCache.swift          per-movie Float32 difference + color, resumable
+│   ├── AutoInOut.swift          black head and tail detection
+│   └── DetectionChart.swift     histogram and k-means threshold (display)
+├── TimelineGeometry.swift       timeline rows, px per frame, scene boxes
 ├── PathDisplay.swift            ~/… for paths under home
 └── Decode/
     ├── DecodeBackend.swift      protocol, MediaInfo, DecodedFrame, errors
@@ -63,6 +73,9 @@ Sources/FrameSheet/              the app
 │                                edits, selection, zoom, scrub, thumbnail
 │                                loading, debounced saving, import, relink
 ├── AppModel+Save.swift          Save sheet, Save thumb, each thumb, Export JSON
+├── AppModel+Scan.swift          shot scans from the app: stream, cancel, resume
+├── AppModel+Scenes.swift        scene actions: cut, merge, jump to cut
+├── DetectionChartView.swift     the detection chart (F)
 ├── PrintView.swift              the print (header, thumbs, frame info), drawn
 │                                in the window and by ImageRenderer for saving
 ├── ContentView.swift            split view, inspector, title and sidebar
@@ -119,9 +132,19 @@ a failure once with ±0.5 s, reporting the frame actually decoded (decision
 11); the app then moves the thumb to that frame. The ffmpeg path seeks half a
 frame early, takes the first frame from a PNG pipe, five runs at a time in
 software decode, and retries 0.5 s earlier when the frame count estimated
-from the duration runs past the last frame. Sequential scanning
-(`AVAssetReader`, shot and face scans) is not built yet; its design is in
-`docs/V3_SPEC.md` §10.
+from the duration runs past the last frame.
+
+Shot scans read the movie once in order (`ShotScanner`): 720 px BGRA through
+the `AVAssetReader` output provider (or an ffmpeg rawvideo pipe for files
+routed to ffmpeg), 240 px via vImage, and MoviePrint's Mean or Histogram
+difference per frame. The scan holds `DecodeGate` and, when thumb requests
+wait, closes its reader, lets them through and reopens at a closed-GOP sync
+sample, running at least four times as long as the last reopen took. The
+per-frame differences and colors go to a resumable cache in Application
+Support; scenes come from it with MoviePrint's
+`calculateSceneListFromDifferenceArray`, so a new threshold needs no rescan.
+About 710 fps on a 1080p H.264 file (9 min for a 2 h film), lower while thumbs
+load.
 
 Near the end of a movie the retry window is moved inside the movie (center at
 most end − 0.5 s). A file whose sync samples are open-GOP I frames decodes

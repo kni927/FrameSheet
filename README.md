@@ -32,20 +32,29 @@ which you can edit:
   the sheet (M) and toggles both sidebars (1, 3).
 - **Add shot-detection sheet** (toolbar) scans the movie once for shots and
   streams the scenes into a shot sheet in timeline view (progress and Cancel
-  in the toast; the same button resumes a cancelled scan, and **Rescan for
-  Shots** in the movie's menu starts over). Scanned movies get an "S" on
+  in the toast, or Esc; the same button resumes a cancelled scan, and
+  **Rescan for Shots** in the movie's menu starts over; about 9 min for a 2 h
+  1080p film). Scanned movies get an "S" on
   their poster. The timeline lays scenes out in rows of a set movie time
   (Minutes per row), as wide as they are long; click a scene to see it at
   full width. A new threshold in the settings panel makes a new sheet from
   the stored scan without scanning again. Interval sheets can be shown as a
   timeline too.
+- **Hover a scene** in the timeline for EXPAND (a child sheet inside the
+  scene), HIDE, ◀ HIDE / HIDE ▶, jump to the cut before or after, and a scrub
+  limited to the scene. The toolbar cuts the selected scene at its thumb and
+  merges it with the previous or next scene. **F** opens the detection chart
+  (difference per frame, threshold and cuts).
+- **Automatic IN/OUT** (Grid section, More) skips black frames at the start
+  and end of a movie when it is added, with a brightness threshold; Apply
+  sets them on the current sheet.
 - **Save sheet** writes the sheet as PNG or JPG (1024–16384 px or max; the
   height in timeline view) with an
   optional header (file name, folder, details, mini timeline). A PNG carries
   the frame list in MoviePrint-compatible text chunks. Options: folder, file
   name templates (`[MN]` `[ME]` `[SN]` `[FN]` `[TC]`), overwrite or " edit N",
   and a folder with each thumb as its own image. **Export JSON** is in a
-  sheet's menu.
+  sheet's menu, and **Export EDL** (CMX3600) for shot sheets.
 - **Import Sheet…** (the … menu, or the + button, or a drop) reads a PNG or
   JSON saved by FrameSheet or MoviePrint 0.2.x and adds the movie with that
   sheet. A moved movie shows "Movie is missing" with Locate…; **Replace
@@ -64,8 +73,7 @@ which you can edit:
   frame with a marker.
 - ⌘Z / ⇧⌘Z undo and redo up to 50 edits.
 
-Scene editing in the timeline (cut, merge, expand, hide), EDL export, the
-player view and faces come in later versions.
+The player view and faces come in later versions.
 
 ## Requirements
 
