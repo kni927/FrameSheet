@@ -99,6 +99,39 @@ import Testing
         #expect(abs(f.minY - 308.4) < 1e-9)
     }
 
+    @Test func insertMarkerFillsTheGapOrTheOuterMargin() {
+        // 4 columns, 6 thumbs: margin 9.6, thumbs 480 wide, column pitch 499.2.
+        let g = GridGeometry(.init(
+            movieWidth: 1920, movieHeight: 1080, columnCount: 4, thumbCount: 6,
+            containerWidth: 2006.4))
+        let between = g.insertMarker(.before, at: 2, count: 6)
+        #expect(abs(between.minX - g.thumbFrame(at: 1).maxX) < 1e-9)
+        #expect(abs(between.maxX - g.thumbFrame(at: 2).minX) < 1e-9)
+        #expect(abs(between.minY - g.thumbFrame(at: 2).minY) < 1e-9)
+        #expect(abs(between.height - g.thumbHeight) < 1e-9)
+        #expect(g.insertMarker(.after, at: 1, count: 6) == between)
+        // Row start and end: the thumb's own margin on that side.
+        let rowStart = g.insertMarker(.before, at: 4, count: 6)
+        #expect(abs(rowStart.maxX - g.thumbFrame(at: 4).minX) < 1e-9)
+        #expect(abs(rowStart.width - 9.6) < 1e-9)
+        #expect(abs(rowStart.minY - g.thumbFrame(at: 4).minY) < 1e-9)
+        let rowEnd = g.insertMarker(.after, at: 3, count: 6)
+        #expect(abs(rowEnd.minX - g.thumbFrame(at: 3).maxX) < 1e-9)
+        #expect(abs(rowEnd.width - 9.6) < 1e-9)
+        // First and last thumb (the last one mid-row).
+        #expect(abs(g.insertMarker(.before, at: 0, count: 6).maxX - g.thumbFrame(at: 0).minX) < 1e-9)
+        let last = g.insertMarker(.after, at: 5, count: 6)
+        #expect(abs(last.minX - g.thumbFrame(at: 5).maxX) < 1e-9)
+        #expect(abs(last.width - 9.6) < 1e-9)
+        // Margins at 0: a minimum-width bar centered on the seam.
+        let flush = GridGeometry(.init(
+            movieWidth: 1920, movieHeight: 1080, columnCount: 4, thumbCount: 6,
+            containerWidth: 1920, marginRatio: 0))
+        let seam = flush.insertMarker(.before, at: 1, count: 6)
+        #expect(abs(seam.width - GridGeometry.minInsertMarkerWidth) < 1e-9)
+        #expect(abs(seam.midX - flush.thumbFrame(at: 1).minX) < 1e-9)
+    }
+
     @Test func fitsTheSmallerSideAndZooms() {
         let g = GridGeometry(.init(
             movieWidth: 1920, movieHeight: 1080, columnCount: 4, thumbCount: 16,

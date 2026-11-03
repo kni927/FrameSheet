@@ -52,6 +52,15 @@ struct SheetGridView: View {
                             .offset(x: frame.minX, y: frame.minY)
                             .allowsHitTesting(false)
                     }
+                    // Window only: where Insert before / after puts the new
+                    // thumb, while the pointer is over the button.
+                    if let marker = insertMarker(geometry: geometry, thumbs: thumbs) {
+                        RoundedRectangle(cornerRadius: min(marker.width / 2, 2))
+                            .fill(Theme.accent)
+                            .frame(width: marker.width, height: marker.height)
+                            .offset(x: marker.minX, y: marker.minY)
+                            .allowsHitTesting(false)
+                    }
                 }
                 .frame(width: geometry.printWidth, height: geometry.printHeight)
                 .padding(.horizontal, padding)
@@ -59,6 +68,17 @@ struct SheetGridView: View {
                 .padding(.bottom, padding)
                 .frame(minWidth: proxy.size.width, minHeight: proxy.size.height)
             }
+        }
+    }
+
+    /// The insert marker for the hover button under the pointer, if it is
+    /// Insert before or after.
+    private func insertMarker(geometry: GridGeometry, thumbs: [Thumb]) -> CGRect? {
+        guard let hoverButton, let index = thumbs.firstIndex(where: { $0.id == hoverButton.thumb }) else { return nil }
+        switch hoverButton.button {
+        case .insertBefore: return geometry.insertMarker(.before, at: index, count: thumbs.count)
+        case .insertAfter: return geometry.insertMarker(.after, at: index, count: thumbs.count)
+        default: return nil
         }
     }
 

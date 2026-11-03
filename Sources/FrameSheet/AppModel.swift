@@ -56,6 +56,10 @@ final class AppModel {
     /// The shot scan in progress (one at a time), shown in the toast with
     /// Cancel; its scenes stream into `scanJob.sheetId`.
     var scanJob: ScanJob?
+    /// Movies whose scan stopped before the end in this session. The partial
+    /// cache is written after the stream ends, so the toolbar reads this
+    /// instead of waiting for the file.
+    var stoppedScans: Set<UUID> = []
     /// The sheet a scan streams into, set when the scan starts and cleared
     /// when it ends. Thumb views and controls read this, not `scanJob`, so
     /// the progress updates redraw only the toast.
@@ -621,6 +625,7 @@ final class AppModel {
             // The stored scan was of the old file.
             scanStore?.delete(fileId)
             scanData[fileId] = nil
+            stoppedScans.remove(fileId)
             edit { library in
                 library.relink(fileId, to: url, bookmark: Self.bookmark(for: url))
                 library.applyProbe(fileId, info: backend.info)

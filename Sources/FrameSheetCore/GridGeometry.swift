@@ -192,4 +192,32 @@ public struct GridGeometry: Equatable, Sendable {
             + thumbMarginVertical
         return CGRect(x: x, y: y, width: thumbWidth, height: thumbHeight)
     }
+
+    /// Narrowest insert marker, so it shows with the margins at 0.
+    public static let minInsertMarkerWidth = 3.0
+
+    /// Where Insert before / after on the thumb at `index` (of `count`
+    /// shown thumbs) puts the new thumb, as a bar of the thumb's height for
+    /// the window (not the print): the margin between the thumb and its
+    /// neighbor on that side; at the start or end of a row, where the
+    /// neighbor is on another row, and at the first or last thumb, the
+    /// thumb's own margin on that side. Centered on the gap and at least
+    /// `minInsertMarkerWidth` wide.
+    public func insertMarker(_ position: InsertPosition, at index: Int, count: Int) -> CGRect {
+        let frame = thumbFrame(at: index)
+        let column = index % columnCount
+        let gapStart: Double
+        let gapEnd: Double
+        switch position {
+        case .before:
+            gapEnd = frame.minX
+            gapStart = column > 0 && index > 0 ? thumbFrame(at: index - 1).maxX : frame.minX - thumbMargin
+        case .after:
+            gapStart = frame.maxX
+            gapEnd = column < columnCount - 1 && index < count - 1
+                ? thumbFrame(at: index + 1).minX : frame.maxX + thumbMargin
+        }
+        let width = max(gapEnd - gapStart, Self.minInsertMarkerWidth)
+        return CGRect(x: (gapStart + gapEnd - width) / 2, y: frame.minY, width: width, height: frame.height)
+    }
 }

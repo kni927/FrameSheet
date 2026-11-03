@@ -48,6 +48,7 @@ extension AppModel {
 
     func scanCacheState(_ fileId: UUID) -> ScanCacheState {
         if library.file(fileId)?.scanState == .scanned { return .complete }
+        if stoppedScans.contains(fileId) { return .partial }
         guard let store = scanStore else { return .none }
         return FileManager.default.fileExists(atPath: store.url(for: fileId).path) ? .partial : .none
     }
@@ -139,6 +140,7 @@ extension AppModel {
     /// gets the scenes at the threshold the scan used, as one undo step.
     private func finishScan(_ ref: SheetRef, data: ScanData, threshold: Double) {
         scanData[ref.fileId] = data
+        stoppedScans.remove(ref.fileId)
         let spans = SceneList.scenes(from: data, threshold: threshold)
         let placeholder = library.sheet(ref.sheetId, of: ref.fileId)
         let index = library.sheets[ref.fileId]?.firstIndex { $0.id == ref.sheetId }
@@ -181,6 +183,8 @@ extension AppModel {
             if let i = library.files.firstIndex(where: { $0.id == ref.fileId }) { library.files[i].scanState = .none }
         }
         scanData[ref.fileId] = nil
+        // The scanner keeps what it read, also when it failed part way.
+        if job?.started == true { stoppedScans.insert(ref.fileId) }
         if cancelled, let job {
             let at = job.fraction.map { " at \(Int(($0 * 100).rounded(.down))) %" } ?? ""
             showNotice("Shot detection stopped\(at). The shot-detection button resumes it.")
