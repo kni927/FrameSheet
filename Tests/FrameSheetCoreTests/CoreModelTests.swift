@@ -156,6 +156,62 @@ import Testing
             thumbCount: 16, containerWidth: 2006.4))
         #expect(abs(g.thumbHeight - 240) < 1e-9)
     }
+
+    // The unscaled print is 2006.4 × 1176.
+    @Test func widthLimitedFitHeight() {
+        let g = GridGeometry(.init(
+            movieWidth: 1920, movieHeight: 1080, columnCount: 4, thumbCount: 16,
+            containerWidth: 2006.4, containerHeight: 2352))
+        #expect(abs(g.fitWidthScale - 1) < 1e-9)
+        #expect(abs(g.fitHeightScale - 2) < 1e-9)
+        #expect(abs(g.fitScale - 1) < 1e-9)
+        #expect(g.hasSpaceAboveAndBelow)
+        #expect(!g.hasSpaceAtSides)
+        #expect(abs(g.zoomFillingHeight - 2) < 1e-9)
+        #expect(abs(g.zoomFillingWidth - 1) < 1e-9)
+        // At that zoom the height fills and the print scrolls sideways.
+        let filled = GridGeometry(.init(
+            movieWidth: 1920, movieHeight: 1080, columnCount: 4, thumbCount: 16,
+            containerWidth: 2006.4, containerHeight: 2352, zoom: g.zoomFillingHeight))
+        #expect(abs(filled.scale - 2) < 1e-9)
+        #expect(!filled.hasSpaceAboveAndBelow)
+        #expect(!filled.hasSpaceAtSides)
+    }
+
+    @Test func heightLimitedFitWidth() {
+        let g = GridGeometry(.init(
+            movieWidth: 1920, movieHeight: 1080, columnCount: 4, thumbCount: 16,
+            containerWidth: 4012.8, containerHeight: 1176))
+        #expect(abs(g.fitWidthScale - 2) < 1e-9)
+        #expect(abs(g.fitHeightScale - 1) < 1e-9)
+        #expect(!g.hasSpaceAboveAndBelow)
+        #expect(g.hasSpaceAtSides)
+        #expect(abs(g.zoomFillingWidth - 2) < 1e-9)
+        #expect(abs(g.zoomFillingHeight - 1) < 1e-9)
+    }
+
+    @Test func zoomedOutLeavesSpaceBothWays() {
+        let g = GridGeometry(.init(
+            movieWidth: 1920, movieHeight: 1080, columnCount: 4, thumbCount: 16,
+            containerWidth: 2006.4, containerHeight: 2352, zoom: 0.5))
+        #expect(g.hasSpaceAboveAndBelow)
+        #expect(g.hasSpaceAtSides)
+        // Relative to the fit, not to the current zoom.
+        #expect(abs(g.zoomFillingHeight - 2) < 1e-9)
+        #expect(abs(g.zoomFillingWidth - 1) < 1e-9)
+    }
+
+    @Test func zoomFillingWithoutFit() {
+        #expect(GridGeometry.zoom(filling: 3, fit: 0) == 1)
+        #expect(abs(GridGeometry.zoom(filling: 3, fit: 1.5) - 2) < 1e-9)
+    }
+
+    @Test func zoomStepsFromBetweenSteps() {
+        #expect(GridLayout.zoom(from: 1.7, in: true) == 2)
+        #expect(GridLayout.zoom(from: 1.7, in: false) == 1)
+        #expect(GridLayout.zoom(from: 0.4, in: false) == 0.33)
+        #expect(GridLayout.zoom(from: 9, in: false) == 8)
+    }
 }
 
 @Suite struct PersistenceTests {

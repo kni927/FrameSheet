@@ -51,9 +51,11 @@ private struct MovieRow: View {
                 Spacer(minLength: 0)
             }
             .padding(.bottom, 2)
-            Text("…/\((file.folder as NSString).lastPathComponent)")
+            // The full path, cut in the middle to the row's width.
+            Text(file.folder)
                 .lineLimit(1)
                 .truncationMode(.middle)
+                .frame(maxWidth: .infinity, alignment: .leading)
                 .help(file.folder)
             if missing {
                 // In place of the detail line.

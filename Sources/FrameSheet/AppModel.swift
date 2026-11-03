@@ -48,7 +48,8 @@ final class AppModel {
     private(set) var imageGeneration = 0
 
     // View state, not part of the document and not undoable.
-    /// Grid zoom, one of `GridGeometry.zoomSteps`; Fit is 1.
+    /// Grid zoom relative to Fit (1): one of `GridGeometry.zoomSteps`, or
+    /// between them after Fit height or Fit width.
     private(set) var zoom = 1.0
     var selectedThumbId: UUID?
     private(set) var scrub: ScrubSession?
@@ -58,7 +59,8 @@ final class AppModel {
     /// on its typing.
     var isEditingText = false
     private(set) var scrubImage: CGImage?
-    /// Size of the main area, where the scrub overlay is drawn.
+    /// Size of the main area, where the scrub overlay is drawn; the grid
+    /// fills it.
     var mainAreaSize: CGSize = .zero
 
     /// Width thumbs are decoded at; enough for a 4-column grid on a
@@ -467,6 +469,31 @@ final class AppModel {
 
     func zoom(in zoomIn: Bool) { zoom = GridLayout.zoom(from: zoom, in: zoomIn) }
     func zoomToFit() { zoom = 1 }
+
+    /// Layout of the current sheet in the main area at the current zoom;
+    /// nil while no sheet is shown or the area is not laid out yet.
+    var currentGridGeometry: GridGeometry? {
+        guard let file = currentFile, let sheet = currentSheet,
+              mainAreaSize.width > 0, mainAreaSize.height > 0
+        else { return nil }
+        return SheetGridView.geometry(
+            file: file, columns: sheet.columnCount, thumbCount: shownThumbs(of: sheet).count,
+            settings: library.settings, size: mainAreaSize, zoom: zoom)
+    }
+
+    /// The print's height fills the grid area (it may scroll sideways).
+    func zoomToFitHeight() {
+        if let geometry = currentGridGeometry { zoom = Self.clampedZoom(geometry.zoomFillingHeight) }
+    }
+
+    /// The print's width fills the grid area (it may scroll up and down).
+    func zoomToFitWidth() {
+        if let geometry = currentGridGeometry { zoom = Self.clampedZoom(geometry.zoomFillingWidth) }
+    }
+
+    private static func clampedZoom(_ zoom: Double) -> Double {
+        min(max(zoom, GridGeometry.zoomSteps.first!), GridGeometry.zoomSteps.last!)
+    }
 
     func cycleFrameInfo() {
         updateSettings { $0.frameInfo = FrameInfoText.next(after: $0.frameInfo) }

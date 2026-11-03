@@ -200,18 +200,33 @@ struct PanelRow<Value: View>: View {
 /// Icon buttons in the window toolbar and the panels: no Liquid Glass
 /// capsule (owner, 2026-11-03), a square-ish `radiusSm` background: a quiet
 /// `surface` at rest, full `surface` while `selected` (an on toggle),
-/// `surfaceHover` on hover and `borderControl` on press.
+/// `surfaceHover` on hover and `borderControl` on press. Inside a
+/// `ToolbarIconGroup` (`grouped`) the resting background is the group's.
 struct ToolbarIconStyle: ButtonStyle {
     var selected = false
+    var grouped = false
 
     func makeBody(configuration: Configuration) -> some View {
-        ToolbarIconBody(configuration: configuration, selected: selected)
+        ToolbarIconBody(configuration: configuration, selected: selected, grouped: grouped)
+    }
+}
+
+/// Toolbar icons that belong together: no gap between them, one shared
+/// resting background with `radiusSm` corners at the group's ends (owner,
+/// 2026-11-03). The buttons use `ToolbarIconStyle(grouped: true)`.
+struct ToolbarIconGroup<Content: View>: View {
+    @ViewBuilder var content: Content
+
+    var body: some View {
+        HStack(spacing: 0) { content }
+            .background(Theme.surface.opacity(0.5), in: RoundedRectangle(cornerRadius: Theme.radiusSm))
     }
 }
 
 private struct ToolbarIconBody: View {
     let configuration: ButtonStyleConfiguration
     let selected: Bool
+    let grouped: Bool
     @Environment(\.isEnabled) private var isEnabled
     @State private var hovering = false
 
@@ -228,10 +243,10 @@ private struct ToolbarIconBody: View {
     }
 
     private var background: Color {
-        guard isEnabled else { return Theme.surface.opacity(0.25) }
+        guard isEnabled else { return grouped ? .clear : Theme.surface.opacity(0.25) }
         if configuration.isPressed { return Theme.borderControl.opacity(0.6) }
         if hovering { return Theme.surfaceHover }
         if selected { return Theme.surface }
-        return Theme.surface.opacity(0.5)
+        return grouped ? .clear : Theme.surface.opacity(0.5)
     }
 }

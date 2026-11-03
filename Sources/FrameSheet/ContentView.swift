@@ -54,26 +54,28 @@ struct ContentView: View {
                 .padding(.trailing, Theme.space4)
             }
             .sharedBackgroundVisibility(.hidden)
-            ToolbarItemGroup(placement: .navigation) {
-                Button {
-                    model.presentOpenPanel()
-                } label: {
-                    Label("Add movies", systemImage: "plus")
+            ToolbarItem(placement: .navigation) {
+                ToolbarIconGroup {
+                    Button {
+                        model.presentOpenPanel()
+                    } label: {
+                        Label("Add movies", systemImage: "plus")
+                    }
+                    .buttonStyle(ToolbarIconStyle(grouped: true))
+                    .help("Add movies (A)")
+                    Menu {
+                        Button("Import MoviePrint…") {}.disabled(true)
+                        Divider()
+                        Button("Clear movie list", role: .destructive) { model.clearList() }
+                            .disabled(model.library.files.isEmpty)
+                    } label: {
+                        Label("More options", systemImage: "ellipsis.circle")
+                    }
+                    .menuStyle(.button)
+                    .menuIndicator(.hidden)
+                    .buttonStyle(ToolbarIconStyle(grouped: true))
+                    .help("More options")
                 }
-                .buttonStyle(ToolbarIconStyle())
-                .help("Add movies (A)")
-                Menu {
-                    Button("Import MoviePrint…") {}.disabled(true)
-                    Divider()
-                    Button("Clear movie list", role: .destructive) { model.clearList() }
-                        .disabled(model.library.files.isEmpty)
-                } label: {
-                    Label("More options", systemImage: "ellipsis.circle")
-                }
-                .menuStyle(.button)
-                .menuIndicator(.hidden)
-                .buttonStyle(ToolbarIconStyle())
-                .help("More options")
             }
             .sharedBackgroundVisibility(.hidden)
             SheetToolbar(model: model, sheet: model.currentSheet)

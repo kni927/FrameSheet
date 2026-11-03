@@ -16,20 +16,11 @@ struct SheetGridView: View {
         let thumbs = model.shownThumbs(of: sheet)
         let dimmed = hoverButton.map { Sheet.affectedThumbs($0.button, of: $0.thumb, in: thumbs) } ?? []
         GeometryReader { proxy in
-            let padding = Theme.space4
+            let padding = Self.padding
             let top = padding
-            let geometry = GridGeometry(.init(
-                movieWidth: Double(file.width), movieHeight: Double(file.height),
-                aspectRatioInv: file.transform.aspectRatioInv, columnCount: sheet.columnCount,
-                thumbCount: thumbs.count,
-                containerWidth: max(1, proxy.size.width - padding * 2 - GridGeometry.minPrintWidthMargin),
-                containerHeight: max(1, proxy.size.height - padding - top),
-                zoom: model.zoom, marginRatioHorizontal: settings.marginRatioHorizontal,
-                marginRatioVertical: settings.marginRatioVertical, showHeader: settings.showHeader,
-                showPathInHeader: settings.showPathInHeader,
-                showDetailsInHeader: settings.showDetailsInHeader,
-                showTimelineInHeader: settings.showTimelineInHeader,
-                borderRadiusRatio: settings.borderRadiusRatio))
+            let geometry = Self.geometry(
+                file: file, columns: sheet.columnCount, thumbCount: thumbs.count, settings: settings,
+                size: proxy.size, zoom: model.zoom)
             ScrollView([.horizontal, .vertical]) {
                 ZStack(alignment: .topLeading) {
                     Color.clear
@@ -52,6 +43,28 @@ struct SheetGridView: View {
                 .frame(minWidth: proxy.size.width, minHeight: proxy.size.height)
             }
         }
+    }
+
+    /// Space around the print on every side.
+    static let padding = Theme.space4
+
+    /// Layout of the print in a grid area of `size` (also used by the
+    /// toolbar's Fit height and Fit width).
+    static func geometry(
+        file: MovieFile, columns: Int, thumbCount: Int, settings: FrameSheetCore.Settings, size: CGSize, zoom: Double
+    ) -> GridGeometry {
+        GridGeometry(.init(
+            movieWidth: Double(file.width), movieHeight: Double(file.height),
+            aspectRatioInv: file.transform.aspectRatioInv, columnCount: columns,
+            thumbCount: thumbCount,
+            containerWidth: max(1, size.width - padding * 2 - GridGeometry.minPrintWidthMargin),
+            containerHeight: max(1, size.height - padding * 2),
+            zoom: zoom, marginRatioHorizontal: settings.marginRatioHorizontal,
+            marginRatioVertical: settings.marginRatioVertical, showHeader: settings.showHeader,
+            showPathInHeader: settings.showPathInHeader,
+            showDetailsInHeader: settings.showDetailsInHeader,
+            showTimelineInHeader: settings.showTimelineInHeader,
+            borderRadiusRatio: settings.borderRadiusRatio))
     }
 }
 

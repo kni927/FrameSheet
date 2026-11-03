@@ -89,6 +89,10 @@ public struct GridGeometry: Equatable, Sendable {
     public let aspectRatioInv: Double
     /// Fit scale × zoom applied to the unscaled print.
     public let scale: Double
+    /// Scale (before zoom) at which the print's width fills the container.
+    public let fitWidthScale: Double
+    /// Scale (before zoom) at which the print's height fills the container.
+    public let fitHeightScale: Double
     public let thumbWidth: Double
     public let thumbHeight: Double
     /// Horizontal margin (between columns, left and right).
@@ -122,13 +126,16 @@ public struct GridGeometry: Equatable, Sendable {
         let originalHeight = headerHeight + marginVertical * 2 + Double(rows) * cellHeight
         let printRatioInv = originalHeight / originalWidth
 
-        let fit = min(input.containerWidth / originalWidth, input.containerHeight / originalHeight)
-        let scale = max(0, fit) * input.zoom
+        let fitWidth = max(0, input.containerWidth / originalWidth)
+        let fitHeight = max(0, input.containerHeight / originalHeight)
+        let scale = min(fitWidth, fitHeight) * input.zoom
 
         columnCount = columns
         rowCount = rows
         aspectRatioInv = ratioInv
         self.scale = scale
+        fitWidthScale = fitWidth
+        fitHeightScale = fitHeight
         self.thumbWidth = thumbWidth * scale
         self.thumbHeight = thumbWidth * ratioInv * scale
         self.thumbMargin = thumbMargin * scale
@@ -137,6 +144,32 @@ public struct GridGeometry: Equatable, Sendable {
         self.headerHeight = headerHeight * scale
         printWidth = originalWidth * scale + Self.minPrintWidthMargin
         printHeight = printWidth * printRatioInv
+    }
+
+    /// Fit scale (zoom 1): the smaller of the two.
+    public var fitScale: Double { min(fitWidthScale, fitHeightScale) }
+
+    /// Zoom at which the print's height fills the container (Fit height);
+    /// above 1 for a width-limited print, which then scrolls sideways.
+    public var zoomFillingHeight: Double { Self.zoom(filling: fitHeightScale, fit: fitScale) }
+
+    /// Zoom at which the print's width fills the container (Fit width).
+    public var zoomFillingWidth: Double { Self.zoom(filling: fitWidthScale, fit: fitScale) }
+
+    /// At this zoom the print leaves space above and below (Fit height
+    /// would grow it).
+    public var hasSpaceAboveAndBelow: Bool { scale < fitHeightScale * (1 - Self.fillTolerance) }
+
+    /// At this zoom the print leaves space at the sides (Fit width would
+    /// grow it).
+    public var hasSpaceAtSides: Bool { scale < fitWidthScale * (1 - Self.fillTolerance) }
+
+    /// Relative slack below which a print counts as filling a direction.
+    static let fillTolerance = 0.005
+
+    /// Zoom relative to the fit scale that reaches `fill`.
+    public static func zoom(filling fill: Double, fit: Double) -> Double {
+        fit > 0 ? fill / fit : 1
     }
 
     /// Frame of the thumb at `index` (raster order) inside the print, origin
