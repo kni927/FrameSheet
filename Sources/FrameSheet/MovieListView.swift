@@ -53,6 +53,7 @@ private struct MovieRow: View {
             .padding(.bottom, 2)
             // The full path, cut in the middle to the row's width.
             Text(file.folder)
+                .font(Theme.detailCondensed)
                 .lineLimit(1)
                 .truncationMode(.middle)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -67,6 +68,7 @@ private struct MovieRow: View {
                     .padding(.top, 2)
             } else {
                 Text(details)
+                    .font(Theme.detailCondensed)
                     .monospacedDigit()
                     .lineLimit(1)
                     .truncationMode(.middle)

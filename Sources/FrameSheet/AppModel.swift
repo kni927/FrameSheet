@@ -83,6 +83,9 @@ final class AppModel {
     @ObservationIgnored private var saveTask: Task<Void, Never>?
     @ObservationIgnored private var discovery: Task<Void, Never>?
     @ObservationIgnored private var columnsAtDragStart: Int?
+    /// Target rows set by the Rows slider for one sheet at one column count;
+    /// not persisted, and void once the sheet or its columns change.
+    private var rowsTarget: (sheetId: UUID, columns: Int, rows: Int)?
     @ObservationIgnored private var scrubPending: Int?
     /// Live scrub frames, kept apart from `cache`: display-size frames are
     /// several MB each, and filling the shared cache with them evicted the
@@ -448,18 +451,42 @@ final class AppModel {
         edit { $0.setColumns(ref, final) }
     }
 
+    /// Recaptures columns × rows thumbs as one undo step and clears the
+    /// target rows.
     func applyThumbCount(columns: Int, rows: Int) {
         guard let ref = currentRef else { return }
         edit { $0.applyThumbCount(ref, columns: columns, rows: rows) }
+        rowsTarget = nil
     }
 
-    /// Rows slider: rearranges like the Columns slider (columns follow from
-    /// rows); the thumb count stays. Ends with `endColumnsDrag`.
-    func setRowsLive(_ rows: Int, editing: Bool) {
+    /// Rows the sheet's visible thumbs fill at its columns.
+    static func neededRows(of sheet: Sheet) -> Int {
+        max(1, GridLayout.rows(columns: sheet.columnCount, thumbCount: sheet.visibleThumbs.count))
+    }
+
+    /// Target rows of the sheet: set by the Rows slider, else the rows its
+    /// thumbs fill. Never reloads; Replace applies it.
+    func targetRows(of sheet: Sheet) -> Int {
+        if let target = rowsTarget, target.sheetId == sheet.id, target.columns == sheet.columnCount {
+            return target.rows
+        }
+        return Self.neededRows(of: sheet)
+    }
+
+    /// Whether the Rows slider holds a target for the sheet.
+    func hasRowsTarget(_ sheet: Sheet) -> Bool {
+        targetRows(of: sheet) != Self.neededRows(of: sheet)
+    }
+
+    func setTargetRows(_ rows: Int) {
         guard let sheet = currentSheet else { return }
-        let columns = GridLayout.columns(rows: rows, thumbCount: sheet.visibleThumbs.count)
-        guard editing || columns != sheet.columnCount else { return }
-        setColumnsLive(columns, editing: editing)
+        rowsTarget = (sheet.id, sheet.columnCount, max(1, rows))
+    }
+
+    /// Cells of the grid: the shown thumbs, plus empty placeholders up to
+    /// columns × target rows.
+    func gridCellCount(of sheet: Sheet) -> Int {
+        max(shownThumbs(of: sheet).count, sheet.columnCount * targetRows(of: sheet))
     }
 
     func optimiseGrid() {
@@ -477,7 +504,7 @@ final class AppModel {
               mainAreaSize.width > 0, mainAreaSize.height > 0
         else { return nil }
         return SheetGridView.geometry(
-            file: file, columns: sheet.columnCount, thumbCount: shownThumbs(of: sheet).count,
+            file: file, columns: sheet.columnCount, thumbCount: gridCellCount(of: sheet),
             settings: library.settings, size: mainAreaSize, zoom: zoom)
     }
 

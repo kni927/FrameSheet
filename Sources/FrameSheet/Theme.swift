@@ -60,6 +60,9 @@ enum Theme {
     /// Secondary text in the panels: caption size at the regular weight, so
     /// panel text stays lighter than its section titles.
     static let panelCaption = Font.system(size: 12)
+    /// Path and detail lines of the movie list: caption size, condensed and
+    /// lighter (owner, 2026-11-03).
+    static let detailCondensed = condensed(12, weight: .regular)
     /// Large numbers of the grid stats.
     static let statValue = Font.system(size: 20, weight: .regular).monospacedDigit()
     static func sans(_ size: Double, medium: Bool = false) -> Font {

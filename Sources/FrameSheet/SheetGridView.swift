@@ -15,11 +15,13 @@ struct SheetGridView: View {
         let settings = model.library.settings
         let thumbs = model.shownThumbs(of: sheet)
         let dimmed = hoverButton.map { Sheet.affectedThumbs($0.button, of: $0.thumb, in: thumbs) } ?? []
+        // Target rows beyond the thumbs' rows preview as empty cells.
+        let cellCount = model.gridCellCount(of: sheet)
         GeometryReader { proxy in
             let padding = Self.padding
             let top = padding
             let geometry = Self.geometry(
-                file: file, columns: sheet.columnCount, thumbCount: thumbs.count, settings: settings,
+                file: file, columns: sheet.columnCount, thumbCount: cellCount, settings: settings,
                 size: proxy.size, zoom: model.zoom)
             ScrollView([.horizontal, .vertical]) {
                 ZStack(alignment: .topLeading) {
@@ -34,6 +36,14 @@ struct SheetGridView: View {
                             })
                             .frame(width: frame.width, height: frame.height)
                             .offset(x: frame.minX, y: frame.minY)
+                    }
+                    ForEach(thumbs.count..<max(thumbs.count, cellCount), id: \.self) { index in
+                        let frame = geometry.thumbFrame(at: index)
+                        RoundedRectangle(cornerRadius: geometry.borderRadius)
+                            .fill(Theme.surface)
+                            .frame(width: frame.width, height: frame.height)
+                            .offset(x: frame.minX, y: frame.minY)
+                            .allowsHitTesting(false)
                     }
                 }
                 .frame(width: geometry.printWidth, height: geometry.printHeight)

@@ -80,26 +80,25 @@ private struct GridSection: View {
     @Environment(AppModel.self) private var model
     let sheet: Sheet
     @State private var isDragging = false
-    @State private var isDraggingRows = false
-    /// Rows of the pending thumb count (columns × rows); nil until the
-    /// Thumbs slider moves.
-    @State private var newRows: Int?
 
     var body: some View {
         let columns = sheet.columnCount
         let count = sheet.visibleThumbs.count
         let rows = GridLayout.rows(columns: columns, thumbCount: count)
-        let pendingRows = newRows ?? max(1, rows)
-        let newCount = columns * pendingRows
+        let targetRows = model.targetRows(of: sheet)
+        let pending = model.hasRowsTarget(sheet)
+        let newCount = columns * targetRows
         PanelSection(title: "Grid") {
             // The stats (§6) as numbers over labels; no "×" or "=", since
-            // hidden thumbs make columns × rows differ from the count.
+            // hidden thumbs make columns × rows differ from the count. A
+            // pending target shows its rows and columns × rows.
             HStack(spacing: 0) {
                 Stat(value: columns, label: "columns")
-                Stat(value: rows, label: "rows")
-                Stat(value: count, label: "count")
+                Stat(value: pending ? targetRows : rows, label: "rows")
+                Stat(value: pending ? newCount : count, label: "count")
             }
             .padding(.bottom, Theme.space1)
+            // Rearranges live: the count stays and the rows follow.
             LabeledSlider(
                 title: "Columns",
                 value: Binding(
@@ -110,42 +109,26 @@ private struct GridSection: View {
                 isDragging = editing
                 if !editing { model.endColumnsDrag() }
             }
-            // Rearranges only: the columns follow from the rows.
+            // A target only: extra rows show as empty cells; Replace applies it.
             LabeledSlider(
                 title: "Rows",
                 value: Binding(
-                    get: { Double(max(1, rows)) },
-                    set: { model.setRowsLive(Int($0.rounded()), editing: isDraggingRows) }),
-                range: 1...20, help: "Rows of this sheet; the columns follow and the thumb count stays"
-            ) { editing in
-                isDraggingRows = editing
-                if !editing { model.endColumnsDrag() }
-            }
-            // Steps of one row: the count is always columns × rows.
-            LabeledSlider(
-                title: "Thumbs",
-                value: Binding(
-                    get: { Double(newCount) },
-                    set: { newRows = max(1, Int(($0 / Double(columns)).rounded())) }),
-                range: Double(columns)...Double(columns * 20), step: Double(columns),
-                help: "New thumb count: \(columns) columns × \(pendingRows) rows")
+                    get: { Double(targetRows) },
+                    set: { model.setTargetRows(Int($0.rounded())) }),
+                range: 1...Double(max(20, targetRows)),
+                help: "Target rows; Replace recaptures columns × rows thumbs")
             HStack {
                 Spacer(minLength: 0)
-                // The Apply action: recaptures between the first and last
-                // visible frames as one undo step.
-                Button("Change thumb count") {
-                    model.applyThumbCount(columns: columns, rows: pendingRows)
-                    newRows = nil
+                // Recaptures between the first and last visible frames as one
+                // undo step.
+                Button("Replace") {
+                    model.applyThumbCount(columns: columns, rows: targetRows)
                 }
                 .controlSize(.small)
-                // Until the slider moves nothing is chosen: a partly filled
-                // last row would otherwise offer to fill it at rest.
-                .disabled(newRows == nil || newCount == count)
-                .help("Replaces \(count) thumbs with \(newCount); ⌘Z undoes")
+                .disabled(newCount == count)
+                .help("Replace \(count) thumbs with \(columns) × \(targetRows) = \(newCount); ⌘Z undoes")
             }
         }
-        .onChange(of: sheet.id) { newRows = nil }
-        .onChange(of: columns) { newRows = nil }
     }
 }
 
