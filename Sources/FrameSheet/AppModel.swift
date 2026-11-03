@@ -58,9 +58,6 @@ final class AppModel {
     /// on its typing.
     var isEditingText = false
     private(set) var scrubImage: CGImage?
-    /// The Rows slider's value while it is dragged: the grid is laid out for
-    /// columns × rows at once, the thumbs are recaptured when it rests.
-    private(set) var rowsDraft: Int?
     /// Size of the main area, where the scrub overlay is drawn.
     var mainAreaSize: CGSize = .zero
 
@@ -84,8 +81,6 @@ final class AppModel {
     @ObservationIgnored private var saveTask: Task<Void, Never>?
     @ObservationIgnored private var discovery: Task<Void, Never>?
     @ObservationIgnored private var columnsAtDragStart: Int?
-    @ObservationIgnored private var sheetAtRowsDragStart: Sheet?
-    @ObservationIgnored private var rowsRecapture: Task<Void, Never>?
     @ObservationIgnored private var scrubPending: Int?
     /// Live scrub frames, kept apart from `cache`: display-size frames are
     /// several MB each, and filling the shared cache with them evicted the
@@ -456,64 +451,13 @@ final class AppModel {
         edit { $0.applyThumbCount(ref, columns: columns, rows: rows) }
     }
 
-    /// Rows slider: the layout follows at once; the thumbs are recaptured
-    /// (decoded) only once the value has rested for 0.3 s or on release, so
-    /// a drag cannot queue a recapture per tick. One undo step per drag.
+    /// Rows slider: rearranges like the Columns slider (columns follow from
+    /// rows); the thumb count stays. Ends with `endColumnsDrag`.
     func setRowsLive(_ rows: Int, editing: Bool) {
         guard let sheet = currentSheet else { return }
-        let current = GridLayout.rows(columns: sheet.columnCount, thumbCount: sheet.visibleThumbs.count)
-        guard editing || sheetAtRowsDragStart != nil else {
-            // Keyboard or accessibility changes come without a drag.
-            if rows != current { applyThumbCount(columns: sheet.columnCount, rows: rows) }
-            return
-        }
-        if sheetAtRowsDragStart == nil { sheetAtRowsDragStart = sheet }
-        guard rows != rowsDraft else { return }
-        rowsDraft = rows
-        rowsRecapture?.cancel()
-        rowsRecapture = Task {
-            try? await Task.sleep(for: .milliseconds(300))
-            guard !Task.isCancelled else { return }
-            previewRows()
-        }
-    }
-
-    func endRowsDrag() {
-        rowsRecapture?.cancel()
-        rowsRecapture = nil
-        let start = sheetAtRowsDragStart
-        let draft = rowsDraft
-        sheetAtRowsDragStart = nil
-        rowsDraft = nil
-        guard let start, let draft, let ref = currentRef, ref.sheetId == start.id else { return }
-        restore(start, in: ref)
-        let rows = GridLayout.rows(columns: start.columnCount, thumbCount: start.visibleThumbs.count)
-        if draft != rows { applyThumbCount(columns: start.columnCount, rows: draft) }
-    }
-
-    /// Recaptures for the resting draft without an undo step; back at the
-    /// starting value, the sheet as it was.
-    private func previewRows() {
-        guard let draft = rowsDraft, let start = sheetAtRowsDragStart, let ref = currentRef,
-              ref.sheetId == start.id
-        else { return }
-        if draft == GridLayout.rows(columns: start.columnCount, thumbCount: start.visibleThumbs.count) {
-            restore(start, in: ref)
-        } else if let i = library.sheets[ref.fileId]?.firstIndex(where: { $0.id == start.id }) {
-            // From the starting sheet, so the preview equals what the
-            // release records.
-            update { library in
-                library.sheets[ref.fileId]![i] = start
-                library.applyThumbCount(ref, columns: start.columnCount, rows: draft)
-            }
-        }
-    }
-
-    private func restore(_ sheet: Sheet, in ref: SheetRef) {
-        guard let i = library.sheets[ref.fileId]?.firstIndex(where: { $0.id == sheet.id }),
-              library.sheets[ref.fileId]?[i] != sheet
-        else { return }
-        update { $0.sheets[ref.fileId]![i] = sheet }
+        let columns = GridLayout.columns(rows: rows, thumbCount: sheet.visibleThumbs.count)
+        guard editing || columns != sheet.columnCount else { return }
+        setColumnsLive(columns, editing: editing)
     }
 
     func optimiseGrid() {

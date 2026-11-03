@@ -198,8 +198,9 @@ struct PanelRow<Value: View>: View {
 }
 
 /// Icon buttons in the window toolbar and the panels: no Liquid Glass
-/// capsule (owner, 2026-11-03), a square-ish `radiusSm` background on hover
-/// and press, and `surface` while `selected` (an on toggle).
+/// capsule (owner, 2026-11-03), a square-ish `radiusSm` background: a quiet
+/// `surface` at rest, full `surface` while `selected` (an on toggle),
+/// `surfaceHover` on hover and `borderControl` on press.
 struct ToolbarIconStyle: ButtonStyle {
     var selected = false
 
@@ -227,9 +228,10 @@ private struct ToolbarIconBody: View {
     }
 
     private var background: Color {
-        guard isEnabled else { return .clear }
-        if configuration.isPressed { return Theme.surfaceHover }
-        if hovering || selected { return Theme.surface }
-        return .clear
+        guard isEnabled else { return Theme.surface.opacity(0.25) }
+        if configuration.isPressed { return Theme.borderControl.opacity(0.6) }
+        if hovering { return Theme.surfaceHover }
+        if selected { return Theme.surface }
+        return Theme.surface.opacity(0.5)
     }
 }

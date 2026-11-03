@@ -129,6 +129,12 @@ private extension Library {
         #expect(GridLayout.optimisedColumns(thumbCount: 16) == 4)
         #expect(GridLayout.optimisedColumns(thumbCount: 17) == 5)
         #expect(GridLayout.optimisedColumns(thumbCount: 0) == 1)
+        // Rows slider: columns follow from rows.
+        #expect(GridLayout.columns(rows: 3, thumbCount: 15) == 5)
+        #expect(GridLayout.columns(rows: 4, thumbCount: 15) == 4)
+        #expect(GridLayout.columns(rows: 20, thumbCount: 15) == 1)
+        #expect(GridLayout.columns(rows: 1, thumbCount: 50) == 20)
+        #expect(GridLayout.columns(rows: 0, thumbCount: 0) == 1)
     }
 
     @Test func addIntervalSheetPreset() {

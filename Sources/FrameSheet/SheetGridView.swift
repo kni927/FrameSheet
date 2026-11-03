@@ -15,17 +15,13 @@ struct SheetGridView: View {
         let settings = model.library.settings
         let thumbs = model.shownThumbs(of: sheet)
         let dimmed = hoverButton.map { Sheet.affectedThumbs($0.button, of: $0.thumb, in: thumbs) } ?? []
-        // While the Rows slider is dragged the grid is laid out for the new
-        // count at once; cells without a thumb yet are drawn empty.
-        let cellCount = model.rowsDraft.map { sheet.columnCount * $0 } ?? thumbs.count
-        let shown = Array(thumbs.prefix(cellCount))
         GeometryReader { proxy in
             let padding = Theme.space4
             let top = padding
             let geometry = GridGeometry(.init(
                 movieWidth: Double(file.width), movieHeight: Double(file.height),
                 aspectRatioInv: file.transform.aspectRatioInv, columnCount: sheet.columnCount,
-                thumbCount: cellCount,
+                thumbCount: thumbs.count,
                 containerWidth: max(1, proxy.size.width - padding * 2 - GridGeometry.minPrintWidthMargin),
                 containerHeight: max(1, proxy.size.height - padding - top),
                 zoom: model.zoom, marginRatioHorizontal: settings.marginRatioHorizontal,
@@ -37,7 +33,7 @@ struct SheetGridView: View {
             ScrollView([.horizontal, .vertical]) {
                 ZStack(alignment: .topLeading) {
                     Color.clear
-                    ForEach(Array(shown.enumerated()), id: \.element.id) { index, thumb in
+                    ForEach(Array(thumbs.enumerated()), id: \.element.id) { index, thumb in
                         let frame = geometry.thumbFrame(at: index)
                         ThumbView(
                             file: file, sheet: sheet, thumb: thumb, size: frame.size,
@@ -45,13 +41,6 @@ struct SheetGridView: View {
                             onHoverButton: { button in
                                 hoverButton = button.map { (thumb.id, $0) }
                             })
-                            .frame(width: frame.width, height: frame.height)
-                            .offset(x: frame.minX, y: frame.minY)
-                    }
-                    ForEach(shown.count..<max(shown.count, cellCount), id: \.self) { index in
-                        let frame = geometry.thumbFrame(at: index)
-                        RoundedRectangle(cornerRadius: geometry.borderRadius)
-                            .fill(Theme.surface)
                             .frame(width: frame.width, height: frame.height)
                             .offset(x: frame.minX, y: frame.minY)
                     }

@@ -22,8 +22,8 @@ struct ContentView: View {
             MainArea()
         }
         // On the split view rather than the detail, so the panel is a
-        // full-height column like the movie list, with its own part of the
-        // toolbar.
+        // full-height column like the movie list. Its toggle is in the sheet
+        // tools, so it stays while the panel is hidden.
         .inspector(isPresented: $model.showSettings) {
             SettingsPanel()
                 .inspectorColumnWidth(min: 280, ideal: 300, max: 380)
@@ -35,7 +35,7 @@ struct ContentView: View {
             // The app name, then the movie list toggle, then a gap before
             // the icon groups (owner, 2026-11-03).
             ToolbarItem(placement: .navigation) {
-                HStack(spacing: Theme.space1) {
+                HStack(spacing: Theme.space2) {
                     Text("FrameSheet")
                         .font(Theme.sans(15, medium: true))
                         .foregroundStyle(Theme.text)

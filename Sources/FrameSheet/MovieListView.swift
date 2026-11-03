@@ -35,41 +35,45 @@ private struct MovieRow: View {
     var body: some View {
         let selected = model.library.currentFileId == file.id
         let missing = model.missing.contains(file.id)
-        HStack(alignment: .top, spacing: Theme.space3) {
-            Poster(file: file)
-            VStack(alignment: .leading, spacing: 2) {
-                // One line, cut in the middle: names without spaces would
-                // otherwise wrap mid-word. The tooltips give the full text.
+        // The poster with the name beside it; the folder and the detail
+        // line span the row under them.
+        VStack(alignment: .leading, spacing: 2) {
+            HStack(alignment: .top, spacing: Theme.space2) {
+                Poster(file: file)
+                // Up to two lines, cut in the middle: names without spaces
+                // wrap mid-word. The tooltips give the full text.
                 Text(file.name)
                     .font(Theme.label)
                     .foregroundStyle(Theme.text)
-                    .lineLimit(1)
+                    .lineLimit(2)
                     .truncationMode(.middle)
                     .help(file.name)
-                Text("…/\((file.folder as NSString).lastPathComponent)")
+                Spacer(minLength: 0)
+            }
+            .padding(.bottom, 2)
+            Text("…/\((file.folder as NSString).lastPathComponent)")
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .help(file.folder)
+            if missing {
+                // In place of the detail line.
+                Label("Movie is missing", systemImage: "exclamationmark.triangle")
+                    .foregroundStyle(Theme.danger)
+                Button("Locate…") { model.locate(file.id) }
+                    .controlSize(.small)
+                    .help("Find the moved movie")
+                    .padding(.top, 2)
+            } else {
+                Text(details)
+                    .monospacedDigit()
                     .lineLimit(1)
                     .truncationMode(.middle)
-                    .help(file.folder)
-                if missing {
-                    // In place of the detail line.
-                    Label("Movie is missing", systemImage: "exclamationmark.triangle")
-                        .foregroundStyle(Theme.danger)
-                    Button("Locate…") { model.locate(file.id) }
-                        .controlSize(.small)
-                        .help("Find the moved movie")
-                        .padding(.top, 2)
-                } else {
-                    Text(details)
-                        .monospacedDigit()
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.85)
-                        .help(details)
-                }
+                    .help(details)
             }
-            .font(Theme.caption)
-            .foregroundStyle(Theme.textMuted)
-            Spacer(minLength: 0)
         }
+        .font(Theme.caption)
+        .foregroundStyle(Theme.textMuted)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .padding(Theme.space2 - 2)
         .background(selected ? Theme.surface : .clear, in: RoundedRectangle(cornerRadius: Theme.radiusMd))
         .contentShape(Rectangle())

@@ -23,34 +23,6 @@ struct SettingsPanel: View {
         .background(Theme.crust)
         .font(Theme.bodySm)
         .foregroundStyle(Theme.text)
-        // The panel is a full-height inspector column. Its toggle sits at the
-        // far right of the panel's part of the window toolbar; that part
-        // stays in the toolbar while the panel is hidden, so the one button
-        // both shows and hides it.
-        .toolbar {
-            ToolbarSpacer(.flexible)
-            ToolbarItem {
-                PanelToggle()
-            }
-            .sharedBackgroundVisibility(.hidden)
-        }
-    }
-}
-
-/// Shows or hides the right panel (key 3).
-private struct PanelToggle: View {
-    @Environment(AppModel.self) private var model
-
-    var body: some View {
-        let shown = model.showSettings
-        Button {
-            model.showSettings.toggle()
-        } label: {
-            Label(shown ? "Hide panel" : "Show panel", systemImage: "sidebar.right")
-        }
-        .buttonStyle(ToolbarIconStyle(selected: shown))
-        .accessibilityAddTraits(shown ? .isSelected : [])
-        .help(shown ? "Hide panel (3)" : "Show panel (3)")
     }
 }
 
@@ -109,42 +81,85 @@ private struct GridSection: View {
     let sheet: Sheet
     @State private var isDragging = false
     @State private var isDraggingRows = false
+    @State private var changeThumbCount = false
+    /// Rows of the pending thumb count (columns × rows); nil until the
+    /// Thumbs slider moves.
+    @State private var newRows: Int?
 
     var body: some View {
+        let columns = sheet.columnCount
         let count = sheet.visibleThumbs.count
-        let rows = GridLayout.rows(columns: sheet.columnCount, thumbCount: count)
-        let draft = model.rowsDraft
+        let rows = GridLayout.rows(columns: columns, thumbCount: count)
+        let pendingRows = newRows ?? max(1, rows)
+        let newCount = columns * pendingRows
         PanelSection(title: "Grid") {
             // The stats (§6) as numbers over labels; no "×" or "=", since
             // hidden thumbs make columns × rows differ from the count.
             HStack(spacing: 0) {
-                Stat(value: sheet.columnCount, label: "columns")
-                Stat(value: draft ?? rows, label: "rows")
-                Stat(value: draft.map { sheet.columnCount * $0 } ?? count, label: "count")
+                Stat(value: columns, label: "columns")
+                Stat(value: rows, label: "rows")
+                Stat(value: count, label: "count")
             }
             .padding(.bottom, Theme.space1)
             LabeledSlider(
                 title: "Columns",
                 value: Binding(
-                    get: { Double(sheet.columnCount) },
+                    get: { Double(columns) },
                     set: { model.setColumnsLive(Int($0.rounded()), editing: isDragging) }),
                 range: 1...20, help: "Columns of this sheet"
             ) { editing in
                 isDragging = editing
                 if !editing { model.endColumnsDrag() }
             }
+            // Rearranges only: the columns follow from the rows.
             LabeledSlider(
                 title: "Rows",
                 value: Binding(
-                    get: { Double(draft ?? max(1, rows)) },
+                    get: { Double(max(1, rows)) },
                     set: { model.setRowsLive(Int($0.rounded()), editing: isDraggingRows) }),
-                range: 1...20,
-                help: "Recaptures columns × rows thumbs between the first and last visible frames (⌘Z undoes)"
+                range: 1...20, help: "Rows of this sheet; the columns follow and the thumb count stays"
             ) { editing in
                 isDraggingRows = editing
-                if !editing { model.endRowsDrag() }
+                if !editing { model.endColumnsDrag() }
+            }
+            SwitchRow(
+                title: "Change thumb count",
+                isOn: Binding(
+                    get: { changeThumbCount },
+                    set: { on in
+                        changeThumbCount = on
+                        newRows = nil
+                    }),
+                help: "Choose a new number of thumbs (columns × rows), recaptured on Apply")
+            if changeThumbCount {
+                // Steps of one row: the count is always columns × rows.
+                LabeledSlider(
+                    title: "Thumbs",
+                    value: Binding(
+                        get: { Double(newCount) },
+                        set: { newRows = max(1, Int(($0 / Double(columns)).rounded())) }),
+                    range: Double(columns)...Double(columns * 20), step: Double(columns),
+                    help: "New thumb count: \(columns) columns × \(pendingRows) rows")
+                HStack(alignment: .firstTextBaseline, spacing: Theme.space2) {
+                    Text(newCount == count
+                        ? "Move the slider to choose a new count"
+                        : "Replaces \(count) thumbs with \(newCount); ⌘Z undoes")
+                        .font(Theme.panelCaption)
+                        .foregroundStyle(Theme.textMuted)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .help("Recaptures between the first and last visible frames")
+                    Spacer(minLength: Theme.space2)
+                    Button("Apply") {
+                        model.applyThumbCount(columns: columns, rows: pendingRows)
+                        newRows = nil
+                    }
+                    .controlSize(.small)
+                    .disabled(newCount == count)
+                    .help("Recapture \(newCount) thumbs between the first and last visible frames (⌘Z undoes)")
+                }
             }
         }
+        .onChange(of: sheet.id) { newRows = nil }
     }
 }
 

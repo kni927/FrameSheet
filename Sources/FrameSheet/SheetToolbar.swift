@@ -4,8 +4,8 @@ import SwiftUI
 /// The sheet tools in the window toolbar next to the title (§4's floating
 /// toolbar, moved there by the owner, 2026-11-03), the parts that work on
 /// interval sheets: back to parent, add interval sheet, duplicate, zoom,
-/// show hidden thumbs, cycle frame info, optimise grid layout. Disabled
-/// while no sheet is shown. The items have no shared glass background;
+/// show hidden thumbs, cycle frame info, optimize grid layout, then the
+/// right panel toggle. Disabled while no sheet is shown (not the toggle). The items have no shared glass background;
 /// the buttons use `ToolbarIconStyle` (set on the window toolbar).
 struct SheetToolbar: ToolbarContent {
     let model: AppModel
@@ -96,11 +96,22 @@ struct SheetToolbar: ToolbarContent {
             Button {
                 model.optimiseGrid()
             } label: {
-                Label("Optimise grid", systemImage: "square.grid.3x3")
+                Label("Optimize grid", systemImage: "square.grid.3x3")
             }
             .buttonStyle(ToolbarIconStyle())
-            .help("Optimise grid layout")
+            .help("Optimize grid layout")
             .disabled(noSheet)
+            // In the main window toolbar, not the inspector's, so it stays
+            // when the panel is hidden; a small gap sets it apart.
+            Button {
+                model.showSettings.toggle()
+            } label: {
+                Label(model.showSettings ? "Hide panel" : "Show panel", systemImage: "sidebar.right")
+            }
+            .buttonStyle(ToolbarIconStyle(selected: model.showSettings))
+            .accessibilityAddTraits(model.showSettings ? .isSelected : [])
+            .help(model.showSettings ? "Hide panel (3)" : "Show panel (3)")
+            .padding(.leading, Theme.space2)
         }
         .sharedBackgroundVisibility(.hidden)
     }

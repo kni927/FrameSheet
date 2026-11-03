@@ -12,6 +12,13 @@ public enum GridLayout {
         return (max(0, thumbCount) + c - 1) / c
     }
 
+    /// Columns that lay `thumbCount` thumbs out in `rows` rows (the Rows
+    /// slider rearranges): ceil(n / rows), at least 1, at most 20.
+    public static func columns(rows: Int, thumbCount: Int) -> Int {
+        let r = max(1, rows)
+        return min(20, max(1, (max(0, thumbCount) + r - 1) / r))
+    }
+
     /// Settings stats line for the grid view: "C Columns × R Rows = count".
     public static func statsLine(columns: Int, thumbCount: Int) -> String {
         "\(max(1, columns)) Columns × \(rows(columns: columns, thumbCount: thumbCount)) Rows = \(thumbCount)"
