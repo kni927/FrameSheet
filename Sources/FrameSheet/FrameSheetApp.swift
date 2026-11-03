@@ -105,9 +105,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         static let escape: UInt16 = 53
         static let left: UInt16 = 123
         static let right: UInt16 = 124
+        static let space: UInt16 = 49
     }
 
-    /// Grid keys (§8): A, F, G, M, 1, 3, Escape, the arrows and Return.
+    /// Grid keys (§8): A, F, G, M, 1, 2, 3, Space, Escape, the arrows and
+    /// Return; in the player view the arrows step and jump, Space switches
+    /// a shot sheet's mode, and P plays or pauses.
     /// Letter, number, arrow and Return keys do nothing while a text field
     /// has focus; ⌘ shortcuts go to the menus. The detection chart is a
     /// sheet, another window: its own Esc and F close it.
@@ -136,6 +139,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return nil
         }
         guard !flags.contains(.command), !(event.window?.firstResponder is NSText) else { return event }
+        if model.player.isShown, let handled = handlePlayerKey(event, flags: flags, model: model) {
+            return handled ? nil : event
+        }
         switch event.keyCode {
         case KeyCode.escape:
             // Escape cancels a running shot detection (it resumes later).
@@ -150,6 +156,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard let thumb = model.selectedThumbId else { return event }
             model.beginScrub(thumb, keyboard: true, modifiers: ScrubModifiers(event.modifierFlags))
             return model.scrub == nil ? event : nil
+        case KeyCode.space:
+            // Space opens the player view (§8).
+            guard flags.isEmpty, model.currentSheet != nil else { return event }
+            model.spacePressed()
+            return nil
         default:
             break
         }
@@ -162,10 +173,50 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard let ref = model.currentRef else { return event }
             model.toggleView(ref)
         case "1": model.showMovieList.toggle()
+        case "2":
+            guard model.currentSheet != nil || model.player.isShown else { return event }
+            model.togglePlayerView()
         case "3": model.showSettings.toggle()
         default: return event
         }
         return nil
+    }
+}
+
+extension AppDelegate {
+    /// Player keys (§8, MoviePrint's `VideoPlayer.handleKeyPress`): ← / →
+    /// ±10, with ⇧ ±1, with ⌥ ±100, with ⇧⌥ the previous / next cut (cut
+    /// mode) or thumb (thumb mode); Space switches a shot sheet between cut
+    /// and thumb mode, elsewhere it closes the player view; P plays and
+    /// pauses (§8 names no key for it). Return is reserved for cutting and
+    /// changing at the frame, so it does not start a keyboard scrub here.
+    /// Returns nil for keys the player does not take.
+    fileprivate func handlePlayerKey(_ event: NSEvent, flags: NSEvent.ModifierFlags, model: AppModel) -> Bool? {
+        let player = model.player
+        switch event.keyCode {
+        case KeyCode.left, KeyCode.right:
+            let sign = event.keyCode == KeyCode.left ? -1 : 1
+            if flags == [.shift, .option] {
+                player.jump(sign < 0 ? .previous : .next)
+            } else if flags.subtracting([.shift, .option]).isEmpty {
+                let step = PlayerNavigation.arrowStep(shift: flags.contains(.shift), option: flags.contains(.option))
+                player.step(sign * step)
+            } else {
+                return false
+            }
+            return true
+        case KeyCode.space:
+            guard flags.isEmpty else { return false }
+            model.spacePressed()
+            return true
+        case KeyCode.returnKey, KeyCode.enter:
+            return true
+        default:
+            break
+        }
+        guard flags.isEmpty, event.charactersIgnoringModifiers?.lowercased() == "p" else { return nil }
+        player.togglePlayback()
+        return true
     }
 }
 

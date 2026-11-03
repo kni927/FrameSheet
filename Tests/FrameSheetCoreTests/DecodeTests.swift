@@ -537,6 +537,123 @@ import VideoToolbox
         #expect(FFmpegBackend.parseLog("[info] nothing").pts == nil)
     }
 
+    // MARK: Frame runs (the player's frame strip, §9)
+
+    /// A run's results by frame; each names the frame its image shows.
+    private func run(
+        _ backend: any DecodeBackend, _ range: ClosedRange<Int>
+    ) async throws -> [Int: DecodedFrame] {
+        var decoded: [Int: DecodedFrame] = [:]
+        for await result in backend.frameRun(range, maxWidth: 160) {
+            let frame = try result.result.get()
+            #expect(result.index == result.frameNumber - range.lowerBound)
+            #expect(frame.requestedFrame == result.frameNumber)
+            #expect(Self.frameNumber(in: frame.image) == frame.actualFrame, "frame \(result.frameNumber)")
+            #expect(frame.image.width == 160)
+            decoded[result.frameNumber] = frame
+        }
+        #expect(Set(decoded.keys) == Set(range), "missing \(Set(range).subtracting(decoded.keys).sorted())")
+        return decoded
+    }
+
+    /// A closed-GOP movie: the whole run from the one sequential read.
+    @Test(.enabled(if: DecodeIntegrationTests.tools != nil)) func frameRunReadsOnePass() async throws {
+        let clip = try await Self.makeClip("run.mp4", ["-c:v", "libx264", "-crf", "18", "-pix_fmt", "yuv420p"])
+        let backend = try await DecoderRouter.open(clip, ffmpeg: Self.tools)
+        let decoded = try await withDeadline("frame run") { try await run(backend, 20...39) }
+        for (number, frame) in decoded {
+            #expect(frame.isExact, "frame \(number)")
+            #expect(frame.decoder == .avFoundationReader, "frame \(number)")
+        }
+        // The ends of the movie: the range is kept inside it.
+        let ends = try await withDeadline("frame run at the end") { try await run(backend, 45...49) }
+        #expect(ends.values.allSatisfy { $0.isExact })
+    }
+
+    /// The open-GOP clip: with the ffmpeg fallback every frame of a run
+    /// across leading frames is exact; without it every frame names the
+    /// frame it shows.
+    @Test(.enabled(if: DecodeIntegrationTests.tools != nil)) func frameRunOnOpenGOP() async throws {
+        let clip = try await Self.makeOpenGOPClip()
+        let exact = try await DecoderRouter.open(clip, ffmpeg: Self.tools, exactFallback: true)
+        let decoded = try await withDeadline("open-GOP run") { try await run(exact, 26...49) }
+        for (number, frame) in decoded {
+            #expect(frame.actualFrame == number, "frame \(number)")
+        }
+        print("openGOP run with ffmpeg: decoders \(Self.counts(decoded))")
+        let truthful = try await DecoderRouter.open(clip, ffmpeg: Self.tools, exactFallback: false)
+        let shown = try await withDeadline("open-GOP run without ffmpeg") { try await run(truthful, 26...49) }
+        #expect(shown.values.allSatisfy { $0.decoder != .ffmpeg })
+        print("openGOP run without ffmpeg: inexact \(shown.values.filter { !$0.isExact }.map(\.requestedFrame).sorted())")
+    }
+
+    /// The later steps of a run: with no closed GOP allowed before it, the
+    /// read of 40–49 starts at the non-IDR keyframe 16 and stops; ffmpeg
+    /// (fallback on) delivers the frames exactly in one run, and without it
+    /// the single-frame steps name the frames they show.
+    @Test(.enabled(if: DecodeIntegrationTests.tools != nil)) func frameRunFallsBackOnOpenGOP() async throws {
+        let clip = try await Self.makeOpenGOPClip()
+        let range = 40...49
+        func collect(_ backend: AVFoundationBackend) async throws -> [Int: DecodedFrame] {
+            var decoded: [Int: DecodedFrame] = [:]
+            for await result in backend.frameRun(range, maxWidth: 160, preRoll: .zero) {
+                let frame = try result.result.get()
+                #expect(Self.frameNumber(in: frame.image) == frame.actualFrame, "frame \(result.frameNumber)")
+                decoded[result.frameNumber] = frame
+            }
+            #expect(Set(decoded.keys) == Set(range))
+            return decoded
+        }
+        let exact = try #require(
+            try await DecoderRouter.open(clip, ffmpeg: Self.tools, exactFallback: true) as? AVFoundationBackend)
+        let withFFmpeg = try await withDeadline("open-GOP run, ffmpeg") { try await collect(exact) }
+        #expect(withFFmpeg.values.allSatisfy { $0.isExact })
+        print("openGOP short pre-roll with ffmpeg: decoders \(Self.counts(withFFmpeg))")
+        #expect(Self.counts(withFFmpeg)[.ffmpeg, default: 0] > 0)
+        let truthful = try #require(
+            try await DecoderRouter.open(clip, ffmpeg: Self.tools, exactFallback: false) as? AVFoundationBackend)
+        let without = try await withDeadline("open-GOP run, no ffmpeg") { try await collect(truthful) }
+        #expect(without.values.allSatisfy { $0.decoder != .ffmpeg })
+        #expect(without.values.contains { !$0.isExact })
+    }
+
+    /// ffmpeg-routed files: one rawvideo run, each frame named by its time.
+    @Test(.enabled(if: DecodeIntegrationTests.tools != nil)) func frameRunOnTheFFmpegPath() async throws {
+        let clip = try await Self.makeClip("run.mkv", ["-c:v", "libx264", "-qp", "0", "-pix_fmt", "yuv420p"])
+        let backend = try await DecoderRouter.open(clip, ffmpeg: Self.tools)
+        #expect(backend.kind == .ffmpeg)
+        let decoded = try await withDeadline("ffmpeg run") { try await run(backend, 5...24) }
+        for (number, frame) in decoded {
+            #expect(frame.actualFrame == number, "frame \(number)")
+            #expect(frame.decoder == .ffmpeg)
+        }
+    }
+
+    /// Playback that starts on a leading frame of an open GOP shows frames
+    /// from its keyframe on; elsewhere, and in closed-GOP movies, from the
+    /// frame itself.
+    @Test(.enabled(if: DecodeIntegrationTests.tools != nil)) func firstPlayableFrame() async throws {
+        let open = try #require(
+            try await DecoderRouter.open(try await Self.makeOpenGOPClip(), ffmpeg: Self.tools) as? AVFoundationBackend)
+        #expect(await open.firstPlayableFrame(from: 13) == 16)
+        #expect(await open.firstPlayableFrame(from: 15) == 16)
+        #expect(await open.firstPlayableFrame(from: 16) == 16)
+        #expect(await open.firstPlayableFrame(from: 20) == 20)
+        let clip = try await Self.makeClip("closed.mp4", ["-c:v", "libx264", "-crf", "18", "-pix_fmt", "yuv420p"])
+        let closed = try #require(try await DecoderRouter.open(clip, ffmpeg: Self.tools) as? AVFoundationBackend)
+        #expect(await closed.firstPlayableFrame(from: 13) == 13)
+    }
+
+    @Test func showinfoTimesInOrder() {
+        let log = """
+            [Parsed_showinfo_1 @ 0x2] [info] config in time_base: 1/12288, frame_rate: 24/1
+            [Parsed_showinfo_1 @ 0x2] [info] n:   0 pts:   8704 pts_time:0.708333 duration:    512
+            [h264 @ 0x1] [error] mmco: unref short failure
+            [Parsed_showinfo_1 @ 0x2] [info] n:   1 pts:   9216 pts_time:0.75    duration:    512
+            """
+        #expect(FFmpegBackend.showinfoTimes(log) == [0.708333, 0.75])
+    }
+
     @Test func mkvWithoutFFmpegExplains() async throws {
         let url = FileManager.default.temporaryDirectory.appending(path: "not-a-movie-\(UUID()).mkv")
         try Data("not a movie".utf8).write(to: url)

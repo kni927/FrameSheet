@@ -101,6 +101,8 @@ final class AppModel {
     static let posterWidth = 320
 
     let cache: ThumbnailCache
+    /// The player view (§9).
+    let player = PlayerController()
     private let store: LibraryStore?
     @ObservationIgnored private var backends: [UUID: any DecodeBackend] = [:]
     /// The file each movie's backend and cached images came from; when undo
@@ -175,6 +177,7 @@ final class AppModel {
         findFFmpeg()
         for file in library.files { loadPoster(file) }
         loadCurrentSheet()
+        player.model = self
     }
 
     // MARK: - Library access
@@ -1259,6 +1262,9 @@ final class AppModel {
     }
 
     // MARK: - Thumbnails
+
+    /// The movie's backend if it is open (no probe).
+    func openBackend(_ fileId: UUID) -> (any DecodeBackend)? { backends[fileId] }
 
     func backend(for file: MovieFile) async throws -> any DecodeBackend {
         if let backend = backends[file.id] { return backend }

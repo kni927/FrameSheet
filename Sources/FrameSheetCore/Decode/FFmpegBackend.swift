@@ -252,4 +252,117 @@ public final class FFmpegBackend: DecodeBackend {
     public func frames(_ frameNumbers: [Int], maxWidth: Int) -> AsyncStream<FrameResult> {
         concurrentFrames(frameNumbers, maxWidth: maxWidth, concurrency: Self.concurrency)
     }
+
+    // MARK: - Frame runs (the frame strip, §9)
+
+    /// One ffmpeg run for the consecutive frames, then single-frame runs
+    /// for those it did not deliver.
+    public func frameRun(_ range: ClosedRange<Int>, maxWidth: Int) -> AsyncStream<FrameResult> {
+        let last = max(0, info.frameCount - 1)
+        let low = min(max(0, range.lowerBound), last)
+        let run = low...min(max(low, range.upperBound), last)
+        return AsyncStream { continuation in
+            let task = Task {
+                var done = Set<Int>()
+                let frames = (try? await runFrames(run, maxWidth: maxWidth)) ?? []
+                for frame in frames where run.contains(frame.actualFrame) && !done.contains(frame.actualFrame) {
+                    done.insert(frame.actualFrame)
+                    continuation.yield(FrameResult(
+                        index: frame.actualFrame - run.lowerBound, frameNumber: frame.actualFrame,
+                        result: .success(frame)))
+                }
+                for number in run where !done.contains(number) {
+                    if Task.isCancelled { break }
+                    do {
+                        let frame = try await self.frame(number, maxWidth: maxWidth)
+                        continuation.yield(FrameResult(
+                            index: number - run.lowerBound, frameNumber: number, result: .success(frame)))
+                    } catch {
+                        if Task.isCancelled { break }
+                        let message = (error as? DecodeError) ?? DecodeError(error.localizedDescription)
+                        continuation.yield(FrameResult(
+                            index: number - run.lowerBound, frameNumber: number, result: .failure(message)))
+                    }
+                }
+                continuation.finish()
+            }
+            continuation.onTermination = { _ in task.cancel() }
+        }
+    }
+
+    /// The frames of `range` from one ffmpeg run to a BGRA rawvideo pipe,
+    /// in software decode: input-seeks before the first frame as `frame`
+    /// does, keeps the original timestamps and lets `select` pass the frames
+    /// from half a frame before the first to half a frame after the last.
+    /// `showinfo` names each frame's timestamp, so every result is the
+    /// frame it shows (requested = actual); frames outside the range are
+    /// dropped. Empty when ffmpeg delivers nothing; throws when cancelled.
+    func runFrames(_ range: ClosedRange<Int>, maxWidth: Int) async throws -> [DecodedFrame] {
+        let fps = frameRate
+        let movieWidth = info.width > 0 ? info.width : maxWidth
+        let width = max(2, min(maxWidth, movieWidth) / 2 * 2)
+        let ratio = info.width > 0 && info.height > 0 ? Double(info.height) / Double(info.width) : 9.0 / 16.0
+        let height = max(2, Int((Double(width) * ratio / 2).rounded()) * 2)
+        let lowerBound = startTime + (Double(range.lowerBound) - 0.5) / fps
+        let upperBound = startTime + (Double(range.upperBound) + 0.5) / fps
+        let seek = max(0, Double(range.lowerBound) / fps - seekMargins[0])
+        let select = "select='between(t,\(String(format: "%.6f", lowerBound)),\(String(format: "%.6f", upperBound)))'"
+        let pipe = RawVideoPipe(executable: tools.ffmpeg, arguments: [
+            "-hide_banner", "-nostdin", "-nostats", "-loglevel", "level+info",
+            "-copyts",
+            "-ss", String(format: "%.6f", seek),
+            "-i", path,
+            "-map", "0:v:0", "-an", "-sn", "-dn",
+            "-vf", "\(select),showinfo,scale=\(width):\(height)",
+            "-frames:v", "\(range.count)",
+            "-pix_fmt", "bgra", "-f", "rawvideo", "-",
+        ])
+        try pipe.start()
+        let frameBytes = width * 4 * height
+        let packed = UnsafeMutableRawPointer.allocate(byteCount: frameBytes, alignment: 64)
+        defer { packed.deallocate() }
+        var buffers: [Data] = []
+        do {
+            while buffers.count < range.count, try await pipe.readFrame(into: packed, count: frameBytes) {
+                buffers.append(Data(bytes: packed, count: frameBytes))
+            }
+        } catch {
+            pipe.terminate()
+            _ = await pipe.finish()
+            throw error
+        }
+        let (_, log) = await pipe.finish()
+        let times = Self.showinfoTimes(log)
+        var frames: [DecodedFrame] = []
+        for (k, data) in buffers.enumerated() {
+            let number = k < times.count ? frameNumber(at: times[k]) : range.lowerBound + k
+            guard range.contains(number), let image = Self.image(bgra: data, width: width, height: height) else {
+                continue
+            }
+            frames.append(DecodedFrame(
+                image: image, requestedFrame: number, actualFrame: number, retried: false, decoder: .ffmpeg))
+        }
+        return frames
+    }
+
+    /// The timestamps `showinfo` reports, in output order.
+    static func showinfoTimes(_ text: String) -> [Double] {
+        text.split(whereSeparator: \.isNewline).compactMap { line -> Double? in
+            guard line.contains("Parsed_showinfo"), line.contains(" n:"),
+                  let range = line.range(of: "pts_time:")
+            else { return nil }
+            return Double(line[range.upperBound...].prefix { !$0.isWhitespace })
+        }
+    }
+
+    /// A CGImage over a copy of packed BGRA bytes (opaque).
+    static func image(bgra data: Data, width: Int, height: Int) -> CGImage? {
+        guard let provider = CGDataProvider(data: data as CFData) else { return nil }
+        return CGImage(
+            width: width, height: height, bitsPerComponent: 8, bitsPerPixel: 32, bytesPerRow: width * 4,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGBitmapInfo(rawValue: CGBitmapInfo.byteOrder32Little.rawValue
+                | CGImageAlphaInfo.noneSkipFirst.rawValue),
+            provider: provider, decode: nil, shouldInterpolate: true, intent: .defaultIntent)
+    }
 }

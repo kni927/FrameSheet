@@ -5,8 +5,8 @@ import SwiftUI
 /// toolbar, moved there by the owner, 2026-11-03): back to parent, add
 /// interval sheet, add shot-detection sheet, duplicate, undo and redo, zoom
 /// (with Fit height and Fit width when they would change the fit), show
-/// hidden thumbs, show header, cycle the thumb label, grid/timeline, toggle
-/// images (timeline), optimize grid layout, Save Sheet with its menu, then
+/// hidden thumbs, show header, cycle the thumb label, grid/timeline, player
+/// view, toggle images (timeline), optimize grid layout, Save Sheet with its menu, then
 /// the right panel toggle. Disabled while no sheet is shown (not the toggle). Each group is
 /// one `ToolbarIconGroup` in a single toolbar item, so its icons touch; the
 /// items have no glass background, and each control has its own tooltip
@@ -168,6 +168,15 @@ struct SheetToolbar: ToolbarContent {
                     .buttonStyle(ToolbarIconStyle(grouped: true))
                     .toolbarHelp(timeline ? "Grid view (G)" : "Timeline view (G)")
                     .disabled(noSheet || sheet?.type == .faces)
+                    Button {
+                        model.togglePlayerView()
+                    } label: {
+                        Label(model.player.isShown ? "Hide player view" : "Show player view", systemImage: "play.rectangle")
+                    }
+                    .buttonStyle(ToolbarIconStyle(selected: model.player.isShown, grouped: true))
+                    .accessibilityAddTraits(model.player.isShown ? .isSelected : [])
+                    .toolbarHelp(model.player.isShown ? "Hide player view (2)" : "Show player view (2)")
+                    .disabled(noSheet && !model.player.isShown)
                     Button {
                         model.updateSettings { $0.timelineShowImages.toggle() }
                     } label: {

@@ -14,9 +14,10 @@ import VideoToolbox
 public final class AVFoundationBackend: DecodeBackend {
     public let kind = DecoderKind.avFoundation
     public let info: MediaInfo
-    private let asset: AVURLAsset
-    /// Presentation time of frame 0.
-    private let startTime: Double
+    let asset: AVURLAsset
+    /// Presentation time of frame 0 (the video track's start), in seconds;
+    /// AVPlayer's item time of frame n starts at `startTime + n / fps`.
+    public let startTime: Double
     /// Reads the frames the exact image-generator request misses from one
     /// GOP earlier (decision 25).
     let reader: EarlierGOPReader
@@ -193,9 +194,10 @@ public final class AVFoundationBackend: DecodeBackend {
         }
     }
 
-    /// Exact decode, then the earlier-GOP read, then the ffmpeg fallback or
-    /// the retry; callers hold the gate.
-    private func decodeFrame(_ frameNumber: Int, maxWidth: Int) async throws -> DecodedFrame {
+    /// Exact decode, then the earlier-GOP read, then the ffmpeg fallback
+    /// (unless `useFallback` is off: a frame-strip run tried ffmpeg already)
+    /// or the retry; callers hold the gate.
+    func decodeFrame(_ frameNumber: Int, maxWidth: Int, useFallback: Bool = true) async throws -> DecodedFrame {
         let requested = time(of: frameNumber)
         do {
             let (image, actual) = try await makeGenerator(maxWidth: maxWidth, exact: true).image(at: requested)
@@ -208,7 +210,7 @@ public final class AVFoundationBackend: DecodeBackend {
             throw CancellationError()
         } catch {}
         if let frame = try await earlierGOP(frameNumber, maxWidth: maxWidth) { return frame }
-        return try await notExact(frameNumber, maxWidth: maxWidth)
+        return try await notExact(frameNumber, maxWidth: maxWidth, useFallback: useFallback)
     }
 
     /// Step 2 for a frame the exact request did not decode: the reader from
@@ -226,8 +228,8 @@ public final class AVFoundationBackend: DecodeBackend {
     /// decoded: ffmpeg when the fallback is on and returns the frame
     /// exactly, else the bounded-tolerance retry. Callers hold the gate, so
     /// the ffmpeg run never overlaps an AVFoundation decode.
-    private func notExact(_ frameNumber: Int, maxWidth: Int) async throws -> DecodedFrame {
-        if let fallback, let frame = try await fallback.frame(frameNumber, maxWidth: maxWidth),
+    private func notExact(_ frameNumber: Int, maxWidth: Int, useFallback: Bool = true) async throws -> DecodedFrame {
+        if useFallback, let fallback, let frame = try await fallback.frame(frameNumber, maxWidth: maxWidth),
            frame.actualFrame == exactFrame(frameNumber) {
             return frame
         }
@@ -338,13 +340,14 @@ public final class AVFoundationBackend: DecodeBackend {
 /// The sync lookup is not cached: it steps a sample cursor back through at
 /// most two GOPs of the sample table, which costs little next to the read.
 final class EarlierGOPReader: Sendable {
-    private let asset: AVURLAsset
-    private let info: MediaInfo
+    let asset: AVURLAsset
+    let info: MediaInfo
     /// Presentation time of frame 0 (track time).
-    private let startTime: Double
+    let startTime: Double
     /// The reader's buffers are not rotated, so a track with a rotating or
-    /// flipping transform is left to the next step.
-    private let usable: Bool
+    /// flipping transform is left to the next step (and the frame strip's
+    /// runs to single requests).
+    let usable: Bool
     /// Track time minus media time of the first non-empty edit, loaded on
     /// first use.
     private let offset = Mutex<CMTime?>(nil)
@@ -409,7 +412,7 @@ final class EarlierGOPReader: Sendable {
         return nil
     }
 
-    private func mediaOffset(_ track: AVAssetTrack) async throws -> CMTime {
+    func mediaOffset(_ track: AVAssetTrack) async throws -> CMTime {
         if let known = offset.withLock({ $0 }) { return known }
         let segments = try await track.load(.segments)
         let found = segments.first { !$0.isEmpty }
@@ -455,6 +458,27 @@ final class FFmpegFrameFallback: Sendable {
     /// The frame from ffmpeg, or nil when ffmpeg cannot open the file or
     /// decode the frame; throws only when cancelled.
     func frame(_ frameNumber: Int, maxWidth: Int) async throws -> DecodedFrame? {
+        do {
+            return try await backend().frame(frameNumber, maxWidth: maxWidth)
+        } catch {
+            try Task.checkCancellation()
+            return nil
+        }
+    }
+
+    /// The frames of `range` from one ffmpeg run, each named by the frame it
+    /// shows (the frame strip, §9); empty when ffmpeg cannot open the file
+    /// or read them; throws only when cancelled.
+    func frameRun(_ range: ClosedRange<Int>, maxWidth: Int) async throws -> [DecodedFrame] {
+        do {
+            return try await backend().runFrames(range, maxWidth: maxWidth)
+        } catch {
+            try Task.checkCancellation()
+            return []
+        }
+    }
+
+    private func backend() async throws -> FFmpegBackend {
         let task = opening.withLock { task in
             if let task { return task }
             let (url, tools) = (url, tools)
@@ -462,12 +486,7 @@ final class FFmpegFrameFallback: Sendable {
             task = new
             return new
         }
-        do {
-            return try await task.value.frame(frameNumber, maxWidth: maxWidth)
-        } catch {
-            try Task.checkCancellation()
-            return nil
-        }
+        return try await task.value
     }
 }
 
@@ -511,4 +530,14 @@ actor DecodeGate {
             waiters.removeFirst().resume()
         }
     }
+}
+
+/// The DecodeGate for decoder sessions outside the backends: AVPlayer
+/// playback in the player view holds it while it plays, so no other
+/// AVFoundation decode (thumbs, the frame strip, a scan) runs beside the
+/// player's own decoder session (KNOWN_ISSUES 4). Every `acquire` needs one
+/// `release`.
+public enum DecoderSessionGate {
+    public static func acquire() async { await DecodeGate.shared.acquire() }
+    public static func release() async { await DecodeGate.shared.release() }
 }

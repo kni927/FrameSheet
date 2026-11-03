@@ -204,7 +204,15 @@ private struct SceneCell: View {
                 hovering = inside
                 if !inside { onHoverButton(nil) }
             }
-            .onTapGesture { model.selectedThumbId = selected ? nil : scene.id }
+            .onTapGesture {
+                // A double-click opens (or closes) the player view at the
+                // scene (§7); its first click selected it.
+                if (NSApp.currentEvent?.clickCount ?? 1) >= 2 {
+                    model.doubleClicked(scene.id)
+                } else {
+                    model.selectedThumbId = selected ? nil : scene.id
+                }
+            }
             .accessibilityElement(children: .contain)
             .accessibilityLabel("Scene, frames \(scene.start) to \(end)")
             .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
@@ -336,7 +344,14 @@ private struct ThumbView: View {
             hovering = inside
             if !inside { onHoverButton(nil) }
         }
-        .onTapGesture { model.selectedThumbId = thumb.id }
+        .onTapGesture {
+            // Double-click toggles the player view (§7).
+            if (NSApp.currentEvent?.clickCount ?? 1) >= 2 {
+                model.doubleClicked(thumb.id)
+            } else {
+                model.selectedThumbId = thumb.id
+            }
+        }
         .draggable(thumb.id.uuidString) {
             // The thumb as the drag image; the cell itself is transparent.
             if let image = model.image(file: file.id, frame: thumb.frameNumber, width: AppModel.thumbWidth) {

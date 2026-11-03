@@ -75,6 +75,8 @@ extension AppModel {
             return
         }
         cancelScrub()
+        // The scan holds the DecodeGate; playback would hold it as well.
+        player.pause()
         let settings = library.settings
         // The sheet the scenes stream into: not undoable while it fills; the
         // finished sheet is added as one undo step.

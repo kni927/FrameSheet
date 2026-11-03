@@ -114,7 +114,9 @@ struct MainArea: View {
         ZStack(alignment: .top) {
             Theme.base
             if let file = model.currentFile, let sheet = model.currentSheet {
-                if model.isTimeline(sheet) {
+                if model.player.isShown {
+                    PlayerView(file: file, sheet: sheet)
+                } else if model.isTimeline(sheet) {
                     TimelineSheetView(file: file, sheet: sheet)
                 } else {
                     SheetGridView(file: file, sheet: sheet)

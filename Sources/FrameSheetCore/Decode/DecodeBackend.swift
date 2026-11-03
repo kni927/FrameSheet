@@ -75,6 +75,14 @@ public protocol DecodeBackend: Sendable {
     /// Several frames; results arrive as they are decoded, in any order.
     /// Cancelling the consuming task stops the work.
     func frames(_ frameNumbers: [Int], maxWidth: Int) -> AsyncStream<FrameResult>
+
+    /// The consecutive frames of `range` (the player's frame strip, §9),
+    /// read in one sequential pass rather than one request per frame;
+    /// results arrive as they are decoded, indexed by their offset in the
+    /// range. Frames the pass does not deliver exactly go through the
+    /// single-frame steps (decision 25). Cancelling the consuming task stops
+    /// the work.
+    func frameRun(_ range: ClosedRange<Int>, maxWidth: Int) -> AsyncStream<FrameResult>
 }
 
 extension DecodeBackend {
