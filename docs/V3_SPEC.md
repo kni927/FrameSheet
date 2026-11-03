@@ -142,7 +142,7 @@ the 2026-11-01 app-icon choice).
   TopCenter, TopRight, CenterCenter, BottomLeft, BottomCenter, BottomRight.
   Size 1–100 (10). Margin 0–50 (0).
 - **Output:** folder (default Desktop; Change…; Same as movie file, off); size
-  1024–16384 px in 1024 steps labelled "4096px (×Hpx)" plus "max" (default
+  1024–16384 px in 1024 steps labeled "4096px (×Hpx)" plus "max" (default
   4096; in timeline view it is the height); format PNG (default) / JPG,
   quality 0–100 (80); background color (default transparent; alpha in PNG
   only). Save options: Overwrite (off); Include individual thumbs (off); Embed
@@ -159,7 +159,10 @@ the 2026-11-01 app-icon choice).
   (10, % of frame height); "takes effect on next scan".
 - **Thumbnail cache** (Settings window; replaces MoviePrint's frame cache, whose per-frame
   images do not fit: 50 GB for a 2 h film at 240 px): memory limit for decoded
-  display-size thumbnails, default 256 MB; Clear thumbnail cache.
+  display-size thumbnails, default 256 MB, kept as an LRU cache with a strict
+  byte limit (T04b); Clear thumbnail cache.
+- **Fetch exact frames with ffmpeg** (Settings window, default on; disabled
+  with a note without ffmpeg): step 3 of decision 25.
 - **Experimental:** shot detection method Mean (default) / Histogram; detection
   chart (key F); automatic IN/OUT detection (off); input fields instead of
   sliders.
@@ -169,15 +172,18 @@ the 2026-11-01 app-icon choice).
 
 - **Hover overlay** (hidden below 100 px thumb width, compact below 160 px;
   hovering a button dims the thumbs it affects): EXPAND; Hide/show (selects
-  the next thumb); Save thumb (original resolution, transform applied); IN /
+  the next thumb); SAVE at the top center (thumb at original resolution,
+  transform applied); IN /
   OUT (interval sheets: set IN/OUT and recapture the same count between; with
   Option or other sheet types: hide all before/after); Insert before/after
-  (interval: frame midway to the neighbour; shot sheets: Jump to cut).
-- **Scrub** (drag the handle): overlay with the left neighbour, the live frame
-  and the right neighbour, labelled CHANGE TO / ADD BEFORE / ADD AFTER. Mouse X
-  maps linearly between the neighbours' frames. Shift: from the left neighbour
+  (interval: frame midway to the neighbor; shot sheets: Jump to cut).
+- **Scrub** (drag the handle): overlay with the left neighbor, the live frame
+  and the right neighbor, labeled CHANGE TO / ADD BEFORE / ADD AFTER, with a
+  hint naming the modifier keys. The drag starts at the thumb's own frame and
+  moves linearly toward the neighbors' frames (owner, T04b; MoviePrint maps
+  the pointer absolutely). Shift: from the left neighbor
   to the current thumb, insert before. Option: from the current thumb to the
-  right neighbour, insert after. Control (or the first/last thumb): extend to
+  right neighbor, insert after. Control (or the first/last thumb): extend to
   movie start/end. Release confirms; a top Cancel bar cancels. Shot sheets:
   limited to the scene, always change.
 - Click selects; double-click toggles player view; drag to reorder (not on
@@ -264,7 +270,13 @@ Alt and Ctrl become Option and Control.
 - **Routing:** check the HEVC sample entry on open; `hev1` and codecs
   AVFoundation lacks (WMV3, VP9/AV1 in MKV/WebM, …) go to the ffmpeg path,
   which decodes in software (no `-hwaccel videotoolbox`) to a BGRA pipe.
-  Thumbnails use zero time tolerance, then the ±0.5 s retry (decision 11).
+  Each frame of an open file goes through decision 25's steps inside
+  `DecodeGate`: the exact generator request; an `AVAssetReader` read from the
+  previous full sync sample; then, with the Settings option on and ffmpeg
+  present, a per-frame ffmpeg fetch; otherwise the ±0.5 s retry (decision 11)
+  with the real frame number and an "inexact" marker at the thumb's bottom
+  right. A scrubbed frame that cannot be fetched exactly is refused with a
+  toast, never moved silently.
 - **ffmpeg discovery** (fallback decode): user-chosen path (persisted) →
   login-shell `command -v ffmpeg` (`/bin/zsh -lic`) → `/opt/homebrew/bin`,
   `/usr/local/bin`, `/opt/local/bin`, `~/.nix-profile/bin`,

@@ -23,13 +23,7 @@ reproduces MoviePrint v0.2.23 for Apple Silicon: decisions 14–22 in
   import (done) → T04b frames AVFoundation cannot decode (done, decision 25)
   → T05 shot scan, timeline, cut/merge, EDL → T06 player view → T07 faces Lv1
   → T08 transforms, Save All, polish → version and release TASK.
-- Spec gaps for the HQ from T04b: the three decode steps and the Settings
-  option (decision 25); the inexact marker; SAVE at the top center of the hover
-  overlay; the scrub starts at the thumb's own frame and names its modifier
-  keys; the thumbnail cache is an LRU cache.
 - Next UI step (owner): move some right-panel settings to the Settings window.
-- Spelling: the owner wants en-US; proposal with Upstream HQ (2026-11-03),
-  `docs/V3_SPEC.md` is en-US since 2026-11-03; CLAUDE.md still uses en-GB.
 - Tooltips on every control, kept short (owner, 2026-11-02/03).
 - Not yet tried by the owner: Rename/Delete sheet, ⌃⌘F, the scrub at the
   smallest window size, ⌘Z while renaming, MoviePrint 0.2.23 files (only
