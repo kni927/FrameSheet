@@ -186,6 +186,43 @@ struct SheetToolbar: ToolbarContent {
                     .toolbarHelp("Optimize grid layout")
                     .disabled(noSheet || timeline)
                 }
+                // Cut and merge on the selected scene of a shot sheet (§7),
+                // in grid and timeline view; one undo step each.
+                ToolbarIconGroup {
+                    let scene = model.selectedScene
+                    Button {
+                        model.cutSelectedScene()
+                    } label: {
+                        Label("Cut scene", systemImage: "scissors")
+                    }
+                    .buttonStyle(ToolbarIconStyle(grouped: true))
+                    .toolbarHelp("Cut scene at its thumb")
+                    .disabled(scene == nil || model.isStreamingSheetShown)
+                    Button {
+                        model.mergeSelectedScene(.previous)
+                    } label: {
+                        Label("Merge with previous", systemImage: "square.filled.and.line.vertical.and.square")
+                    }
+                    .buttonStyle(ToolbarIconStyle(grouped: true))
+                    .toolbarHelp("Merge with previous scene")
+                    .disabled(!model.canMergeSelectedScene(.previous) || model.isStreamingSheetShown)
+                    Button {
+                        model.mergeSelectedScene(.next)
+                    } label: {
+                        Label("Merge with next", systemImage: "square.and.line.vertical.and.square.filled")
+                    }
+                    .buttonStyle(ToolbarIconStyle(grouped: true))
+                    .toolbarHelp("Merge with next scene")
+                    .disabled(!model.canMergeSelectedScene(.next) || model.isStreamingSheetShown)
+                    Button {
+                        model.toggleDetectionChart()
+                    } label: {
+                        Label("Detection chart", systemImage: "chart.xyaxis.line")
+                    }
+                    .buttonStyle(ToolbarIconStyle(grouped: true))
+                    .toolbarHelp("Detection chart (F)")
+                    .disabled(noSheet)
+                }
                 // Save (decision 23): the download button, and a menu with
                 // the output location (Save All comes with T08).
                 ToolbarIconGroup {

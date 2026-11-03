@@ -211,7 +211,8 @@ private func near(_ a: Double, _ b: Double, _ tolerance: Double = 1e-6) -> Bool 
         let expanded = library.expand(ref, thumb: thumb.id)
         let child = try #require(expanded)
         let sheet = try #require(library.sheet(child.sheetId, of: ref.fileId))
-        #expect(sheet.name == "Sequence 300 - 799")
+        // §3: an expanded shot is named by its number.
+        #expect(sheet.name == "Shot #2")
         #expect(sheet.thumbs.first?.frameNumber == 300)
         #expect(sheet.thumbs.last?.frameNumber == 799)
     }

@@ -87,6 +87,12 @@ struct ContentView: View {
         .font(Theme.bodySm)
         .foregroundStyle(Theme.text)
         .overlay(alignment: .bottom) { Toast() }
+        // Key F and View → Detection Chart; Esc or F closes it.
+        .sheet(item: $model.detectionChart) { chart in
+            DetectionChartView(chart: chart)
+                .environment(model)
+                .preferredColorScheme(.dark)
+        }
         .alert("Clear the movie list?", isPresented: $confirmingClear) {
             Button("Clear", role: .destructive) { model.clearList() }
                 .help("Remove all movies and their sheets")

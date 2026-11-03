@@ -75,19 +75,27 @@ extension Library {
         } ?? nil
     }
 
+    /// Hides or shows thumbs; on a shot sheet their scenes (same ids) too,
+    /// so the grid, the timeline and the EDL agree.
     public mutating func setHidden(_ ref: SheetRef, thumbs ids: Set<UUID>, hidden: Bool) {
         withSheet(ref) { sheet, _ in
             for i in sheet.thumbs.indices where ids.contains(sheet.thumbs[i].id) {
                 sheet.thumbs[i].hidden = hidden
             }
+            for i in sheet.scenes.indices where ids.contains(sheet.scenes[i].id) {
+                sheet.scenes[i].hidden = hidden
+            }
         }
     }
 
+    /// Hide/Show: a thumb (or scene) counts as hidden when it or its scene
+    /// is, and both take the other state.
     public mutating func toggleHidden(_ ref: SheetRef, thumb: UUID) {
-        withSheet(ref) { sheet, _ in
-            guard let t = sheet.thumbs.firstIndex(where: { $0.id == thumb }) else { return }
-            sheet.thumbs[t].hidden.toggle()
-        }
+        guard let sheet = sheet(ref.sheetId, of: ref.fileId),
+              let own = sheet.thumbs.first(where: { $0.id == thumb })
+        else { return }
+        let hidden = own.hidden || sheet.scenes.contains { $0.id == thumb && $0.hidden }
+        setHidden(ref, thumbs: [thumb], hidden: !hidden)
     }
 
     /// Hides the visible thumbs before (or after) a thumb (IN/OUT with
@@ -203,24 +211,29 @@ extension Library {
     }
 
     /// Expand: a child interval sheet of 16 thumbs inside the thumb's scene,
-    /// named "Sequence a - b". The child's id is the thumb's id, so expanding
-    /// the same thumb again returns the existing child.
+    /// named "Shot #n" (n counts the shot sheet's scenes from 1, MoviePrint's
+    /// `getShotNumber`) or, from an interval sheet, "Sequence a - b". The
+    /// child's id is the thumb's id, so expanding the same thumb again
+    /// returns the existing child.
     @discardableResult
     public mutating func expand(_ ref: SheetRef, thumb: UUID) -> SheetRef? {
         guard let file = file(ref.fileId), let parent = sheet(ref.sheetId, of: ref.fileId) else { return nil }
         let child = SheetRef(fileId: ref.fileId, sheetId: thumb)
         if sheet(thumb, of: ref.fileId) != nil { return child }
         // A shot sheet's own scene, else the interval sheet's artificial one.
+        let hidden = parent.thumbs.first { $0.id == thumb }?.hidden ?? false
         let scenes = parent.type == .shot
-            ? SceneList.timelineScenes(of: parent, includeHidden: true) : SceneList.intervalScenes(of: parent)
+            ? SceneList.timelineScenes(of: parent, includeHidden: true)
+            : SceneList.intervalScenes(of: parent, includeHidden: hidden)
         guard let scene = scenes.first(where: { $0.id == thumb }) else { return nil }
         let start = scene.start
         let end = scene.start + scene.length - 1
         let frames = IntervalFrames.frameNumbers(
             amount: Defaults.thumbCount, start: start, stop: end, maxValue: file.frameCount,
             limitToMaxValue: true)
+        let shotNumber = parent.type == .shot ? parent.scenes.firstIndex { $0.id == thumb }.map { $0 + 1 } : nil
         let new = Sheet(
-            id: thumb, name: "Sequence \(start) - \(end)", type: .interval,
+            id: thumb, name: shotNumber.map { "Shot #\($0)" } ?? "Sequence \(start) - \(end)", type: .interval,
             columnCount: GridLayout.optimizedColumns(thumbCount: frames.count), parentSheetId: ref.sheetId,
             thumbs: frames.enumerated().map { Thumb(frameNumber: $1, index: $0) })
         sheets[ref.fileId, default: []].append(new)
@@ -332,12 +345,13 @@ extension MovieFile {
 public enum SceneList {
     /// Artificial scenes of an interval sheet, split at the midpoints between
     /// visible thumbs sorted by frame; each scene's id is its thumb's id
-    /// (MoviePrint `createSceneArray`).
-    public static func intervalScenes(of sheet: Sheet) -> [Scene] {
-        let visible = sheet.visibleThumbs.sorted { $0.frameNumber < $1.frameNumber }
+    /// (MoviePrint `createSceneArray`). With `includeHidden` (Show hidden
+    /// thumbs), between all thumbs, the hidden ones' scenes marked hidden.
+    public static func intervalScenes(of sheet: Sheet, includeHidden: Bool = false) -> [Scene] {
+        let visible = (includeHidden ? sheet.thumbs : sheet.visibleThumbs).sorted { $0.frameNumber < $1.frameNumber }
         guard let first = visible.first else { return [] }
         guard visible.count > 1 else {
-            return [Scene(id: first.id, start: first.frameNumber, length: 1, colorRGB: [128, 128, 128])]
+            return [Scene(id: first.id, start: first.frameNumber, length: 1, colorRGB: [128, 128, 128], hidden: first.hidden)]
         }
         var scenes: [Scene] = []
         var start = first.frameNumber
@@ -352,7 +366,8 @@ public enum SceneList {
                     length = thumb.frameNumber - start
                 }
             }
-            scenes.append(Scene(id: thumb.id, start: start, length: max(1, length), colorRGB: [128, 128, 128]))
+            scenes.append(
+                Scene(id: thumb.id, start: start, length: max(1, length), colorRGB: [128, 128, 128], hidden: thumb.hidden))
         }
         return scenes
     }

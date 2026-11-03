@@ -44,13 +44,20 @@ extension Sheet {
     /// button over `thumb` affects: IN the thumbs before, OUT those after,
     /// Hide the thumb itself.
     public static func affectedThumbs(_ button: HoverButton, of thumb: UUID, in shown: [Thumb]) -> Set<UUID> {
-        guard let i = shown.firstIndex(where: { $0.id == thumb }) else { return [] }
+        affected(button, of: thumb, in: shown.map(\.id))
+    }
+
+    /// The same for ids in order: the thumbs of a grid, or the scenes of a
+    /// timeline (MoviePrint's `SceneGrid` dims the scenes before or after
+    /// on IN and OUT).
+    public static func affected(_ button: HoverButton, of id: UUID, in shown: [UUID]) -> Set<UUID> {
+        guard let i = shown.firstIndex(of: id) else { return [] }
         switch button {
-        case .inPoint: return Set(shown[..<i].map(\.id))
-        case .outPoint: return Set(shown[(i + 1)...].map(\.id))
-        case .hide: return [thumb]
+        case .inPoint: return Set(shown[..<i])
+        case .outPoint: return Set(shown[(i + 1)...])
+        case .hide: return [id]
         // MoviePrint dims every other thumb (`getInvertedThumbs`).
-        case .expand: return Set(shown.map(\.id)).subtracting([thumb])
+        case .expand: return Set(shown).subtracting([id])
         case .insertBefore, .insertAfter: return []
         }
     }
@@ -60,8 +67,9 @@ extension ScrubMapping {
     /// Frames the keyboard scrub can step through: the same span the pointer
     /// covers (Shift: left neighbor → thumb, Option: thumb → right
     /// neighbor), extended to the movie start or end on the first or last
-    /// thumb or with Control.
+    /// thumb or with Control. A scene scrub stays inside the scene.
     public func keyboardRange(modifiers: ScrubModifiers) -> ClosedRange<Int> {
+        if limitedToRange { return min(leftFrame, rightFrame)...max(leftFrame, rightFrame) }
         var low = modifiers.contains(.option) ? thumbFrame : leftFrame
         var high = modifiers.contains(.shift) ? thumbFrame : rightFrame
         if modifiers.contains(.control) || thumbFrame == leftFrame { low = 0 }

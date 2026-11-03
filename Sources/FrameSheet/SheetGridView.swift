@@ -92,16 +92,19 @@ struct SheetGridView: View {
 /// Timeline view of a sheet (§6, §7, §10): the print's scene boxes laid
 /// out by `TimelineGeometry`, with a layer that selects a scene on click
 /// (the selected scene widens to full aspect width; a second click on it
-/// deselects) and names its frames in a tooltip. The scene interactions of
-/// §7 (Expand, Hide, Jump to cut, Scrub) come with T05 part 3.
+/// deselects), names its frames in a tooltip, and shows the scene's hover
+/// overlay.
 struct TimelineSheetView: View {
     @Environment(AppModel.self) private var model
     let file: MovieFile
     let sheet: Sheet
+    /// The hover button under the pointer, for dimming the scenes it affects.
+    @State private var hoverButton: (scene: UUID, button: HoverButton)?
 
     var body: some View {
         let settings = model.library.settings
         let scenes = model.timelineScenes(of: sheet)
+        let dimmed = hoverButton.map { Sheet.affected($0.button, of: $0.scene, in: scenes.map(\.id)) } ?? []
         let padding = SheetGridView.padding
         GeometryReader { proxy in
             let geometry = model.timelineGeometry(file: file, sheet: sheet, size: proxy.size)
@@ -118,8 +121,12 @@ struct TimelineSheetView: View {
                     ForEach(Array(scenes.enumerated()), id: \.element.id) { index, scene in
                         let frame = geometry.sceneFrames[index]
                         SceneCell(
-                            file: file, scene: scene, size: frame.size,
-                            cornerRadius: min(geometry.borderRadius, frame.width / 2))
+                            file: file, sheet: sheet, scene: scene, size: frame.size,
+                            cornerRadius: min(geometry.borderRadius, frame.width / 2),
+                            dimmed: dimmed.contains(scene.id),
+                            onHoverButton: { button in
+                                hoverButton = button.map { (scene.id, $0) }
+                            })
                             .frame(width: frame.width, height: frame.height)
                             .offset(x: frame.minX, y: frame.minY)
                     }
@@ -132,26 +139,40 @@ struct TimelineSheetView: View {
     }
 }
 
-/// The interaction layer of one timeline scene: tooltip, hover highlight,
-/// selection outline, click to select or deselect.
+/// The interaction layer of one timeline scene: tooltip, hover highlight
+/// and overlay, dimming, selection outline, click to select or deselect.
 private struct SceneCell: View {
     @Environment(AppModel.self) private var model
     let file: MovieFile
+    let sheet: Sheet
     let scene: FrameSheetCore.Scene
     let size: CGSize
     let cornerRadius: Double
+    let dimmed: Bool
+    let onHoverButton: (HoverButton?) -> Void
     @State private var hovering = false
 
     var body: some View {
         let selected = model.selectedThumbId == scene.id
+        let scrubbing = model.scrub?.thumbId == scene.id
+        let showOverlay = (hovering || scrubbing) && size.width >= ThumbView.minOverlayWidth
+            && (model.scrub == nil || scrubbing)
         let end = scene.start + max(1, scene.length) - 1
         Color.clear
             .frame(width: size.width, height: size.height)
             .contentShape(Rectangle())
+            // Under the overlay, so its buttons keep their own tooltips.
             .help("Frames \(scene.start)–\(end) · \(scene.length) frames · \(Timecode.string(frames: scene.start, fps: file.fps))")
             .overlay {
-                if hovering && !selected {
+                if dimmed {
+                    RoundedRectangle(cornerRadius: cornerRadius).fill(Theme.crust.opacity(0.65))
+                } else if hovering && !selected {
                     RoundedRectangle(cornerRadius: cornerRadius).fill(Theme.crust.opacity(0.2))
+                }
+            }
+            .overlay {
+                if showOverlay {
+                    SceneHoverOverlay(sheet: sheet, scene: scene, size: size, onHoverButton: onHoverButton)
                 }
             }
             .overlay {
@@ -159,11 +180,74 @@ private struct SceneCell: View {
                     RoundedRectangle(cornerRadius: cornerRadius).strokeBorder(Theme.accent, lineWidth: 2)
                 }
             }
-            .onHover { hovering = $0 }
+            .onHover { inside in
+                hovering = inside
+                if !inside { onHoverButton(nil) }
+            }
             .onTapGesture { model.selectedThumbId = selected ? nil : scene.id }
-            .accessibilityElement()
+            .accessibilityElement(children: .contain)
             .accessibilityLabel("Scene, frames \(scene.start) to \(end)")
             .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
+    }
+}
+
+/// Buttons over a hovered timeline scene, in MoviePrint's arrangement
+/// (`Scene.js`): EXPAND at the top left and HIDE/SHOW at the top center;
+/// Jump to cut at the start and end at the middle of the sides (shot
+/// sheets), the scrub handle between them (commented out in MoviePrint,
+/// asked for by §7); Hide all before and after at the bottom corners, which
+/// MoviePrint labels IN and OUT and leaves out on a hidden scene. Drawn as
+/// the grid's overlay: faint white labels sized from the scene box.
+private struct SceneHoverOverlay: View {
+    @Environment(AppModel.self) private var model
+    let sheet: Sheet
+    let scene: FrameSheetCore.Scene
+    let size: CGSize
+    let onHoverButton: (HoverButton?) -> Void
+
+    var body: some View {
+        let isShot = sheet.type == .shot
+        VStack(spacing: 0) {
+            ZStack {
+                HStack {
+                    OverlayButton(title: "EXPAND", help: "Expand to 16 thumbs", report: { onHoverButton($0 ? .expand : nil) }) {
+                        model.expand(scene.id)
+                    }
+                    Spacer()
+                }
+                OverlayButton(
+                    title: scene.hidden ? "SHOW" : "HIDE", help: scene.hidden ? "Show scene" : "Hide scene",
+                    report: { onHoverButton($0 ? .hide : nil) }
+                ) {
+                    onHoverButton(nil)
+                    model.toggleHidden(scene.id)
+                }
+            }
+            Spacer(minLength: 0)
+            HStack {
+                if isShot { JumpToCutButton(neighbor: .previous, scene: scene.id) }
+                Spacer()
+                ScrubHandle(thumbId: scene.id, sceneLimited: isShot)
+                Spacer()
+                if isShot { JumpToCutButton(neighbor: .next, scene: scene.id) }
+            }
+            Spacer(minLength: 0)
+            HStack {
+                if !scene.hidden {
+                    OverlayButton(title: "◀ HIDE", help: "Hide all before", report: { onHoverButton($0 ? .inPoint : nil) }) {
+                        onHoverButton(nil)
+                        model.hideAll(.before, of: scene.id)
+                    }
+                    Spacer()
+                    OverlayButton(title: "HIDE ▶", help: "Hide all after", report: { onHoverButton($0 ? .outPoint : nil) }) {
+                        onHoverButton(nil)
+                        model.hideAll(.after, of: scene.id)
+                    }
+                }
+            }
+        }
+        .padding(HoverOverlay.unit(for: size) * 0.3)
+        .environment(\.overlayUnit, HoverOverlay.unit(for: size))
     }
 }
 
@@ -325,17 +409,22 @@ private struct HoverOverlay: View {
                 }
             }
             Spacer(minLength: 0)
-            // Shot sheets keep one thumb per scene: inserting and scrubbing
-            // with insert would break that (their Jump to cut and scene
-            // scrub come with T05 part 3).
-            if sheet.type != .shot {
-                HStack {
+            // Shot sheets keep one thumb per scene: Jump to cut instead of
+            // insert (§7), and the scrub stays inside the scene.
+            HStack {
+                if sheet.type == .shot {
+                    JumpToCutButton(neighbor: .previous, scene: thumb.id)
+                } else {
                     OverlayButton(systemImage: "plus", help: "Insert before", report: { onHoverButton($0 ? .insertBefore : nil) }) {
                         model.insertThumb(.before, relativeTo: thumb.id)
                     }
-                    Spacer()
-                    ScrubHandle(thumb: thumb)
-                    Spacer()
+                }
+                Spacer()
+                ScrubHandle(thumbId: thumb.id, sceneLimited: sheet.type == .shot)
+                Spacer()
+                if sheet.type == .shot {
+                    JumpToCutButton(neighbor: .next, scene: thumb.id)
+                } else {
                     OverlayButton(systemImage: "plus", help: "Insert after", report: { onHoverButton($0 ? .insertAfter : nil) }) {
                         model.insertThumb(.after, relativeTo: thumb.id)
                     }
@@ -424,11 +513,30 @@ private struct OverlayButton: View {
     }
 }
 
+/// Jump to cut at the start or end of a shot sheet's scene (§7, MoviePrint's
+/// `||` buttons at the scene's sides).
+private struct JumpToCutButton: View {
+    @Environment(AppModel.self) private var model
+    let neighbor: SceneNeighbor
+    let scene: UUID
+
+    var body: some View {
+        OverlayButton(
+            systemImage: neighbor == .previous ? "arrow.left.to.line" : "arrow.right.to.line",
+            help: neighbor == .previous ? "Jump to cut at start" : "Jump to cut at end"
+        ) {
+            model.jumpToCut(neighbor, of: scene)
+        }
+    }
+}
+
 /// Drag it to scrub (§7). The drag reports its location in the main area's
 /// coordinate space, where the scrub overlay is drawn.
 private struct ScrubHandle: View {
     @Environment(AppModel.self) private var model
-    let thumb: Thumb
+    let thumbId: UUID
+    /// A shot sheet's scrub: inside the scene, always change.
+    var sceneLimited = false
     @Environment(\.overlayUnit) private var unit
     @State private var hovering = false
 
@@ -436,11 +544,11 @@ private struct ScrubHandle: View {
         // Clearly larger than the other buttons: the main control.
         Text("‹|›")
             .font(Theme.condensed(unit * 1.9, weight: .semibold))
-            .modifier(OverlayLabel(active: hovering || model.scrub?.thumbId == thumb.id))
+            .modifier(OverlayLabel(active: hovering || model.scrub?.thumbId == thumbId))
             .frame(width: unit * 3.6, height: unit * 2.4)
             .contentShape(Rectangle())
             .onHover { hovering = $0 }
-            .help("Scrub (⇧ before, ⌥ after, ⌃ ends)")
+            .help(sceneLimited ? "Scrub inside the scene" : "Scrub (⇧ before, ⌥ after, ⌃ ends)")
             .accessibilityLabel("Scrub")
             .highPriorityGesture(
                 // Starts on mouse-down, so the thumb's own drag (reorder)
@@ -450,7 +558,7 @@ private struct ScrubHandle: View {
                         let modifiers = ScrubModifiers(NSEvent.modifierFlags)
                         if model.scrub == nil {
                             model.beginScrub(
-                                thumb.id, keyboard: false, modifiers: modifiers, x: value.location.x,
+                                thumbId, keyboard: false, modifiers: modifiers, x: value.location.x,
                                 y: value.location.y)
                         } else {
                             model.scrubMoved(x: value.location.x, y: value.location.y, modifiers: modifiers)

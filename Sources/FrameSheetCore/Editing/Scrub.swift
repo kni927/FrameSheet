@@ -54,6 +54,11 @@ public struct ScrubMapping: Sendable {
     /// `frame(atX:modifiers:)`); without it, the pointer maps absolutely
     /// over the live frame as in MoviePrint.
     public var pressX: Double?
+    /// A shot sheet's scene scrub (§7): the frame stays between
+    /// `leftFrame` and `rightFrame` (the scene's first and last frame) and
+    /// the modifiers do nothing (always change, no extension to the movie's
+    /// ends).
+    public var limitedToRange = false
 
     /// Pointer room at the window edges for reaching the first and last frame.
     public static let sideMargin = 10.0
@@ -87,6 +92,7 @@ public struct ScrubMapping: Sendable {
     /// side is compressed to reach its bound there. Pressed at the thumb's
     /// position on the live frame, it is the absolute map.
     public func frame(atX x: Double, modifiers: ScrubModifiers) -> Int {
+        let modifiers = limitedToRange ? ScrubModifiers() : modifiers
         guard let pressX else { return absoluteFrame(atX: x, modifiers: modifiers) }
         let low = Double(modifiers.contains(.option) ? thumbFrame : leftFrame)
         let high = Double(modifiers.contains(.shift) ? thumbFrame : rightFrame)
@@ -97,8 +103,8 @@ public struct ScrubMapping: Sendable {
         // bound → movie start or end beside it.
         let toLow = span > 0 ? (thumb - low) / span * liveWidth : 0
         let toHigh = span > 0 ? (high - thumb) / span * liveWidth : 0
-        let extendLow = modifiers.contains(.control) || thumbFrame == leftFrame
-        let extendHigh = modifiers.contains(.control) || thumbFrame == rightFrame
+        let extendLow = !limitedToRange && (modifiers.contains(.control) || thumbFrame == leftFrame)
+        let extendHigh = !limitedToRange && (modifiers.contains(.control) || thumbFrame == rightFrame)
         let value: Double
         if x == pressX {
             value = thumb
@@ -141,8 +147,8 @@ public struct ScrubMapping: Sendable {
     private func absoluteFrame(atX x: Double, modifiers: ScrubModifiers) -> Int {
         let low = Double(modifiers.contains(.option) ? thumbFrame : leftFrame)
         let high = Double(modifiers.contains(.shift) ? thumbFrame : rightFrame)
-        let isFirst = thumbFrame == leftFrame
-        let isLast = thumbFrame == rightFrame
+        let isFirst = !limitedToRange && thumbFrame == leftFrame
+        let isLast = !limitedToRange && thumbFrame == rightFrame
         let value: Double
         if x < liveMinX {
             value = modifiers.contains(.control) || isFirst
@@ -156,6 +162,23 @@ public struct ScrubMapping: Sendable {
             value = IntervalFrames.mapRange(x, liveMinX, liveMaxX, low, high)
         }
         return Int(value)
+    }
+
+    /// The scrub of a shot sheet's thumb (§7, "limited to the scene, always
+    /// change"): from the thumb's frame toward the scene's first and last
+    /// frame, never beyond.
+    public static func scene(
+        _ scene: Scene, thumbFrame: Int, frameCount: Int, liveMinX: Double, liveMaxX: Double,
+        containerWidth: Double, pressX: Double? = nil
+    ) -> ScrubMapping {
+        let first = scene.start
+        let last = max(first, scene.start + scene.length - 1)
+        var mapping = ScrubMapping(
+            thumbFrame: min(max(thumbFrame, first), last), leftFrame: first, rightFrame: last,
+            frameCount: frameCount, liveMinX: liveMinX, liveMaxX: liveMaxX, containerWidth: containerWidth,
+            pressX: pressX)
+        mapping.limitedToRange = true
+        return mapping
     }
 }
 

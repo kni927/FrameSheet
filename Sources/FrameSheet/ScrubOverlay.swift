@@ -92,9 +92,12 @@ struct ScrubOverlay: View {
     @ViewBuilder
     private func hint(in rect: CGRect) -> some View {
         // Pointer scrubs follow the modifiers live, so name them every time.
-        let modifiers = "⇧ add before  ·  ⌥ add after  ·  ⌃ range to the movie's start and end"
+        let modifiers = session.sceneLimited
+            ? "limited to the scene"
+            : "⇧ add before  ·  ⌥ add after  ·  ⌃ range to the movie's start and end"
         let text = session.keyboard
             ? "← → step  ·  ⇧ ×10  ·  Return confirms  ·  Esc cancels"
+                + (session.sceneLimited ? "  ·  " + modifiers : "")
             : session.sticky
                 ? "Click to confirm  ·  Esc cancels  ·  " + modifiers
                 : "Release to confirm  ·  " + modifiers

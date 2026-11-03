@@ -824,6 +824,10 @@ private struct TimelineSection: View {
                 help: "Lower finds more shots", format: { String(format: "%.1f", $0) })
             HStack {
                 Spacer(minLength: 0)
+                Button("Chart") { model.toggleDetectionChart() }
+                    .controlSize(.small)
+                    .disabled(file.map { model.scanCacheState($0.id) == .none } ?? true)
+                    .help("Detection chart of the stored scan (F)")
                 Button("Add new sheet") { model.addShotSheetFromCache() }
                     .controlSize(.small)
                     .disabled(!scanned || model.isScanning)

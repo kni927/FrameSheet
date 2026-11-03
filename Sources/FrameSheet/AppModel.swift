@@ -25,6 +25,8 @@ struct ScrubSession {
     var sticky = false
 
     var action: ScrubAction { ScrubAction(modifiers) }
+    /// A shot sheet's scrub: inside the scene, always change (§7).
+    var sceneLimited: Bool { mapping.limitedToRange }
     /// Frames shown left and right of the live frame.
     var lowFrame: Int { modifiers.contains(.option) ? mapping.thumbFrame : mapping.leftFrame }
     var highFrame: Int { modifiers.contains(.shift) ? mapping.thumbFrame : mapping.rightFrame }
@@ -60,6 +62,8 @@ final class AppModel {
     var streamingSheet: SheetRef?
     /// Automatic IN/OUT → Apply is detecting.
     var isDetectingInOut = false
+    /// The detection chart (key F) while it is open.
+    var detectionChart: DetectionChartData?
     var showMovieList = true
     var showSettings = true
     /// Missing movie files by id (checked on launch and on open).
@@ -989,12 +993,18 @@ final class AppModel {
         }
     }
 
-    /// Hide/Show; after hiding, the next visible thumb is selected.
+    /// Hide/Show; after hiding, the next visible thumb is selected (grid).
+    /// In the timeline the selection stays, except on the scene hidden.
     func toggleHidden(_ thumb: UUID) {
         guard let ref = currentRef, let sheet = currentSheet else { return }
         let hiding = sheet.thumbs.first { $0.id == thumb }?.hidden == false
         edit { $0.toggleHidden(ref, thumb: thumb) }
-        if hiding { selectedThumbId = currentSheet?.selectionAfterHiding(thumb) }
+        guard hiding else { return }
+        if isTimeline(sheet) {
+            if selectedThumbId == thumb { selectedThumbId = nil }
+        } else {
+            selectedThumbId = currentSheet?.selectionAfterHiding(thumb)
+        }
     }
 
     /// IN / OUT: on interval sheets recapture between this thumb and the
@@ -1038,21 +1048,32 @@ final class AppModel {
     /// Starts a scrub of `thumb`; `keyboard` scrubs step with the arrows and
     /// keep the action the modifiers chose at the start.
     func beginScrub(_ thumb: UUID, keyboard: Bool, modifiers: ScrubModifiers, x: Double = 0, y: Double = 0) {
-        // Shot sheets scrub inside the scene (T05 part 3); the interval scrub
-        // would insert thumbs without scenes.
-        guard let ref = currentRef, let sheet = currentSheet, let file = currentFile, sheet.type != .shot,
+        guard let ref = currentRef, let sheet = currentSheet, let file = currentFile,
               let own = sheet.thumbs.first(where: { $0.id == thumb })
         else { return }
-        let (left, right) = sheet.visibleNeighbors(of: thumb)
         let layout = scrubLayout(for: file)
-        let mapping = ScrubMapping(
-            thumbFrame: own.frameNumber, leftFrame: left, rightFrame: right, frameCount: file.frameCount,
-            liveMinX: layout.live.minX, liveMaxX: layout.live.maxX, containerWidth: mainAreaSize.width,
-            // A drag starts at the thumb's frame where the handle was pressed.
-            pressX: keyboard ? nil : x)
+        // A drag starts at the thumb's frame where the handle was pressed.
+        let pressX = keyboard ? nil : x
+        let mapping: ScrubMapping
+        var modifiers = modifiers
+        if sheet.type == .shot {
+            // Shot sheets keep one thumb per scene: the scrub stays inside
+            // the thumb's scene and always changes it (§7).
+            guard let scene = sheet.scenes.first(where: { $0.id == thumb }) else { return }
+            mapping = .scene(
+                scene, thumbFrame: own.frameNumber, frameCount: file.frameCount, liveMinX: layout.live.minX,
+                liveMaxX: layout.live.maxX, containerWidth: mainAreaSize.width, pressX: pressX)
+            modifiers = []
+        } else {
+            let (left, right) = sheet.visibleNeighbors(of: thumb)
+            mapping = ScrubMapping(
+                thumbFrame: own.frameNumber, leftFrame: left, rightFrame: right, frameCount: file.frameCount,
+                liveMinX: layout.live.minX, liveMaxX: layout.live.maxX, containerWidth: mainAreaSize.width,
+                pressX: pressX)
+        }
         selectedThumbId = thumb
         scrub = ScrubSession(
-            ref: ref, thumbId: thumb, mapping: mapping, frame: own.frameNumber,
+            ref: ref, thumbId: thumb, mapping: mapping, frame: mapping.thumbFrame,
             modifiers: modifiers, keyboard: keyboard, lastX: x, lastY: y)
         scrubImage = cachedImage(file: file.id, frame: own.frameNumber, width: Self.thumbWidth)
         if !keyboard { scrubMoved(x: x, y: y, modifiers: modifiers) }
@@ -1069,7 +1090,7 @@ final class AppModel {
     /// Pointer moved (x, y in the main area's coordinates).
     func scrubMoved(x: Double, y: Double, modifiers: ScrubModifiers) {
         guard var session = scrub, !session.keyboard else { return }
-        session.modifiers = modifiers
+        session.modifiers = session.sceneLimited ? [] : modifiers
         session.lastX = x
         session.lastY = y
         session.overCancel = y < ScrubLayout.cancelBarHeight
@@ -1081,7 +1102,7 @@ final class AppModel {
 
     /// Modifier keys changed while dragging.
     func scrubModifiersChanged(_ modifiers: ScrubModifiers) {
-        guard let session = scrub, !session.keyboard, session.modifiers != modifiers else { return }
+        guard let session = scrub, !session.keyboard, !session.sceneLimited, session.modifiers != modifiers else { return }
         scrubMoved(x: session.lastX, y: session.lastY, modifiers: modifiers)
     }
 

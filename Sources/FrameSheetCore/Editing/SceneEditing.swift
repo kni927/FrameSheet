@@ -103,7 +103,7 @@ extension SceneList {
                 return includeHidden || !scene.hidden ? scene : nil
             }
         case .interval:
-            return intervalScenes(of: sheet)
+            return intervalScenes(of: sheet, includeHidden: includeHidden)
         case .faces:
             return []
         }
@@ -218,5 +218,72 @@ extension Library {
             sheet.reindex()
             return true
         } ?? false
+    }
+}
+
+/// The scene before or after another one, for merging and Jump to cut.
+public enum SceneNeighbor: Sendable {
+    case previous, next
+}
+
+/// What Cut on the selected scene did.
+public enum SceneCutResult: Sendable, Equatable {
+    /// The id of the new second part.
+    case cut(UUID)
+    /// The frame is the scene's first: there is a cut there already
+    /// (MoviePrint's "There is already a cut").
+    case alreadyCut
+    case notFound
+}
+
+extension Library {
+    /// Cut on the selected scene (T05; MoviePrint cuts at the player's
+    /// frame with `onCutSceneClick`, which comes with the player view in
+    /// T06): cuts the scene at its thumb's frame, which the scene scrub
+    /// moves to the frame wanted. A thumb on the scene's first frame finds
+    /// a cut there already.
+    public mutating func cutSceneAtThumb(_ ref: SheetRef, scene id: UUID) -> SceneCutResult {
+        guard let sheet = sheet(ref.sheetId, of: ref.fileId),
+              let scene = sheet.scenes.first(where: { $0.id == id }),
+              let frame = sheet.thumbs.first(where: { $0.id == id })?.frameNumber
+        else { return .notFound }
+        guard frame > scene.start else { return .alreadyCut }
+        return cutScene(ref, scene: id, at: frame).map(SceneCutResult.cut) ?? .notFound
+    }
+
+    /// The cut between a scene and its previous or next scene (all scenes,
+    /// hidden ones too, as MoviePrint's `allScenes`): the start frame of
+    /// the later one; nil at the first (previous) or last (next) scene.
+    public func cut(_ ref: SheetRef, scene id: UUID, _ neighbor: SceneNeighbor) -> Int? {
+        guard let scenes = sheet(ref.sheetId, of: ref.fileId)?.scenes,
+              let i = scenes.firstIndex(where: { $0.id == id })
+        else { return nil }
+        switch neighbor {
+        case .previous: return i > 0 ? scenes[i].start : nil
+        case .next: return i + 1 < scenes.count ? scenes[i + 1].start : nil
+        }
+    }
+
+    /// Merge with previous / next on the selected scene: `mergeScenes` at
+    /// the cut on that side. Returns the id of the merged scene (the earlier
+    /// one's, MoviePrint's `onMergeSceneClick` selects it), or nil.
+    @discardableResult
+    public mutating func mergeScene(_ ref: SheetRef, scene id: UUID, with neighbor: SceneNeighbor) -> UUID? {
+        guard let frame = cut(ref, scene: id, neighbor),
+              let pair = adjacentSceneIndices(ref, cut: frame),
+              let firstId = sheet(ref.sheetId, of: ref.fileId)?.scenes[pair.0].id,
+              mergeScenes(ref, cut: frame)
+        else { return nil }
+        return firstId
+    }
+
+    /// MoviePrint's `onJumpToCutSceneClick`: the cut at the start (previous)
+    /// or end (next) of a scene and the scene that starts there, which
+    /// MoviePrint selects (it then shows the player at that frame).
+    public func jumpToCut(_ ref: SheetRef, scene id: UUID, _ neighbor: SceneNeighbor) -> (frame: Int, scene: UUID)? {
+        guard let frame = cut(ref, scene: id, neighbor),
+              let scene = sheet(ref.sheetId, of: ref.fileId)?.scenes.first(where: { $0.start == frame })
+        else { return nil }
+        return (frame, scene.id)
     }
 }

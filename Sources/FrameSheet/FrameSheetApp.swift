@@ -42,6 +42,13 @@ struct FrameSheetApp: App {
                 Button(model.showMovieList ? "Hide Movie List" : "Show Movie List") { model.showMovieList.toggle() }
                 Button(model.showSettings ? "Hide Settings Panel" : "Show Settings Panel") { model.showSettings.toggle() }
                 Divider()
+                // Key F (the key monitor; a menu shortcut would also fire
+                // while a text field has focus).
+                Button(model.detectionChart == nil ? "Show Detection Chart" : "Hide Detection Chart") {
+                    model.toggleDetectionChart()
+                }
+                .disabled(model.currentFile == nil)
+                Divider()
             }
         }
         Settings {
@@ -100,8 +107,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         static let right: UInt16 = 124
     }
 
-    /// Grid keys (§8). Letter, number, arrow and Return keys do nothing while
-    /// a text field has focus; ⌘ shortcuts go to the menus.
+    /// Grid keys (§8): A, F, G, M, 1, 3, Escape, the arrows and Return.
+    /// Letter, number, arrow and Return keys do nothing while a text field
+    /// has focus; ⌘ shortcuts go to the menus. The detection chart is a
+    /// sheet, another window: its own Esc and F close it.
     private func handleKey(_ event: NSEvent) -> NSEvent? {
         // Only the main window: open panels, the color panel and alerts
         // keep their own keys.
@@ -148,6 +157,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         switch event.charactersIgnoringModifiers?.lowercased() {
         case "a": model.presentOpenPanel()
         case "m": model.saveSheet()
+        case "f": model.toggleDetectionChart()
         case "g":
             guard let ref = model.currentRef else { return event }
             model.toggleView(ref)
