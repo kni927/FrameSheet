@@ -25,7 +25,7 @@ Before making changes, read:
 ## Development Rules
 
 - v3 is a rebuild that reproduces MoviePrint v0.2.23 (`docs/V3_SPEC.md`);
-  follow the spec's behaviour and values, and ask the HQ when it is silent or
+  follow the spec's behavior and values, and ask the HQ when it is silent or
   marked (open).
 - Target macOS 27+, arm64 only, Swift 6 language mode; SwiftUI, with AppKit
   only where SwiftUI falls short.
