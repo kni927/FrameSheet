@@ -183,7 +183,7 @@ extension AppModel {
         scanData[ref.fileId] = nil
         if cancelled, let job {
             let at = job.fraction.map { " at \(Int(($0 * 100).rounded(.down))) %" } ?? ""
-            showNotice("Shot detection stopped\(at). Add shot-detection sheet resumes it.")
+            showNotice("Shot detection stopped\(at). The shot-detection button resumes it.")
         }
     }
 

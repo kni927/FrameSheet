@@ -225,7 +225,7 @@ struct SheetToolbar: ToolbarContent {
         guard let id = model.library.currentFileId else { return "Add shot-detection sheet" }
         switch model.scanCacheState(id) {
         case .complete: return "Add shot-detection sheet (from the stored scan)"
-        case .partial: return "Add shot-detection sheet (resumes the scan)"
+        case .partial: return "Resume shot detection"
         case .none: return "Add shot-detection sheet (scans the movie)"
         }
     }

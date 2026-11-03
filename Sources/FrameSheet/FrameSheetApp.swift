@@ -128,6 +128,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         guard !flags.contains(.command), !(event.window?.firstResponder is NSText) else { return event }
         switch event.keyCode {
+        case KeyCode.escape:
+            // Escape cancels a running shot detection (it resumes later).
+            guard model.isScanning, flags.isEmpty else { return event }
+            model.cancelScan()
+            return nil
         case KeyCode.left, KeyCode.right:
             guard flags == [.shift, .option] else { return event }
             model.selectAdjacentThumb(event.keyCode == KeyCode.left ? -1 : 1)
