@@ -452,8 +452,11 @@ sessions (tested 2026-11-04; `docs/CLOUD_ENVIRONMENTS.md` in
   session that started a child (a sub-task, a check, a test) archives it
   from the same side once its work is verified (pushed, nothing left
   uncommitted). A child never archives itself; an HQ's successor archives its
-  predecessor (Handover), and a TF's successor archives the TF it replaced
-  with the desktop session tool `archive_session`.
+  predecessor (Handover), and a local successor archives the session it
+  replaced without asking the owner (owner-approved, 2026-11-04): once it
+  is detached and the predecessor is idle with its handover pushed, it turns
+  the predecessor's Remote Control off (`set_remote_control` false), then
+  `archive_session` (`local-handover`).
 - **Screen operations:** before computer use, ask the owner to stand by;
   run `open -a Claude` right before each computer-use approval, or the
   dialog stays hidden. Screen work runs in the main session or a new
