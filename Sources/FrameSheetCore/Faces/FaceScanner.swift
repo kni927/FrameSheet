@@ -411,7 +411,7 @@ public enum FaceScanner {
 final class FaceCollector: ScanFrameObserver {
     /// Analysis workers: Vision on one worker (18 ms a frame at 720 px)
     /// was slower than the reader on a 24 fps film sampled every 10th frame.
-    static let defaultWorkers = 2
+    static let defaultWorkers = 1
 
     /// Frames queued, being analyzed, or analyzed but waiting for an
     /// earlier frame, at most, per worker (0.9 MB a 720 px frame).
