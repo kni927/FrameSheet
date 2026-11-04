@@ -90,7 +90,10 @@ which you can edit:
   count, face size) are one undo step each; the toolbar shows or hides the
   face rectangles (in the window and the player; in saved sheets with
   Output → Include face rectangles). The confidence and size thresholds are
-  in the settings panel and apply to the next scan.
+  in the settings panel; Apply rescans the current faces sheet with them.
+  A movie's stored shot and face scans can be deleted with **Clear Stored
+  Scans** in its menu. Each scan writes timings to
+  `~/Library/Logs/FrameSheet/scan.log`.
 - ⌘Z / ⇧⌘Z undo and redo up to 50 edits.
 
 ## Requirements

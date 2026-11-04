@@ -61,6 +61,12 @@ Sources/FrameSheetCore/          no SwiftUI or AppKit
 │   ├── FrameStripGeometry.swift strip slices, timeline bars, scene bars
 │   ├── PlayerEditing.swift      cut/merge and change/add at a frame
 │   └── FFmpegPlayback.swift     video-only ffmpeg playback pacing
+├── Faces/
+│   ├── FaceAnalyzer.swift       FaceAnalyzer protocol, Vision face rectangles
+│   ├── FaceScanner.swift        face scan on the scan pass, analysis workers,
+│   │                            thumbnails from the scanned frames
+│   ├── FaceCache.swift          per-movie face cache, stale scan cleanup
+│   └── FaceSheetSource.swift    a faces sheet's scope and thresholds (Apply)
 ├── TimelineGeometry.swift       timeline rows, px per frame, scene boxes
 ├── PathDisplay.swift            ~/… for paths under home
 └── Decode/
@@ -84,6 +90,8 @@ Sources/FrameSheet/              the app
 ├── PlayerView.swift             the player view (key 2)
 ├── PlayerController.swift       AVPlayer or ffmpeg playback, stills, strip runs
 ├── AppModel+Player.swift        player entry points and edits at its frame
+├── AppModel+Faces.swift         face scans, faces sheets, sort, filter, Apply
+├── ScanLog.swift                scan timings to ~/Library/Logs/FrameSheet/scan.log
 ├── PrintView.swift              the print (header, thumbs, frame info), drawn
 │                                in the window and by ImageRenderer for saving
 ├── ContentView.swift            split view, inspector, title and sidebar
@@ -162,6 +170,19 @@ open-GOP film with short GOPs and about 250–280 ms on a 1080p H.264 file with
 4 s GOPs (the reader starts at the previous keyframe). Playback holds
 `DecodeGate` for as long as AVPlayer (or the ffmpeg pipe) plays, so no other
 decode runs beside it; paused frames are exact stills through decision 25.
+
+Face scans run Vision face rectangles on the scan pass's 720 px frames (the
+shot scan's combined pass when the shot scan has not read them, a faces-only
+pass otherwise): sampled frames are copied into a pooled buffer and handed to
+two analysis workers through a 6-frame backlog with back-pressure; results are
+committed in frame order, so a cancel leaves a consistent prefix to resume
+from. Frames with faces also give the faces sheet's thumbnails, so the sheet
+needs no further decodes. Measured on an open-GOP 24 fps film (17620 frames,
+every 10th frame): 18.8 s in the app on a quiet Mac, the same as the shot scan
+alone; Vision overlaps two requests (about 1.6× the single throughput), and a
+remote-screen app sharing the GPU and media engine slowed the same scan to
+33 s. Window thumbs are decoded at their drawn size (128–640 px), so a
+400-thumb faces sheet fits the 256 MB cache.
 
 Near the end of a movie the retry window is moved inside the movie (center at
 most end − 0.5 s). A file whose sync samples are open-GOP I frames decodes

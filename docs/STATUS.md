@@ -22,8 +22,19 @@ reproduces MoviePrint v0.2.23 for Apple Silicon: decisions 14–22 in
   legibility pass (done) → T04 save, header, naming, PNG/JSON export and
   import (done) → T04b frames AVFoundation cannot decode (done, decision 25)
   → T05 shot scan, timeline, cut/merge, EDL (done) → T06 player view (done)
-  → T07 faces Lv1 (in progress, TF #01) → T08 transforms, Save All, polish → version and release
-  TASK.
+  → T07 faces Lv1 (done) → T08 transforms, Save All, polish → version and
+  release TASK.
+- Spec gaps for the HQ from T07: face scopes use the lowest to highest thumb
+  (§4 says IN–OUT); faceCount counts only faces that pass the thresholds;
+  no empty faces sheets; the filter keeps the current order; Apply rescans a
+  faces sheet in place; Clear Stored Scans; face rectangles in prints are an
+  Output option (off).
+- Face follow-ups (owner, 2026-11-04): a "per shot" scope (the middle frame of
+  each scene); more Vision workers on chips with two Neural Engines (measure
+  first); a faces sheet opened after a relaunch decodes its thumbs one by one
+  (a sequential read would fix it).
+- Scans run slower while a remote-screen app is active (it shares the GPU and
+  media engine): 33 s instead of 19 s for a 12 min film's face scan.
 - Audio for ffmpeg playback (owner: later, e.g. T08).
 - Next UI step (owner): move some right-panel settings to the Settings window.
 - Hung runs: `scripts/check.sh` stops itself after 15 min; `scripts/check.sh
