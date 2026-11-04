@@ -13,6 +13,8 @@
 #   scripts/check.sh stop       stop a running check.sh and the processes it
 #                               started (the sandbox cannot stop them)
 #
+# The last run's full output is in ~/Library/Logs/FrameSheet/check.log.
+#
 # A run stops itself after FRAMESHEET_CHECK_TIMEOUT seconds (default 900).
 set -euo pipefail
 
@@ -20,6 +22,14 @@ REPO_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 SCRATCH_DIR="${FRAMESHEET_SCRATCH_PATH:-$HOME/Library/Caches/FrameSheet/build}"
 TIMEOUT="${FRAMESHEET_CHECK_TIMEOUT:-900}"
 MODE="${1:-}"
+
+# The whole run also goes to a log, so a failure is readable when a caller
+# shows only part of the output.
+LOG="$HOME/Library/Logs/FrameSheet/check.log"
+if [ "$MODE" != "stop" ] && [ "$MODE" != "launch" ]; then
+    mkdir -p "$(dirname "$LOG")"
+    exec > >(tee "$LOG") 2>&1
+fi
 
 # Prints the process IDs below $1, deepest first. Uses ps, which works
 # inside the Claude Code sandbox too (pgrep cannot list processes there).

@@ -34,9 +34,16 @@ public protocol FaceAnalyzer: Sendable {
     /// Loads the model, so the first frame of a scan does not wait for it
     /// (first request in a process: up to 1.2 s; docs/v3-measurements.md).
     func warmUp() async
+    /// An analyzer for one more analysis worker of the face scan, which
+    /// calls it beside this one: its own request state (Vision requests
+    /// are not shared between threads). By default this analyzer itself,
+    /// for analyzers that are safe to call at once.
+    func makeWorker() -> any FaceAnalyzer
 }
 
 extension FaceAnalyzer {
+    public func makeWorker() -> any FaceAnalyzer { self }
+
     public func detect(in buffer: CVPixelBuffer) async throws -> [DetectedFace] {
         CVPixelBufferLockBaseAddress(buffer, .readOnly)
         defer { CVPixelBufferUnlockBaseAddress(buffer, .readOnly) }
@@ -54,10 +61,13 @@ extension FaceAnalyzer {
 public final class VisionFaceAnalyzer: FaceAnalyzer {
     public static let shared = VisionFaceAnalyzer()
 
-    /// One request for every frame (the face scan has one analysis worker).
+    /// One request for every frame this analyzer is given; each further
+    /// analysis worker of the face scan has an analyzer of its own.
     private let request = DetectFaceRectanglesRequest()
 
     public init() {}
+
+    public func makeWorker() -> any FaceAnalyzer { VisionFaceAnalyzer() }
 
     public func detect(in frame: BGRAFrame) async throws -> [DetectedFace] {
         // A copy the request owns: the scan's frame is reused once the

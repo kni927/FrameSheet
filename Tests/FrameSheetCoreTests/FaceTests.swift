@@ -34,15 +34,22 @@ private final class StubAnalyzer: FaceAnalyzer {
     func warmUp() async {}
 }
 
-/// Takes `delay` per frame and records the frame numbers it was given (the
-/// first four bytes of a frame) in call order, and how many frames the
-/// collector had queued at most.
+/// Takes `delay` per frame (or a random 5–30 ms, say) and records the frame
+/// numbers it was given (the first four bytes of a frame) in the order the
+/// calls ended, and how many calls ran at once at most.
 private final class SlowAnalyzer: FaceAnalyzer {
     let delay: Duration
+    let randomMilliseconds: ClosedRange<Int>?
     private let state = Mutex<(order: [Int], running: Int, maxRunning: Int)>(([], 0, 0))
 
     init(delay: Duration) {
         self.delay = delay
+        randomMilliseconds = nil
+    }
+
+    init(milliseconds: ClosedRange<Int>) {
+        delay = .zero
+        randomMilliseconds = milliseconds
     }
 
     var order: [Int] { state.withLock { $0.order } }
@@ -55,7 +62,7 @@ private final class SlowAnalyzer: FaceAnalyzer {
             $0.maxRunning = max($0.maxRunning, $0.running)
         }
         defer { state.withLock { $0.running -= 1 } }
-        try await Task.sleep(for: delay)
+        try await Task.sleep(for: randomMilliseconds.map { .milliseconds(Int.random(in: $0)) } ?? delay)
         state.withLock { $0.order.append(number) }
         return number % 20 == 0 ? [DetectedFace(confidence: 0.9, box: CGRect(x: 0.1, y: 0.1, width: 0.2, height: 0.3))] : []
     }
@@ -350,9 +357,10 @@ private extension Library {
     private static let frames = Array(stride(from: 0, to: 400, by: 10))
 
     /// Feeds `frames` as a scan pass would, numbering each frame in its
-    /// first pixel; returns the most frames that were queued or being
-    /// analyzed at once.
-    private func feed(_ collector: FaceCollector, _ frames: [Int]) async -> Int {
+    /// first pixel, calling `each` after every frame; returns the most
+    /// frames that were queued, being analyzed or waiting to be recorded at
+    /// once.
+    private func feed(_ collector: FaceCollector, _ frames: [Int], each: () -> Void = {}) async -> Int {
         let image = OwnedBGRA(width: 64, height: 36)
         var maxWaiting = 0
         for (i, number) in frames.enumerated() {
@@ -362,6 +370,7 @@ private extension Library {
             // Reused at once, as the scan's frame is.
             image.data.storeBytes(of: UInt32.max, as: UInt32.self)
             maxWaiting = max(maxWaiting, i + 1 - collector.analyzedNow)
+            each()
         }
         withExtendedLifetime(image) {}
         return maxWaiting
@@ -373,7 +382,8 @@ private extension Library {
         let analyzer = SlowAnalyzer(delay: .milliseconds(5))
         let frames = Self.frames
         let collector = FaceCollector(
-            data: FaceData(thresholds: FaceThresholds()), wanted: Set(frames), analyzer: analyzer, backlog: 4)
+            data: FaceData(thresholds: FaceThresholds()), wanted: Set(frames), analyzer: analyzer, workers: 1,
+            backlog: 4)
         let maxWaiting = await collector.analyzing { await feed(collector, frames) }
         #expect(analyzer.order == frames)
         #expect(analyzer.maxRunning == 1)
@@ -403,7 +413,8 @@ private extension Library {
             })
         let collector = FaceCollector(
             data: FaceData(thresholds: FaceThresholds()), wanted: Set(frames),
-            analyzer: SlowAnalyzer(delay: .zero), backlog: 4, thumbnails: thumbnails, facesFramesBefore: 2)
+            analyzer: SlowAnalyzer(delay: .zero), workers: 1, backlog: 4, thumbnails: thumbnails,
+            facesFramesBefore: 2)
         _ = await collector.analyzing { await feed(collector, frames) }
         let withFaces = frames.filter { $0 % 20 == 0 }
         let got = delivered.withLock { $0 }
@@ -420,7 +431,8 @@ private extension Library {
         let frames = Self.frames
         let analyzer = SlowAnalyzer(delay: .milliseconds(10))
         let collector = FaceCollector(
-            data: FaceData(thresholds: FaceThresholds()), wanted: Set(frames), analyzer: analyzer, backlog: 4)
+            data: FaceData(thresholds: FaceThresholds()), wanted: Set(frames), analyzer: analyzer, workers: 1,
+            backlog: 4)
         let task = Task { await collector.analyzing { await feed(collector, frames) } }
         while collector.analyzedNow < 5 { try await Task.sleep(for: .milliseconds(2)) }
         task.cancel()
@@ -434,9 +446,79 @@ private extension Library {
 
         let missing = partial.missing(frames)
         let next = SlowAnalyzer(delay: .milliseconds(1))
-        let resumed = FaceCollector(data: partial, wanted: Set(missing), analyzer: next, backlog: 4)
+        let resumed = FaceCollector(data: partial, wanted: Set(missing), analyzer: next, workers: 1, backlog: 4)
         _ = await resumed.analyzing { await feed(resumed, frames) }
         #expect(next.order == missing)
+        #expect(Array(resumed.snapshot.analyzed) == frames)
+    }
+
+    /// Two workers on an analyzer of uneven speed finish frames out of
+    /// order: every frame is analyzed once, at most two at a time, and
+    /// recorded in frame order (always a prefix), thumbnails too.
+    @Test func twoWorkersRecordInFrameOrder() async {
+        let analyzer = SlowAnalyzer(milliseconds: 5...30)
+        let frames = Self.frames
+        let delivered = Mutex<[Int]>([])
+        let asked = Mutex<[Int]>([])
+        let thumbnails = FaceScanThumbnails(
+            width: { n in
+                asked.withLock { $0.append(n) }
+                return 16
+            },
+            deliver: { frame, _, _ in delivered.withLock { $0.append(frame) } })
+        let collector = FaceCollector(
+            data: FaceData(thresholds: FaceThresholds()), wanted: Set(frames), analyzer: analyzer, workers: 2,
+            thumbnails: thumbnails)
+        #expect(collector.backlog == 6)
+        var alwaysPrefix = true
+        let maxWaiting = await collector.analyzing {
+            await feed(collector, frames) {
+                let analyzed = Array(collector.snapshot.analyzed)
+                if analyzed != Array(frames.prefix(analyzed.count)) { alwaysPrefix = false }
+            }
+        }
+        #expect(alwaysPrefix)
+        #expect(analyzer.order.count == frames.count && analyzer.order.sorted() == frames)
+        #expect(analyzer.maxRunning >= 1 && analyzer.maxRunning <= 2)
+        #expect(maxWaiting <= 6)
+        let data = collector.snapshot
+        #expect(Array(data.analyzed) == frames)
+        #expect(data.frames.keys.sorted() == frames.filter { $0 % 20 == 0 })
+        #expect(collector.analyzedNow == frames.count && collector.facesFound == frames.count / 2)
+        let withFaces = frames.filter { $0 % 20 == 0 }
+        #expect(delivered.withLock { $0 } == withFaces)
+        #expect(asked.withLock { $0 } == Array(1...withFaces.count))
+        let stats = collector.stats
+        #expect(stats.analyzed == frames.count && stats.thumbnails == withFaces.count)
+        #expect(stats.wallSeconds > 0 && stats.wallSeconds <= stats.analyzeSeconds + 0.001)
+    }
+
+    /// Cancel part way with two workers: what was recorded is a prefix of
+    /// the frames (frames analyzed past it are dropped), and a resumed scan
+    /// analyzes the rest.
+    @Test func twoWorkersCancelLeavesAConsistentPrefixAndResume() async throws {
+        let frames = Self.frames
+        let analyzer = SlowAnalyzer(milliseconds: 5...30)
+        let collector = FaceCollector(
+            data: FaceData(thresholds: FaceThresholds()), wanted: Set(frames), analyzer: analyzer, workers: 2)
+        let task = Task { await collector.analyzing { await feed(collector, frames) } }
+        while collector.analyzedNow < 5 { try await Task.sleep(for: .milliseconds(2)) }
+        task.cancel()
+        _ = await task.value
+        let partial = collector.snapshot
+        let count = partial.analyzed.count
+        #expect(count >= 5 && count < frames.count)
+        #expect(Array(partial.analyzed) == Array(frames.prefix(count)))
+        #expect(partial.frames.keys.sorted() == frames.prefix(count).filter { $0 % 20 == 0 })
+        #expect(analyzer.maxRunning <= 2)
+
+        let missing = partial.missing(frames)
+        #expect(missing == Array(frames.dropFirst(count)))
+        let next = SlowAnalyzer(milliseconds: 1...5)
+        let resumed = FaceCollector(data: partial, wanted: Set(missing), analyzer: next, workers: 2)
+        _ = await resumed.analyzing { await feed(resumed, frames) }
+        #expect(next.order.count == missing.count && next.order.sorted() == missing)
+        #expect(next.maxRunning <= 2)
         #expect(Array(resumed.snapshot.analyzed) == frames)
     }
 }
@@ -599,7 +681,7 @@ private extension Library {
         #expect(result.failure == nil && !result.cancelled)
         let data = try #require(result.data)
         #expect(Array(data.analyzed) == frames)
-        #expect(analyzer.maxRunning == 1)
+        #expect(analyzer.maxRunning <= FaceCollector.defaultWorkers)
         #expect(try stores.faces.load(id) == data)
     }
 
