@@ -316,7 +316,7 @@ Alt and Ctrl become Option and Control.
   `columnCount`, `frameNumberArray` (JSON, non-shot) or `sceneArray` (JSON,
   shot).
 - Include individual thumbs → a folder named after the print.
-- **Save All MoviePrints:** queue over all sheets of all files (files with no
+- **Save All sheets:** queue over all sheets of all files (files with no
   sheet get a default interval sheet); modal progress with Cancel.
 - **JSON export** `<file>-<sheet>.json` =
   `{filePath, transformObject, columnCount, frameNumberArray | sceneArray}`.
