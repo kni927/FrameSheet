@@ -21,11 +21,15 @@ reproduces MoviePrint v0.2.23 for Apple Silicon: decisions 14–22 in
 - v3.0.0 order (owner, 2026-11-02): T03 interval editing (done) → T03b UI
   legibility pass (done) → T04 save, header, naming, PNG/JSON export and
   import (done) → T04b frames AVFoundation cannot decode (done, decision 25)
-  → T05 shot scan, timeline, cut/merge, EDL (done) → T06 player view → T07
-  faces Lv1 → T08 transforms, Save All, polish → version and release TASK.
-- T06 picks up from T05: Jump to cut and Cut should use the player's frame
-  (MoviePrint does); Return in the timeline (cut here / merge at a cut) is a
-  player key.
+  → T05 shot scan, timeline, cut/merge, EDL (done) → T06 player view (done)
+  → T07 faces Lv1 → T08 transforms, Save All, polish → version and release
+  TASK.
+- Spec gaps for the HQ from T06: the native video sits above the frame strip
+  (MoviePrint draws the strip in the video area); P plays (§8 has no play
+  key); previous/next thumb stops at the ends (MoviePrint wraps); ffmpeg
+  files play video only with a "Playback using ffmpeg · no audio" label
+  (owner); the player hides both sidebars and restores them on close.
+- Audio for ffmpeg playback (owner: later, e.g. T08).
 - Next UI step (owner): move some right-panel settings to the Settings window.
 - Hung runs: `scripts/check.sh` stops itself after 15 min; `scripts/check.sh
   stop` ends a run the sandbox cannot (owner, 2026-11-03).

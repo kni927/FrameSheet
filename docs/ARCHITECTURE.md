@@ -56,6 +56,11 @@ Sources/FrameSheetCore/          no SwiftUI or AppKit
 │   ├── ScanCache.swift          per-movie Float32 difference + color, resumable
 │   ├── AutoInOut.swift          black head and tail detection
 │   └── DetectionChart.swift     histogram and k-means threshold (display)
+├── Player/
+│   ├── PlayerNavigation.swift   steps, cut and thumb jumps, frame from time
+│   ├── FrameStripGeometry.swift strip slices, timeline bars, scene bars
+│   ├── PlayerEditing.swift      cut/merge and change/add at a frame
+│   └── FFmpegPlayback.swift     video-only ffmpeg playback pacing
 ├── TimelineGeometry.swift       timeline rows, px per frame, scene boxes
 ├── PathDisplay.swift            ~/… for paths under home
 └── Decode/
@@ -76,6 +81,9 @@ Sources/FrameSheet/              the app
 ├── AppModel+Scan.swift          shot scans from the app: stream, cancel, resume
 ├── AppModel+Scenes.swift        scene actions: cut, merge, jump to cut
 ├── DetectionChartView.swift     the detection chart (F)
+├── PlayerView.swift             the player view (key 2)
+├── PlayerController.swift       AVPlayer or ffmpeg playback, stills, strip runs
+├── AppModel+Player.swift        player entry points and edits at its frame
 ├── PrintView.swift              the print (header, thumbs, frame info), drawn
 │                                in the window and by ImageRenderer for saving
 ├── ContentView.swift            split view, inspector, title and sidebar
@@ -145,6 +153,15 @@ Support; scenes come from it with MoviePrint's
 `calculateSceneListFromDifferenceArray`, so a new threshold needs no rescan.
 About 710 fps on a 1080p H.264 file (9 min for a 2 h film), lower while thumbs
 load.
+
+The player's frame strip asks `frameRun(_:maxWidth:)` for the missing frames
+of its 20-frame window: one `AVAssetReader` pass from a closed-GOP sync sample,
+then one ffmpeg rawvideo run for what is left (with the exact-frame option),
+then single frames; slices are cached by frame. A step costs 60–90 ms on an
+open-GOP film with short GOPs and about 250–280 ms on a 1080p H.264 file with
+4 s GOPs (the reader starts at the previous keyframe). Playback holds
+`DecodeGate` for as long as AVPlayer (or the ffmpeg pipe) plays, so no other
+decode runs beside it; paused frames are exact stills through decision 25.
 
 Near the end of a movie the retry window is moved inside the movie (center at
 most end − 0.5 s). A file whose sync samples are open-GOP I frames decodes

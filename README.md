@@ -45,6 +45,14 @@ which you can edit:
   limited to the scene. The toolbar cuts the selected scene at its thumb and
   merges it with the previous or next scene. **F** opens the detection chart
   (difference per frame, threshold and cuts).
+- **Player view** (2, Space, the toolbar, or a double-click on a thumb or
+  scene): the movie with a strip of consecutive frames around the current
+  one, the sheet as one row, and a timeline bar. Step with ←/→ (±10),
+  ⇧ (±1), ⌥ (±100), ⇧⌥ (previous/next cut or thumb); P plays (with audio;
+  files read with ffmpeg play video only). Return cuts or merges at the
+  current frame on shot sheets (Space switches to changing the thumb), and
+  changes the thumb (⇧ adds before, ⌥ after) on interval sheets; S saves the
+  current frame.
 - **Automatic IN/OUT** (Grid section, More) skips black frames at the start
   and end of a movie when it is added, with a brightness threshold; Apply
   sets them on the current sheet.
@@ -73,7 +81,7 @@ which you can edit:
   frame with a marker.
 - ⌘Z / ⇧⌘Z undo and redo up to 50 edits.
 
-The player view and faces come in later versions.
+Faces come in a later version.
 
 ## Requirements
 
