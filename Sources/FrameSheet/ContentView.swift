@@ -199,6 +199,25 @@ private struct Toast: View {
                         .help("Stop shot detection; it can resume later")
                 }
             }
+            if let scan = model.faceScanJob {
+                ToastCard {
+                    if let fraction = scan.fraction {
+                        ProgressView(value: fraction)
+                            .progressViewStyle(.linear)
+                            .frame(width: 120)
+                    } else {
+                        ProgressView()
+                            .progressViewStyle(.linear)
+                            .frame(width: 120)
+                    }
+                    Text(scan.message)
+                        .foregroundStyle(Theme.text)
+                        .monospacedDigit()
+                    Button("Cancel") { model.cancelScan() }
+                        .controlSize(.small)
+                        .help("Stop face detection; it can resume later")
+                }
+            }
             if let progress = model.progress {
                 ToastCard {
                     ProgressView(value: progress.fraction)

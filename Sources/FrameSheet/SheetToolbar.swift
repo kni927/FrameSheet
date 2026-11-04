@@ -50,6 +50,39 @@ struct SheetToolbar: ToolbarContent {
                 .buttonStyle(ToolbarIconStyle(grouped: true))
                 .toolbarHelp(shotSheetHelp)
                 .disabled(noSheet || model.isScanning)
+                // Add faces sheet (§4): a click scans with the default
+                // scope; the menu (press and hold) offers all three.
+                Menu {
+                    ForEach(FaceScanScope.allCases, id: \.self) { scope in
+                        if scope == .thumbs { Divider() }
+                        Button(scope.label) { model.addFacesSheet(scope) }
+                            .help(scope.help)
+                    }
+                } label: {
+                    Label("Add faces sheet", systemImage: "person.crop.rectangle.stack")
+                } primaryAction: {
+                    model.addFacesSheet(model.defaultFaceScanScope)
+                }
+                .menuStyle(.button)
+                .menuIndicator(.hidden)
+                .buttonStyle(ToolbarIconStyle(grouped: true))
+                .toolbarHelp("Add faces sheet: \(model.defaultFaceScanScope.label.lowercased()) (hold for more)")
+                .disabled(noSheet || model.isScanning || sheet?.type == .faces)
+                Menu {
+                    ForEach(ThumbSort.allCases, id: \.self) { sort in
+                        Button(sort.label) { model.sortSheet(sort) }
+                            .disabled(sort.needsFaces && sheet?.type != .faces)
+                        if sort == .frameNumber { Divider() }
+                    }
+                } label: {
+                    Label("Sort", systemImage: "arrow.up.arrow.down")
+                }
+                .menuStyle(.button)
+                .menuIndicator(.hidden)
+                .buttonStyle(ToolbarIconStyle(grouped: true))
+                .toolbarHelp("Sort thumbs")
+                .disabled(noSheet || sheet?.type == .shot || model.isStreamingSheetShown)
+                FaceFilterButton(model: model, sheet: sheet)
                 Button {
                     if let ref = model.currentRef { model.duplicateSheet(ref) }
                 } label: {
@@ -160,6 +193,15 @@ struct SheetToolbar: ToolbarContent {
                     .buttonStyle(ToolbarIconStyle(grouped: true))
                     .toolbarHelp("Thumb label: \(frameInfoName(settings.frameInfo)) (click cycles)")
                     .disabled(noSheet)
+                    Button {
+                        model.updateSettings { $0.showFaceRectangles.toggle() }
+                    } label: {
+                        Label("Face rectangles", systemImage: "person.crop.square")
+                    }
+                    .buttonStyle(ToolbarIconStyle(selected: settings.showFaceRectangles, grouped: true))
+                    .accessibilityAddTraits(settings.showFaceRectangles ? .isSelected : [])
+                    .toolbarHelp(settings.showFaceRectangles ? "Hide face rectangles" : "Show face rectangles")
+                    .disabled(sheet?.type != .faces)
                     Button {
                         if let ref = model.currentRef { model.toggleView(ref) }
                     } label: {
@@ -283,5 +325,107 @@ struct SheetToolbar: ToolbarContent {
         case .timecode: "timecode"
         case .hidden: "none"
         }
+    }
+}
+
+/// Filter (§4, faces sheets): a popover with the face count and face size
+/// ranges, each with its switch (MoviePrint `FloatingMenu`'s filter
+/// dropdown). Every change is one undo step; a slider applies when it is
+/// released.
+private struct FaceFilterButton: View {
+    let model: AppModel
+    let sheet: Sheet?
+    @State private var shown = false
+
+    var body: some View {
+        let active = sheet?.faceFilter?.isActive == true
+        Button {
+            shown.toggle()
+        } label: {
+            Label(
+                "Filter",
+                systemImage: active ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle")
+        }
+        .buttonStyle(ToolbarIconStyle(selected: active, grouped: true))
+        .accessibilityAddTraits(active ? .isSelected : [])
+        .toolbarHelp("Filter faces")
+        .disabled(sheet?.type != .faces)
+        .popover(isPresented: $shown, arrowEdge: .bottom) {
+            FaceFilterPanel(model: model)
+        }
+    }
+}
+
+private struct FaceFilterPanel: View {
+    let model: AppModel
+    /// Slider positions while dragging; applied on release.
+    @State private var sizeLower: Double?
+    @State private var sizeUpper: Double?
+
+    var body: some View {
+        let filter = model.currentSheet?.faceFilter ?? FaceFilter()
+        let maxCount = FaceFilter.faceCountRange.upperBound
+        let minSize = min(model.library.settings.faceSizeThreshold, FaceFilter.sizeMaximum - 1)
+        VStack(alignment: .leading, spacing: Theme.space2) {
+            Toggle("Face count", isOn: Binding(
+                get: { filter.faceCount.enabled },
+                set: { on in apply { $0.faceCount.enabled = on } }))
+                .help("Show frames with this many faces")
+            HStack(spacing: Theme.space3) {
+                Stepper(
+                    "From \(Int(filter.faceCount.lower))",
+                    value: Binding(get: { filter.faceCount.lower }, set: { v in apply { $0.faceCount.lower = v } }),
+                    in: FaceFilter.faceCountRange.lowerBound...filter.faceCount.upper)
+                Stepper(
+                    "To \(filter.faceCount.upper >= maxCount ? "max" : "\(Int(filter.faceCount.upper))")",
+                    value: Binding(get: { filter.faceCount.upper }, set: { v in apply { $0.faceCount.upper = v } }),
+                    in: filter.faceCount.lower...maxCount)
+            }
+            .monospacedDigit()
+            .disabled(!filter.faceCount.enabled)
+            Divider()
+            Toggle("Face size", isOn: Binding(
+                get: { filter.size.enabled },
+                set: { on in apply { $0.size.enabled = on } }))
+                .help("Show frames with a face of this size (% of the frame height)")
+            sizeSlider(
+                "From", value: sizeLower ?? filter.size.lower, range: minSize...FaceFilter.sizeMaximum,
+                drag: $sizeLower) { v in apply { $0.size.lower = min(v, $0.size.upper) } }
+                .disabled(!filter.size.enabled)
+            sizeSlider(
+                "To", value: sizeUpper ?? filter.size.upper, range: minSize...FaceFilter.sizeMaximum,
+                drag: $sizeUpper) { v in apply { $0.size.upper = max(v, $0.size.lower) } }
+                .disabled(!filter.size.enabled)
+        }
+        .controlSize(.small)
+        .font(Theme.bodySm)
+        .padding(Theme.space3)
+        .frame(width: 240)
+    }
+
+    private func sizeSlider(
+        _ title: String, value: Double, range: ClosedRange<Double>, drag: Binding<Double?>,
+        commit: @escaping (Double) -> Void
+    ) -> some View {
+        HStack(spacing: Theme.space2) {
+            Text(title).frame(width: 36, alignment: .leading)
+            Slider(
+                value: Binding(get: { value }, set: { drag.wrappedValue = $0.rounded() }), in: range, step: 1
+            ) { editing in
+                guard !editing, let final = drag.wrappedValue else { return }
+                drag.wrappedValue = nil
+                commit(final)
+            }
+            Text(value >= FaceFilter.sizeMaximum ? "max" : "\(Int(value))%")
+                .font(Theme.mono(12))
+                .foregroundStyle(Theme.textMuted)
+                .frame(width: 36, alignment: .trailing)
+        }
+    }
+
+    private func apply(_ change: (inout FaceFilter) -> Void) {
+        var filter = model.currentSheet?.faceFilter ?? FaceFilter()
+        change(&filter)
+        model.setFaceFilter(filter)
     }
 }

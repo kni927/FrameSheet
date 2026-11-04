@@ -144,7 +144,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         switch event.keyCode {
         case KeyCode.escape:
-            // Escape cancels a running shot detection (it resumes later).
+            // Escape cancels a running shot or face scan (it resumes later).
             guard model.isScanning, flags.isEmpty else { return event }
             model.cancelScan()
             return nil

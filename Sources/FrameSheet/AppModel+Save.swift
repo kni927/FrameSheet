@@ -180,7 +180,12 @@ extension AppModel {
         try await Task.sleep(for: .milliseconds(50))
         let decoded = images
         images.removeAll()
-        let content = PrintView(file: file, thumbs: thumbs, layout: plan.layout, settings: settings) {
+        // Face rectangles only with Output → Include face rectangles (off).
+        let content = PrintView(
+            file: file, thumbs: thumbs, layout: plan.layout, settings: settings,
+            faceRectangles: settings.includeFaceRectanglesInPrint && sheet.type == .faces,
+            faceFilter: sheet.faceFilter
+        ) {
             decoded[$0.frameNumber]
         }
         .frame(width: CGFloat(plan.width), height: CGFloat(plan.height), alignment: .topLeading)

@@ -38,7 +38,8 @@ enum ScanCacheState {
 /// being filled shows its mean colors only until the scan ends, so the scan
 /// is not made to reopen its reader for each new scene's thumb.
 extension AppModel {
-    var isScanning: Bool { streamingSheet != nil }
+    /// A shot scan or a face scan runs.
+    var isScanning: Bool { streamingSheet != nil || faceScanJob != nil }
 
     /// The current sheet is the one a scan streams into.
     var isStreamingSheetShown: Bool {
@@ -68,7 +69,7 @@ extension AppModel {
     func cancelScan() { scanTask?.cancel() }
 
     private func startScan(_ fileId: UUID, rescan: Bool) {
-        guard scanJob == nil, let file = library.file(fileId) else { return }
+        guard scanJob == nil, faceScanJob == nil, let file = library.file(fileId) else { return }
         checkMovieFile(fileId)
         guard !missing.contains(fileId) else {
             toast = "\(file.name): the movie is missing."
@@ -123,7 +124,7 @@ extension AppModel {
                 case .finished(let data):
                     ended = true
                     finishScan(ref, data: data, threshold: settings.shotDetectionThreshold)
-                case .cancelled:
+                case .cancelled, .stopped:
                     ended = true
                     endScan(ref, cancelled: true)
                 case .failed(let message):

@@ -56,6 +56,9 @@ final class AppModel {
     /// The shot scan in progress (one at a time), shown in the toast with
     /// Cancel; its scenes stream into `scanJob.sheetId`.
     var scanJob: ScanJob?
+    /// The face scan in progress (T07), shown in the toast with Cancel; it
+    /// shares `scanTask` with the shot scan (one scan at a time).
+    var faceScanJob: FaceScanJob?
     /// Movies whose scan stopped before the end in this session. The partial
     /// cache is written after the stream ends, so the toolbar reads this
     /// instead of waiting for the file.
@@ -127,6 +130,10 @@ final class AppModel {
     /// Complete scans read from the scan cache, by movie id (§10).
     @ObservationIgnored var scanData: [UUID: ScanData] = [:]
     let scanStore: ScanCacheStore?
+    /// Face scan results, next to the scan cache (§10).
+    let faceStore: FaceCacheStore?
+    /// The face request was warmed up in this process.
+    @ObservationIgnored var facesWarmedUp = false
     /// Target rows set by the Rows slider for one sheet at one column count;
     /// not persisted, and void once the sheet or its columns change.
     private var rowsTarget: (sheetId: UUID, columns: Int, rows: Int)?
@@ -170,6 +177,7 @@ final class AppModel {
         for i in loaded.files.indices { Self.resolveBookmark(at: i, in: &loaded, missing: &missing) }
         self.store = store
         scanStore = (try? ScanCacheStore.defaultDirectory()).map(ScanCacheStore.init)
+        faceStore = (try? ScanCacheStore.defaultDirectory()).map(FaceCacheStore.init)
         self.missing = missing
         document = EditableLibrary(loaded)
         cache = ThumbnailCache(limitMB: loaded.settings.thumbnailCacheMB)
@@ -542,6 +550,7 @@ final class AppModel {
                 }
             }
             for file in added { loadPoster(file) }
+            warmUpFaceDetection()
         }
     }
 
@@ -625,8 +634,9 @@ final class AppModel {
             linkedURLs[fileId] = url
             missing.remove(fileId)
             forgetImages()
-            // The stored scan was of the old file.
+            // The stored scans were of the old file.
             scanStore?.delete(fileId)
+            faceStore?.delete(fileId)
             scanData[fileId] = nil
             stoppedScans.remove(fileId)
             edit { library in
@@ -784,6 +794,7 @@ final class AppModel {
         guard library.file(id) != nil else { return }
         checkMovieFile(id)
         update { Self.selectFile(id, in: &$0) }
+        warmUpFaceDetection()
     }
 
     /// Selects a movie and its first sheet, adding the default interval

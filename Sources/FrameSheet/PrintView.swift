@@ -14,7 +14,24 @@ struct PrintView: View {
     let thumbs: [Thumb]
     let layout: PrintLayout
     let settings: FrameSheetCore.Settings
+    /// Grid: draws the thumbs' face rectangles (faces sheets), those
+    /// passing `faceFilter`.
+    var faceRectangles = false
+    var faceFilter: FaceFilter?
     let image: (Thumb) -> CGImage?
+
+    init(
+        file: MovieFile, thumbs: [Thumb], layout: PrintLayout, settings: FrameSheetCore.Settings,
+        faceRectangles: Bool = false, faceFilter: FaceFilter? = nil, image: @escaping (Thumb) -> CGImage?
+    ) {
+        self.file = file
+        self.thumbs = thumbs
+        self.layout = layout
+        self.settings = settings
+        self.faceRectangles = faceRectangles
+        self.faceFilter = faceFilter
+        self.image = image
+    }
 
     var body: some View {
         switch layout {
@@ -41,7 +58,8 @@ struct PrintView: View {
                 let frame = geometry.thumbFrame(at: index)
                 PrintThumb(
                     file: file, thumb: thumb, image: image(thumb), settings: settings, size: frame.size,
-                    printWidth: size.width, cornerRadius: geometry.borderRadius)
+                    printWidth: size.width, cornerRadius: geometry.borderRadius,
+                    faces: faceRectangles ? (faceFilter ?? FaceFilter()).passing(thumb.faces) : [])
                     .frame(width: frame.width, height: frame.height)
                     .offset(x: frame.minX, y: frame.minY)
             }
@@ -121,6 +139,8 @@ private struct PrintThumb: View {
     let size: CGSize
     let printWidth: CGFloat
     let cornerRadius: Double
+    /// Face rectangles to draw.
+    var faces: [Face] = []
 
     var body: some View {
         ZStack {
@@ -135,11 +155,45 @@ private struct PrintThumb: View {
         }
         .frame(width: size.width, height: size.height)
         .overlay {
+            if !faces.isEmpty { FaceRectangles(faces: faces) }
+        }
+        .overlay {
             FrameInfoLabel(
                 file: file, thumb: thumb, settings: settings, thumbHeight: size.height, printWidth: printWidth)
         }
         .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
         .opacity(thumb.hidden ? 0.3 : 1)
+    }
+}
+
+/// Face rectangles over a frame (MoviePrint `AllFaces`/`FaceRect`): a
+/// faint outline with corner marks, in the accent color; the boxes are
+/// relative to the frame, so they fit any size it is drawn at.
+struct FaceRectangles: View {
+    let faces: [Face]
+
+    var body: some View {
+        Canvas { context, size in
+            let line = max(1, min(size.width, size.height) / 160)
+            for face in faces {
+                let r = CGRect(
+                    x: face.x * size.width, y: face.y * size.height, width: face.width * size.width,
+                    height: face.height * size.height)
+                context.stroke(Path(r), with: .color(Theme.accent.opacity(0.45)), lineWidth: line)
+                let corner = max(2 * line, min(r.width, r.height) / 4)
+                var marks = Path()
+                for (x, y, dx, dy) in [
+                    (r.minX, r.minY, 1.0, 1.0), (r.maxX, r.minY, -1.0, 1.0),
+                    (r.minX, r.maxY, 1.0, -1.0), (r.maxX, r.maxY, -1.0, -1.0),
+                ] {
+                    marks.move(to: CGPoint(x: x + dx * corner, y: y))
+                    marks.addLine(to: CGPoint(x: x, y: y))
+                    marks.addLine(to: CGPoint(x: x, y: y + dy * corner))
+                }
+                context.stroke(marks, with: .color(Theme.accent), lineWidth: line * 2)
+            }
+        }
+        .allowsHitTesting(false)
     }
 }
 

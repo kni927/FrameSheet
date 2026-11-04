@@ -74,6 +74,13 @@ private struct PlayerVideo: View {
                     Image(decorative: still.image, scale: 1)
                         .resizable()
                         .frame(width: fit.width, height: fit.height)
+                        .overlay {
+                            // A faces sheet's thumb at this frame: its faces.
+                            if let sheet = model.currentSheet, model.showsFaceRectangles(sheet),
+                               let thumb = sheet.thumbs.first(where: { $0.frameNumber == still.shown && !$0.faces.isEmpty }) {
+                                FaceRectangles(faces: sheet.shownFaces(of: thumb))
+                            }
+                        }
                         .overlay(alignment: .bottomTrailing) {
                             if still.requested == player.frame, !still.isExact {
                                 NearestFrameMarker(size: fit)

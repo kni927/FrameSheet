@@ -5,9 +5,8 @@ import SwiftUI
 /// Right sidebar (§6): the grid section (stats, columns, rows) or, for a
 /// sheet in timeline view, the timeline section (stats, minutes per row,
 /// natural flow, shot detection threshold); styling, the thumb label,
-/// output, the naming scheme and the experimental options. The thumbnail
-/// cache and ffmpeg live in the Settings window; face settings come with
-/// their TASK.
+/// output, the naming scheme, face detection and the experimental options.
+/// The thumbnail cache and ffmpeg live in the Settings window.
 struct SettingsPanel: View {
     @Environment(AppModel.self) private var model
 
@@ -25,6 +24,7 @@ struct SettingsPanel: View {
                 FrameInfoSection()
                 OutputSection()
                 NamingSection()
+                FaceDetectionSection()
                 ExperimentalSection()
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -532,6 +532,9 @@ private struct OutputSection: View {
                 help: "PNG only: embed the movie's path")
                 .disabled(!isPNG)
             SwitchRow(
+                title: "Include face rectangles", isOn: model.setting(\.includeFaceRectanglesInPrint),
+                help: "Draw the face rectangles of faces sheets in saved sheets")
+            SwitchRow(
                 title: "Open Finder after saving", isOn: model.setting(\.openFinderAfterSaving),
                 help: "Show the saved file in the Finder")
             PanelRow("Thumb format") {
@@ -887,6 +890,25 @@ private struct TimelineStylingRows: View {
                 }),
             range: TimelineLayout.minSceneSecondsRange, unit: " s",
             help: "Short scenes are drawn at least this long")
+    }
+}
+
+/// Face detection (§6): the thresholds a face scan stores faces with.
+private struct FaceDetectionSection: View {
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        PanelSection(title: "Face detection") {
+            LabeledSlider(
+                title: "Confidence", value: model.setting(\.faceConfidenceThreshold), range: 0...100,
+                help: "Faces detected with a lower confidence are ignored")
+            LabeledSlider(
+                title: "Size", value: model.setting(\.faceSizeThreshold), range: 0...100, unit: " %",
+                help: "Faces smaller than this share of the frame height are ignored")
+            Text("Takes effect on the next scan")
+                .font(Theme.panelCaption)
+                .foregroundStyle(Theme.textMuted)
+        }
     }
 }
 

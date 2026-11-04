@@ -42,7 +42,10 @@ extension Library {
     public mutating func changeThumb(_ ref: SheetRef, thumb: UUID, to frame: Int) {
         withSheet(ref) { sheet, file in
             guard let t = sheet.thumbs.firstIndex(where: { $0.id == thumb }) else { return }
-            sheet.thumbs[t].frameNumber = file.clampFrame(frame)
+            let clamped = file.clampFrame(frame)
+            // The faces were of the old frame.
+            if clamped != sheet.thumbs[t].frameNumber { sheet.thumbs[t].faces = [] }
+            sheet.thumbs[t].frameNumber = clamped
         }
     }
 

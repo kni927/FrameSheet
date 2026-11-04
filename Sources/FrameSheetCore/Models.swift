@@ -97,7 +97,8 @@ public struct Thumb: Codable, Sendable, Identifiable, Equatable {
     /// array order.
     public var index: Int
     public var hidden: Bool
-    /// Per-frame face data; filled by the face scan (not built yet).
+    /// The faces of the frame, from the face scan (faces sheets, §5);
+    /// cleared when the thumb's frame changes.
     public var faces: [Face]
 
     public init(id: UUID = UUID(), frameNumber: Int, index: Int, hidden: Bool = false, faces: [Face] = []) {
@@ -110,6 +111,7 @@ public struct Thumb: Codable, Sendable, Identifiable, Equatable {
 }
 
 public struct Face: Codable, Sendable, Equatable {
+    /// 0–100 (MoviePrint's `score`).
     public var confidence: Double
     /// Box height as a percentage of the frame height.
     public var size: Double
@@ -157,6 +159,8 @@ public struct Sheet: Codable, Sendable, Identifiable, Equatable {
     public var parentSheetId: UUID?
     public var thumbs: [Thumb]
     public var scenes: [Scene]
+    /// Faces sheets: the Filter menu's ranges (nil until first set).
+    public var faceFilter: FaceFilter?
 
     public init(
         id: UUID = UUID(), name: String, type: SheetType, view: SheetView = .grid,
@@ -415,6 +419,21 @@ public struct Settings: Codable, Sendable, Equatable {
     /// mean colors only (toolbar Toggle images, MoviePrint `defaultShowImages`).
     public var timelineShowImages = true
 
+    // Face detection (§6, §10).
+    /// Faces below this confidence (0–100) are not stored; next scan.
+    public var faceConfidenceThreshold = FaceThresholds.defaultConfidence
+    /// Faces smaller than this % of the frame height are not stored.
+    public var faceSizeThreshold = FaceThresholds.defaultSize
+    /// Toolbar Toggle face rectangles: on thumbs of faces sheets and the
+    /// player's still (MoviePrint `DEFAULT_SHOW_FACERECT`, on).
+    public var showFaceRectangles = true
+    /// Output: draw the face rectangles in saved prints too (off).
+    public var includeFaceRectanglesInPrint = false
+
+    public var faceThresholds: FaceThresholds {
+        FaceThresholds(confidence: faceConfidenceThreshold, size: faceSizeThreshold)
+    }
+
     // Output (§6), MoviePrint's defaults (`app/utils/constants.js`).
     /// Folder path for saved prints; nil means the Desktop.
     public var outputFolder: String?
@@ -458,6 +477,7 @@ public struct Settings: Codable, Sendable, Equatable {
         case exactFramesWithFFmpeg
         case shotDetectionMethod, shotDetectionThreshold, automaticInOut, automaticInOutThreshold
         case timelineNaturalFlow, timelineSceneWidthRatio, timelineMinSceneLength, timelineShowImages
+        case faceConfidenceThreshold, faceSizeThreshold, showFaceRectangles, includeFaceRectanglesInPrint
         case frameInfoColor, frameInfoBackground, frameInfoPosition, frameInfoSize, frameInfoMaxSize
         case frameInfoFontFamily, frameInfoMarginHorizontal, frameInfoMarginVertical, frameInfoMarginsLinked
         case frameInfoTimecodeFormat, frameInfoFrameFormat
@@ -513,6 +533,14 @@ public struct Settings: Codable, Sendable, Equatable {
             ?? d.timelineMinSceneLength
         timelineShowImages = (try? c.decodeIfPresent(Bool.self, forKey: .timelineShowImages))
             ?? d.timelineShowImages
+        faceConfidenceThreshold = min(max(
+            (try? c.decodeIfPresent(Double.self, forKey: .faceConfidenceThreshold)) ?? d.faceConfidenceThreshold,
+            0), 100)
+        faceSizeThreshold = min(max(
+            (try? c.decodeIfPresent(Double.self, forKey: .faceSizeThreshold)) ?? d.faceSizeThreshold, 0), 100)
+        showFaceRectangles = (try? c.decodeIfPresent(Bool.self, forKey: .showFaceRectangles)) ?? d.showFaceRectangles
+        includeFaceRectanglesInPrint = (try? c.decodeIfPresent(Bool.self, forKey: .includeFaceRectanglesInPrint))
+            ?? d.includeFaceRectanglesInPrint
         frameInfoColor = try c.decodeIfPresent(RGBA.self, forKey: .frameInfoColor) ?? d.frameInfoColor
         frameInfoBackground = try c.decodeIfPresent(RGBA.self, forKey: .frameInfoBackground) ?? d.frameInfoBackground
         frameInfoPosition = try c.decodeIfPresent(FrameInfoPosition.self, forKey: .frameInfoPosition) ?? d.frameInfoPosition

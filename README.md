@@ -79,9 +79,19 @@ which you can edit:
   some files (open-GOP H.264) have frames AVFoundation cannot decode, and
   ffmpeg fetches those; without it such thumbs show the nearest decodable
   frame with a marker.
+- **Add faces sheet** (toolbar; click for every 10th frame, every 100th for
+  files read with ffmpeg; press and hold for every 100th frame or these
+  thumbs) looks for faces with Apple Vision between the sheet's first and
+  last thumb and makes a faces sheet of the frames with faces, largest face
+  first. It reads the frames in the shot scan's pass, so a movie not yet
+  scanned for shots gets that scan up to the last frame too; Cancel or Esc
+  keeps what was found, and the same scope resumes. **Sort** (reverse, frame
+  number; face count, size, confidence on faces sheets) and **Filter** (face
+  count, face size) are one undo step each; the toolbar shows or hides the
+  face rectangles (in the window and the player; in saved sheets with
+  Output → Include face rectangles). The confidence and size thresholds are
+  in the settings panel and apply to the next scan.
 - ⌘Z / ⇧⌘Z undo and redo up to 50 edits.
-
-Faces come in a later version.
 
 ## Requirements
 

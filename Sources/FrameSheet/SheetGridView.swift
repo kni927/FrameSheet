@@ -30,7 +30,10 @@ struct SheetGridView: View {
                     Color.clear
                     // The print as it is saved; the interaction layer and
                     // the placeholders lie over it.
-                    PrintView(file: file, thumbs: thumbs, layout: .grid(geometry), settings: settings) { thumb in
+                    PrintView(
+                        file: file, thumbs: thumbs, layout: .grid(geometry), settings: settings,
+                        faceRectangles: model.showsFaceRectangles(sheet), faceFilter: sheet.faceFilter
+                    ) { thumb in
                         model.image(file: file.id, frame: thumb.frameNumber, width: AppModel.thumbWidth)
                     }
                     ForEach(Array(thumbs.enumerated()), id: \.element.id) { index, thumb in

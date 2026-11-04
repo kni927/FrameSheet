@@ -34,6 +34,10 @@ public enum ScanEvent: Sendable {
     case finished(ScanData)
     /// The partial result, also stored in the cache when the request has one.
     case cancelled(ScanData)
+    /// The pass stored the request's `endFrame` and stopped there (the face
+    /// scan's combined pass, T07); the partial result is stored like a
+    /// cancelled one and resumes the same way.
+    case stopped(ScanData)
     case failed(String)
 }
 
@@ -81,8 +85,19 @@ public struct ScanRequest: Sendable {
     var yieldsToWaiters = true
     /// Counters for measuring a scan (the scan probe); nil in the app.
     var diagnostics: ScanDiagnostics?
-    /// Stops as if cancelled once this many frames are stored (tests).
+    /// Stops as if cancelled once this many frames are stored (tests); in a
+    /// `frameList` pass, once this many listed frames were seen.
     var stopAfterFrames: Int?
+    /// Stops with `stopped` once this frame is stored (the face scan's
+    /// combined pass reads only as far as its last sampled frame).
+    var endFrame: Int?
+    /// A pass over these frames only (sorted, unique) for the observer,
+    /// without shot metrics or the cache: the face scan's faces-only pass
+    /// over frames the shot scan has already read (T07). It reads
+    /// sequentially from the first listed frame, skips the frames between,
+    /// and stops after the last one; after a pause it reopens at the next
+    /// listed frame.
+    var frameList: [Int]?
 
     public init(
         fileId: UUID, url: URL, method: ShotDetectionMethod, threshold: Double, ffmpeg: FFmpegTools?,
@@ -116,6 +131,16 @@ public enum ShotScanner {
     }
 
     private static func run(_ request: ScanRequest, _ continuation: AsyncStream<ScanEvent>.Continuation) async {
+        if request.frameList != nil {
+            do {
+                let source = try await ScanSource.open(request.url, ffmpeg: request.ffmpeg)
+                let empty = ScanData(method: request.method, expectedFrameCount: source.info.frameCount)
+                await ScanSession(request: request, source: source, data: empty, continuation: continuation).run()
+            } catch {
+                continuation.yield(.failed(error.localizedDescription))
+            }
+            return
+        }
         let cached = (try? request.store?.load(request.fileId)) ?? nil
         if let cached, cached.complete, cached.method == request.method, !request.rescan {
             continuation.yield(.scenes(SceneList.scenes(from: cached, threshold: request.threshold)))
@@ -288,6 +313,9 @@ private enum PassOutcome {
     case yielded
 }
 
+/// Thrown when a pass has stored its `endFrame`.
+private struct ReachedEndFrame: Error {}
+
 /// The state of one scan, confined to its task.
 private final class ScanSession {
     let request: ScanRequest
@@ -306,12 +334,16 @@ private final class ScanSession {
     /// What the last reopen after a pause took until its first wanted frame.
     var lastReopenCost: Duration = .zero
     var yieldsAllowed = true
+    /// A `frameList` pass: the listed frames and the next one to read.
+    let frameList: [Int]?
+    var nextListed = 0
 
     init(request: ScanRequest, source: ScanSource, data: ScanData, continuation: AsyncStream<ScanEvent>.Continuation) {
         self.request = request
         self.source = source
         self.data = data
         self.continuation = continuation
+        frameList = request.frameList
         calculator = ShotMetricCalculator(method: request.method)
         let size = source.uprightSize
         converter = ScanFrameConverter(uprightWidth: size.width, uprightHeight: size.height, orientation: source.orientation)
@@ -320,14 +352,31 @@ private final class ScanSession {
         lastScenes = now
         lastCheckpoint = now
         resumedAt = now
-        self.data.reserve(source.info.frameCount + 16)
+        if frameList == nil { self.data.reserve(source.info.frameCount + 16) }
     }
 
     var expected: Int { max(source.info.frameCount, data.frameCount) }
 
+    /// A `frameList` pass has seen all its frames.
+    var listDone: Bool { frameList.map { nextListed >= $0.count } ?? false }
+
+    /// The pass ended short of what it should read: the movie's frames, or
+    /// the listed frames.
+    var readsShort: Bool { frameList != nil ? !listDone : data.frameCount < source.info.frameCount }
+
+    /// Progress for the events: frames stored, or listed frames seen.
+    var progressEvent: ScanEvent {
+        if let frameList { return .progress(framesScanned: nextListed, frameCount: frameList.count) }
+        return .progress(framesScanned: data.frameCount, frameCount: expected)
+    }
+
     func run() async {
         await DecodeGate.shared.acquire()
-        continuation.yield(.started(decoder: source.decoder, frameCount: source.info.frameCount, resumedAt: data.frameCount))
+        if let frameList {
+            continuation.yield(.started(decoder: source.decoder, frameCount: frameList.count, resumedAt: 0))
+        } else {
+            continuation.yield(.started(decoder: source.decoder, frameCount: source.info.frameCount, resumedAt: data.frameCount))
+        }
         do {
             switch source.kind {
             case .avFoundation(let asset, let startTime, _):
@@ -336,6 +385,11 @@ private final class ScanSession {
                 try await runFFmpeg(tools: tools)
             }
             await DecodeGate.shared.release()
+            if frameList != nil {
+                continuation.yield(progressEvent)
+                continuation.yield(.finished(data))
+                return
+            }
             data.complete = true
             try? request.store?.save(data, for: request.fileId)
             continuation.yield(.progress(framesScanned: data.frameCount, frameCount: data.frameCount))
@@ -343,8 +397,11 @@ private final class ScanSession {
             continuation.yield(.finished(data))
         } catch {
             await DecodeGate.shared.release()
-            try? request.store?.save(data, for: request.fileId)
-            if error is CancellationError || Task.isCancelled {
+            if frameList == nil { try? request.store?.save(data, for: request.fileId) }
+            if error is ReachedEndFrame {
+                continuation.yield(.progress(framesScanned: data.frameCount, frameCount: expected))
+                continuation.yield(.stopped(data))
+            } else if error is CancellationError || Task.isCancelled {
                 continuation.yield(.cancelled(data))
             } else {
                 continuation.yield(.failed(error.localizedDescription))
@@ -354,6 +411,10 @@ private final class ScanSession {
 
     /// Sets up the seed for a pass that starts at the last stored frame.
     func prepareSeed() -> Int {
+        if let frameList {
+            seedFrame = nil
+            return listDone ? 0 : frameList[nextListed]
+        }
         guard data.frameCount > 0 else { seedFrame = nil; return 0 }
         seedFrame = data.frameCount - 1
         return data.frameCount - 1
@@ -362,12 +423,26 @@ private final class ScanSession {
     /// Whether a decoded frame is needed (pre-roll and repeated frame
     /// numbers are skipped).
     func wants(_ frame: Int) -> Bool {
+        if let frameList { return !listDone && frame >= frameList[nextListed] }
         if let seedFrame { return frame >= seedFrame }
         return frame >= data.frameCount
     }
 
     /// Measures one decoded frame (already known to be wanted).
     func process(_ frame: Int, decoded: BGRAFrame) async throws {
+        if let frameList {
+            // Listed frames the decoder skipped (frame number gaps) are
+            // passed over.
+            while nextListed < frameList.count, frameList[nextListed] < frame { nextListed += 1 }
+            guard nextListed < frameList.count, frameList[nextListed] == frame else { return }
+            nextListed += 1
+            if let observer = request.observer {
+                await observer.scanned(ScanFrame(frameNumber: frame, image: converter.upright(decoded)))
+            }
+            if let stop = request.stopAfterFrames, nextListed >= stop { throw CancellationError() }
+            try Task.checkCancellation()
+            return
+        }
         let upright = converter.upright(decoded)
         let metricFrame = converter.metricFrame(upright)
         if seedFrame != nil {
@@ -389,6 +464,7 @@ private final class ScanSession {
             await observer.scanned(ScanFrame(frameNumber: number, image: upright))
         }
         if let stop = request.stopAfterFrames, data.frameCount >= stop { throw CancellationError() }
+        if let end = request.endFrame, data.frameCount > end { throw ReachedEndFrame() }
         try Task.checkCancellation()
     }
 
@@ -397,13 +473,13 @@ private final class ScanSession {
         let now = clock.now
         if now - lastEvent >= request.eventInterval {
             lastEvent = now
-            continuation.yield(.progress(framesScanned: data.frameCount, frameCount: expected))
+            continuation.yield(progressEvent)
         }
-        if now - lastScenes >= request.sceneInterval {
+        if frameList == nil, now - lastScenes >= request.sceneInterval {
             lastScenes = now
             continuation.yield(.scenes(SceneList.scenes(from: data, threshold: request.threshold)))
         }
-        if now - lastCheckpoint >= request.checkpointInterval {
+        if frameList == nil, now - lastCheckpoint >= request.checkpointInterval {
             lastCheckpoint = now
             try? request.store?.save(data, for: request.fileId)
         }
@@ -434,7 +510,7 @@ private final class ScanSession {
             let outcome: PassOutcome
             do {
                 outcome = try await readAVFoundation(asset: asset, startTime: startTime, from: first)
-            } catch where first > 0 && !(error is CancellationError) && !Task.isCancelled {
+            } catch where first > 0 && !(error is CancellationError) && !(error is ReachedEndFrame) && !Task.isCancelled {
                 // A reader that starts inside the movie can fail on open-GOP
                 // files (known issue 5); read from the start instead, without
                 // further pauses.
@@ -489,6 +565,12 @@ private final class ScanSession {
             let frame = max(0, Int(((pts - startTime) * fps).rounded()))
             guard wants(frame) else {
                 diagnostics?.update { $0.discardedFrames += 1 }
+                // A `frameList` pass skips most frames: it still lets
+                // waiting thumb requests go first in turns.
+                if frameList != nil {
+                    count += 1
+                    if count % request.yieldCheckFrames == 0, await tick() { return .yielded }
+                }
                 continue
             }
             if !reachedResumePoint {
@@ -515,13 +597,14 @@ private final class ScanSession {
                 CVPixelBufferUnlockBaseAddress(buffer, .readOnly)
                 throw error
             }
+            if listDone { return .finished }
             count += 1
             if count % request.yieldCheckFrames == 0, await tick() { return .yielded }
         }
         // A reader that fails may end its samples without throwing; short of
         // the expected frames, that is a failure (and mid-file, the cue for
         // the read from the start), not the end of the movie.
-        if reader.status == .failed, data.frameCount < source.info.frameCount {
+        if reader.status == .failed, readsShort {
             throw reader.error ?? DecodeError("AVFoundation stopped reading at frame \(data.frameCount)")
         }
         return .finished
@@ -554,6 +637,12 @@ private final class ScanSession {
         do {
             while try await pipe.readFrame(into: packed, count: frameBytes) {
                 if wants(frame) { try await process(frame, decoded: decoded) }
+                if listDone {
+                    // The listed frames are read: the rest is not needed.
+                    pipe.terminate()
+                    _ = await pipe.finish()
+                    return
+                }
                 frame += 1
                 count += 1
                 // ffmpeg decodes in software, so its process may keep
