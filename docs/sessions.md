@@ -412,7 +412,9 @@ sessions (tested 2026-11-04; `docs/CLOUD_ENVIRONMENTS.md` in
 
 - **Starting a TF:** the owner types `/tf <what>` in a new local session or
   starts one from an HQ's card (`offer-tf`), with **Start with worktree**
-  only when another TF works in the main clone. Server mode (`rc-server`)
+  only when another TF works in the main clone; a TF handing over starts its
+  successor itself (`start_session`, then `detach_session`), and the
+  successor archives it (dotfiles `/tf`). Server mode (`rc-server`)
   is the owner's option.
 - **One TF per working directory:** sessions there share `TASK.md`, changes,
   and build output. A TF that finds `TASK.md` or uncommitted changes takes no
@@ -434,8 +436,8 @@ sessions (tested 2026-11-04; `docs/CLOUD_ENVIRONMENTS.md` in
 - **How long a TF runs:** it keeps taking TASKs while they follow one
   another, a release included, and wraps up when none waits, hours of idle
   lie ahead, or Context usage says so. Conflicting TASKs run in order or in
-  subagents. Remaining Mac work goes to a new TF by card; other work to a
-  cloud session the Project HQ starts. Never keep sessions warm with
+  subagents. Remaining Mac work goes to a new TF the TF starts itself; other
+  work to a cloud session the Project HQ starts. Never keep sessions warm with
   periodic messages; what the next TF needs goes into the repository.
 - **Archiving:** the owner archives local sessions in the Mac app; no cloud
   session archives a local one (server-mode sessions excepted), since the
@@ -443,7 +445,8 @@ sessions (tested 2026-11-04; `docs/CLOUD_ENVIRONMENTS.md` in
   session that started a child (a sub-task, a check, a test) archives it
   from the same side once its work is verified (pushed, nothing left
   uncommitted). A child never archives itself; an HQ's successor archives its
-  predecessor (Handover).
+  predecessor (Handover), and a TF's successor archives the TF it replaced
+  with the desktop session tool `archive_session`.
 - **Screen operations:** before computer use, ask the owner to stand by;
   run `open -a Claude` right before each computer-use approval, or the
   dialog stays hidden. Screen work runs in the main session or a new
