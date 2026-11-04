@@ -98,16 +98,21 @@ Send each message only to the sessions that need it.
 - **Asking the owner:** in the conversation, in prose with a recommendation,
   not with the AskUserQuestion choice dialog; a skipped or unanswered
   question is not a decision (owner, 2026-11-03).
-- **Time estimates:** before work over 10 minutes, one line `Estimate:
-  <band> (<reason>)` (10–30 min, 30 min–1 h, 1–2 h, 2–24 h, 1 day or more),
-  counting only the session's own working time; name what each subagent, TF
-  or gateway session does and its estimate; say so when the work will pass
-  twice the estimate; end with `Took: <working time> (estimate <band>;
-  waited on the owner: <time>, <what>)`, measured by the `work-timer` hook
-  (`work-timer --report --since <start>`; `~/.claude/hooks/` in the cloud,
+- **Time estimates:** before work expected to take over 10 minutes, one line
+  `Estimate: <time> (<reason>)` with the session's own figure, not a range,
+  counting only its own working time; name what each subagent, TF or
+  gateway session does and its estimate; say so when the work will pass
+  twice the estimate; end with `Took: <working time> (estimate <time>;
+  waited on the owner: <time>, <what>)`, also when unestimated work took
+  over 10 minutes, measured by the `work-timer` hook (`work-timer --report
+  --since <start>`; `~/.claude/hooks/` in the cloud,
   `~/.local/bin/claude-hooks/` on a Mac). An HQ writes the estimate in
   `TASK.md`, and a TF that passes twice it tells the HQ and the owner
-  (owner, 2026-11-03).
+  (owner, 2026-11-03; figures, not bands, 2026-11-04).
+  Base the figure on the session's measured pace (the `work-timer` log),
+  not on a person's: a few files with a test and docs take one to two
+  minutes, research a few; `Took:` comes from `work-timer`, not shell
+  timestamps (owner, 2026-11-04).
 - **How to send:** from a cloud session, `send_message` (claude-code-remote)
   to the session ID, local ones too, replying to `from-session`. From a
   local session, `SendMessage` to the name in `ListAgents` (its "one-way"
