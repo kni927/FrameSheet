@@ -26,6 +26,9 @@ public struct DetectedFace: Sendable, Equatable {
 public protocol FaceAnalyzer: Sendable {
     /// A frame of the scan pass, valid only during the call.
     func detect(in frame: BGRAFrame) async throws -> [DetectedFace]
+    /// A 32BGRA copy of a scan frame that the face scan's analysis queue
+    /// owns. By default the frame read from it.
+    func detect(in buffer: CVPixelBuffer) async throws -> [DetectedFace]
     /// A single decoded frame (the "these thumbs" scope).
     func detect(in image: CGImage) async throws -> [DetectedFace]
     /// Loads the model, so the first frame of a scan does not wait for it
@@ -33,24 +36,41 @@ public protocol FaceAnalyzer: Sendable {
     func warmUp() async
 }
 
+extension FaceAnalyzer {
+    public func detect(in buffer: CVPixelBuffer) async throws -> [DetectedFace] {
+        CVPixelBufferLockBaseAddress(buffer, .readOnly)
+        defer { CVPixelBufferUnlockBaseAddress(buffer, .readOnly) }
+        guard let base = CVPixelBufferGetBaseAddress(buffer) else {
+            throw DecodeError("Could not read a frame for face detection")
+        }
+        return try await detect(in: BGRAFrame(
+            base: base, width: CVPixelBufferGetWidth(buffer), height: CVPixelBufferGetHeight(buffer),
+            bytesPerRow: CVPixelBufferGetBytesPerRow(buffer)))
+    }
+}
+
 /// Vision's `DetectFaceRectanglesRequest` at its default revision (4 on
 /// macOS 27; about 15 ms a frame at 720 px, docs/v3-measurements.md).
 public final class VisionFaceAnalyzer: FaceAnalyzer {
     public static let shared = VisionFaceAnalyzer()
+
+    /// One request for every frame (the face scan has one analysis worker).
+    private let request = DetectFaceRectanglesRequest()
 
     public init() {}
 
     public func detect(in frame: BGRAFrame) async throws -> [DetectedFace] {
         // A copy the request owns: the scan's frame is reused once the
         // observer returns.
-        let buffer = try Self.pixelBuffer(copying: frame)
-        let observations = try await DetectFaceRectanglesRequest().perform(on: buffer)
-        return observations.map(Self.face)
+        try await detect(in: Self.pixelBuffer(copying: frame))
+    }
+
+    public func detect(in buffer: CVPixelBuffer) async throws -> [DetectedFace] {
+        try await request.perform(on: buffer).map(Self.face)
     }
 
     public func detect(in image: CGImage) async throws -> [DetectedFace] {
-        let observations = try await DetectFaceRectanglesRequest().perform(on: image)
-        return observations.map(Self.face)
+        try await request.perform(on: image).map(Self.face)
     }
 
     public func warmUp() async {
@@ -60,7 +80,7 @@ public final class VisionFaceAnalyzer: FaceAnalyzer {
             BGRAFrame(base: $0.baseAddress!, width: side, height: side, bytesPerRow: side * 4)
         }
         guard let buffer = try? Self.pixelBuffer(copying: frame) else { return }
-        _ = try? await DetectFaceRectanglesRequest().perform(on: buffer)
+        _ = try? await request.perform(on: buffer)
     }
 
     /// Vision's box has its origin at the bottom left.
@@ -78,6 +98,12 @@ public final class VisionFaceAnalyzer: FaceAnalyzer {
         guard status == kCVReturnSuccess, let buffer = created else {
             throw DecodeError("Could not create a frame for face detection (\(status))")
         }
+        try copy(frame, into: buffer)
+        return buffer
+    }
+
+    /// Copies a frame into a 32BGRA buffer of the same size.
+    static func copy(_ frame: BGRAFrame, into buffer: CVPixelBuffer) throws {
         CVPixelBufferLockBaseAddress(buffer, [])
         defer { CVPixelBufferUnlockBaseAddress(buffer, []) }
         guard let base = CVPixelBufferGetBaseAddress(buffer) else {
@@ -88,7 +114,6 @@ public final class VisionFaceAnalyzer: FaceAnalyzer {
         for y in 0..<frame.height {
             (base + y * target).copyMemory(from: frame.base + y * frame.bytesPerRow, byteCount: rowBytes)
         }
-        return buffer
     }
 }
 

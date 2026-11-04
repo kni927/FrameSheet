@@ -34,6 +34,37 @@ private final class StubAnalyzer: FaceAnalyzer {
     func warmUp() async {}
 }
 
+/// Takes `delay` per frame and records the frame numbers it was given (the
+/// first four bytes of a frame) in call order, and how many frames the
+/// collector had queued at most.
+private final class SlowAnalyzer: FaceAnalyzer {
+    let delay: Duration
+    private let state = Mutex<(order: [Int], running: Int, maxRunning: Int)>(([], 0, 0))
+
+    init(delay: Duration) {
+        self.delay = delay
+    }
+
+    var order: [Int] { state.withLock { $0.order } }
+    var maxRunning: Int { state.withLock { $0.maxRunning } }
+
+    func detect(in frame: BGRAFrame) async throws -> [DetectedFace] {
+        let number = Int(frame.base.loadUnaligned(as: UInt32.self))
+        state.withLock {
+            $0.running += 1
+            $0.maxRunning = max($0.maxRunning, $0.running)
+        }
+        defer { state.withLock { $0.running -= 1 } }
+        try await Task.sleep(for: delay)
+        state.withLock { $0.order.append(number) }
+        return number % 20 == 0 ? [DetectedFace(confidence: 0.9, box: CGRect(x: 0.1, y: 0.1, width: 0.2, height: 0.3))] : []
+    }
+
+    func detect(in image: CGImage) async throws -> [DetectedFace] { [] }
+
+    func warmUp() async {}
+}
+
 private func face(_ size: Double, confidence: Double = 90) -> Face {
     Face(confidence: confidence, size: size, x: 0.1, y: 0.1, width: size / 200, height: size / 100)
 }
@@ -292,6 +323,75 @@ private extension Library {
     }
 }
 
+/// The analysis queue behind the scan pass's observer, fed like the pass
+/// feeds it: frames lent one at a time, reused after each call.
+@Suite(.timeLimit(.minutes(1))) struct FaceCollectorTests {
+    private static let frames = Array(stride(from: 0, to: 400, by: 10))
+
+    /// Feeds `frames` as a scan pass would, numbering each frame in its
+    /// first pixel; returns the most frames that were queued or being
+    /// analyzed at once.
+    private func feed(_ collector: FaceCollector, _ frames: [Int]) async -> Int {
+        let image = OwnedBGRA(width: 64, height: 36)
+        var maxWaiting = 0
+        for (i, number) in frames.enumerated() {
+            if Task.isCancelled { break }
+            image.data.storeBytes(of: UInt32(number), as: UInt32.self)
+            await collector.scanned(ScanFrame(frameNumber: number, image: image.frame))
+            // Reused at once, as the scan's frame is.
+            image.data.storeBytes(of: UInt32.max, as: UInt32.self)
+            maxWaiting = max(maxWaiting, i + 1 - collector.analyzedNow)
+        }
+        withExtendedLifetime(image) {}
+        return maxWaiting
+    }
+
+    /// A slow analyzer holds the pass back instead of losing frames: every
+    /// frame is analyzed, in order, with at most the backlog waiting.
+    @Test func backPressureKeepsEverySampleInOrder() async {
+        let analyzer = SlowAnalyzer(delay: .milliseconds(5))
+        let frames = Self.frames
+        let collector = FaceCollector(
+            data: FaceData(thresholds: FaceThresholds()), wanted: Set(frames), analyzer: analyzer, backlog: 4)
+        let maxWaiting = await collector.analyzing { await feed(collector, frames) }
+        #expect(analyzer.order == frames)
+        #expect(analyzer.maxRunning == 1)
+        // The queue filled (the analyzer is the slower side) but never
+        // held more than the backlog, the frame being analyzed included.
+        #expect(maxWaiting >= 2 && maxWaiting <= 4)
+        let data = collector.snapshot
+        #expect(Array(data.analyzed) == frames)
+        #expect(data.frames.keys.sorted() == frames.filter { $0 % 20 == 0 })
+        #expect(collector.analyzedNow == frames.count && collector.facesFound == frames.count / 2)
+    }
+
+    /// Cancel part way: what was analyzed is a prefix of the frames, and a
+    /// resumed scan analyzes only the rest.
+    @Test func cancelLeavesAConsistentPrefixAndResumes() async throws {
+        let frames = Self.frames
+        let analyzer = SlowAnalyzer(delay: .milliseconds(10))
+        let collector = FaceCollector(
+            data: FaceData(thresholds: FaceThresholds()), wanted: Set(frames), analyzer: analyzer, backlog: 4)
+        let task = Task { await collector.analyzing { await feed(collector, frames) } }
+        while collector.analyzedNow < 5 { try await Task.sleep(for: .milliseconds(2)) }
+        task.cancel()
+        _ = await task.value
+        let partial = collector.snapshot
+        let count = partial.analyzed.count
+        #expect(count >= 5 && count < frames.count)
+        #expect(Array(partial.analyzed) == Array(frames.prefix(count)))
+        #expect(analyzer.order.starts(with: Array(frames.prefix(count))))
+        #expect(partial.frames.keys.sorted() == frames.prefix(count).filter { $0 % 20 == 0 })
+
+        let missing = partial.missing(frames)
+        let next = SlowAnalyzer(delay: .milliseconds(1))
+        let resumed = FaceCollector(data: partial, wanted: Set(missing), analyzer: next, backlog: 4)
+        _ = await resumed.analyzing { await feed(resumed, frames) }
+        #expect(next.order == missing)
+        #expect(Array(resumed.snapshot.analyzed) == frames)
+    }
+}
+
 /// The face scan through the scan pass on clips made by the system ffmpeg
 /// (skipped without it), with a stub analyzer.
 @Suite(.serialized, .timeLimit(.minutes(1))) struct FaceScanIntegrationTests {
@@ -435,6 +535,23 @@ private extension Library {
         #expect(Array(try #require(resumed.data).analyzed) == frames)
         #expect(analyzer.callCount == 5)
         #expect(resumed.shotScan == nil)
+    }
+
+    /// An analyzer slower than decoding: the combined pass waits for it and
+    /// every sampled frame is analyzed.
+    @Test(.enabled(if: FaceScanIntegrationTests.tools != nil)) func slowAnalyzerKeepsEverySample() async throws {
+        let clip = try await Self.makeClip("clip.mp4")
+        let stores = Stores()
+        defer { try? FileManager.default.removeItem(at: stores.dir) }
+        let id = UUID()
+        let analyzer = SlowAnalyzer(delay: .milliseconds(30))
+        let frames = Array(stride(from: 0, through: 110, by: 5))
+        let result = await scan(request(clip, frames: frames, stores: stores, analyzer: analyzer, id: id))
+        #expect(result.failure == nil && !result.cancelled)
+        let data = try #require(result.data)
+        #expect(Array(data.analyzed) == frames)
+        #expect(analyzer.maxRunning == 1)
+        #expect(try stores.faces.load(id) == data)
     }
 
     /// Faces below the thresholds are not stored; other thresholds scan

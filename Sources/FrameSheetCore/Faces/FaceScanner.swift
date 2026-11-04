@@ -1,4 +1,5 @@
 import CoreGraphics
+import CoreVideo
 import Foundation
 import Synchronization
 
@@ -8,6 +9,12 @@ import Synchronization
 // then stops after the last sampled frame and resumes later like a cancelled
 // one. The scopes follow MoviePrint's `onAddFaceSheetClick`
 // (app/containers/App.js, MIT, docs/licenses/MoviePrint-LICENSE).
+//
+// Vision (about 16 ms a frame) runs off the reader's loop: the pass copies
+// each sampled frame into a pooled buffer and hands it to one analysis
+// worker through a short queue (`FaceCollector.backlog`). When the queue is
+// full the pass waits, so every sampled frame is analyzed; results are
+// recorded in frame order, and a scan ends once the queue has drained.
 
 /// Which frames a face scan analyzes (Add faces sheet, §4).
 public enum FaceScanScope: String, CaseIterable, Sendable {
@@ -155,9 +162,6 @@ public enum FaceScanner {
             await runSingleFrames(missing, backend: backend, collector: collector, continuation, saver: saver)
             return
         }
-
-        // Which frames the shot scan has read: a complete scan, or the
-        // partial one it would resume (same method and frame count).
         let source: ScanSource
         do {
             source = try await ScanSource.open(request.url, ffmpeg: request.ffmpeg)
@@ -165,6 +169,24 @@ public enum FaceScanner {
             continuation.yield(.failed(error.localizedDescription, start))
             return
         }
+        let (outcome, shotScan) = await collector.analyzing {
+            await runPasses(request, source: source, missing: missing, collector: collector, continuation, saver: saver)
+        }
+        let data = saver.save()
+        switch outcome {
+        case .finished: continuation.yield(.finished(data, shotScan: shotScan))
+        case .cancelled: continuation.yield(.cancelled(data, shotScan: shotScan))
+        case .failed(let message): continuation.yield(.failed(message, data))
+        }
+    }
+
+    /// The faces-only and combined passes, feeding the collector's queue.
+    private static func runPasses(
+        _ request: FaceScanRequest, source: ScanSource, missing: [Int], collector: FaceCollector,
+        _ continuation: AsyncStream<FaceScanEvent>.Continuation, saver: Saver
+    ) async -> (Outcome, ScanData?) {
+        // Which frames the shot scan has read: a complete scan, or the
+        // partial one it would resume (same method and frame count).
         let cached = (try? request.scanStore?.load(request.fileId)) ?? nil
         var covered = 0
         if let cached {
@@ -210,12 +232,7 @@ public enum FaceScanner {
                 continuation.yield(.progress((base + done) / totalWork))
             } ended: { shotScan = $0 }
         }
-        let data = saver.save()
-        switch outcome {
-        case .finished: continuation.yield(.finished(data, shotScan: shotScan))
-        case .cancelled: continuation.yield(.cancelled(data, shotScan: shotScan))
-        case .failed(let message): continuation.yield(.failed(message, data))
-        }
+        return (outcome, shotScan)
     }
 
     private enum Outcome: Equatable {
@@ -255,19 +272,23 @@ public enum FaceScanner {
         _ continuation: AsyncStream<FaceScanEvent>.Continuation, saver: Saver
     ) async {
         let size = ScanGeometry.fit(width: backend.info.width, height: backend.info.height, maxSide: ScanGeometry.decodeSide)
-        var failures = 0
-        for (i, number) in frames.enumerated() {
-            if Task.isCancelled { break }
-            do {
-                // One at a time: each request takes the DecodeGate.
-                let decoded = try await backend.frame(number, maxWidth: size.width)
-                await collector.analyze(number, image: decoded.image)
-            } catch {
+        let failures = await collector.analyzing {
+            var failures = 0
+            for (i, number) in frames.enumerated() {
                 if Task.isCancelled { break }
-                failures += 1
+                do {
+                    // One at a time: each request takes the DecodeGate; the
+                    // next frame decodes while the last one is analyzed.
+                    let decoded = try await backend.frame(number, maxWidth: size.width)
+                    await collector.enqueue(number, image: decoded.image)
+                } catch {
+                    if Task.isCancelled { break }
+                    failures += 1
+                }
+                continuation.yield(.progress(Double(i + 1) / Double(frames.count)))
+                saver.checkpoint()
             }
-            continuation.yield(.progress(Double(i + 1) / Double(frames.count)))
-            saver.checkpoint()
+            return failures
         }
         let data = saver.save()
         if Task.isCancelled {
@@ -306,44 +327,152 @@ public enum FaceScanner {
     }
 }
 
-/// The scan pass's observer: runs the analyzer on the wanted frames not yet
-/// analyzed and records them with the thresholds applied.
+/// The scan pass's observer: queues the wanted frames not yet analyzed for
+/// one analysis worker, which runs the analyzer on them in order and records
+/// them with the thresholds applied.
 final class FaceCollector: ScanFrameObserver {
+    /// Frames queued for the worker at most (about 0.1 s of a 24 fps film
+    /// sampled every 10th frame, 0.9 MB a 720 px frame).
+    static let defaultBacklog = 6
+
     let wanted: Set<Int>
     let analyzer: any FaceAnalyzer
+    let backlog: Int
     private let state: Mutex<State>
+    private let copier = FrameCopier()
+    private let queue: AsyncStream<Item>
+    private let input: AsyncStream<Item>.Continuation
 
     struct State {
         var data: FaceData
         /// Frames analyzed by this scan.
         var analyzedNow = 0
         var facesFound = 0
+        /// Frames handed to the queue (each frame once per scan).
+        var taken = Set<Int>()
+        /// Frames in the queue or being analyzed.
+        var queued = 0
+        /// The worker has stopped: nothing more is queued.
+        var closed = false
+        /// The pass waiting for room in the queue.
+        var producer: CheckedContinuation<Bool, Never>?
     }
 
-    init(data: FaceData, wanted: Set<Int>, analyzer: any FaceAnalyzer) {
+    private struct Item: @unchecked Sendable {
+        enum Image {
+            case buffer(CVPixelBuffer)
+            case image(CGImage)
+        }
+
+        var frameNumber: Int
+        var image: Image
+    }
+
+    init(data: FaceData, wanted: Set<Int>, analyzer: any FaceAnalyzer, backlog: Int = FaceCollector.defaultBacklog) {
         self.wanted = wanted
         self.analyzer = analyzer
+        self.backlog = max(1, backlog)
         state = Mutex(State(data: data))
+        (queue, input) = AsyncStream.makeStream(of: Item.self)
     }
 
     var snapshot: FaceData { state.withLock { $0.data } }
     var analyzedNow: Int { state.withLock { $0.analyzedNow } }
     var facesFound: Int { state.withLock { $0.facesFound } }
 
-    private func needs(_ frame: Int) -> Bool {
-        wanted.contains(frame) && !state.withLock { $0.data.isAnalyzed(frame) }
+    /// Runs `body`, which queues frames, beside the analysis worker, and
+    /// returns once the worker has analyzed every queued frame. Cancelling
+    /// the task stops both; frames queued but not analyzed stay missing.
+    /// Call once.
+    func analyzing<T>(_ body: () async -> T) async -> T {
+        async let worker: Void = analyzeQueued()
+        let result = await body()
+        input.finish()
+        await worker
+        return result
     }
 
     func scanned(_ frame: ScanFrame) async {
-        guard needs(frame.frameNumber) else { return }
-        // A frame the analyzer fails on stays missing for the next scan.
-        guard let detected = try? await analyzer.detect(in: frame.image) else { return }
-        record(frame.frameNumber, detected)
+        guard take(frame.frameNumber), await reserve() else { return }
+        do {
+            // The scan's frame is reused once this returns.
+            let buffer = try copier.copy(frame.image)
+            input.yield(Item(frameNumber: frame.frameNumber, image: .buffer(buffer)))
+        } catch {
+            // Stays missing for the next scan.
+            release()
+        }
     }
 
-    func analyze(_ number: Int, image: CGImage) async {
-        guard needs(number), let detected = try? await analyzer.detect(in: image) else { return }
-        record(number, detected)
+    func enqueue(_ number: Int, image: CGImage) async {
+        guard take(number), await reserve() else { return }
+        input.yield(Item(frameNumber: number, image: .image(image)))
+    }
+
+    /// Whether to queue a frame: wanted, not analyzed and not queued yet.
+    private func take(_ frame: Int) -> Bool {
+        guard wanted.contains(frame) else { return false }
+        return state.withLock {
+            guard !$0.closed, !$0.data.isAnalyzed(frame), !$0.taken.contains(frame) else { return false }
+            $0.taken.insert(frame)
+            return true
+        }
+    }
+
+    /// Waits for room in the queue (back-pressure on the pass); false once
+    /// the worker has stopped or the pass is cancelled.
+    private func reserve() async -> Bool {
+        await withTaskCancellationHandler {
+            await withCheckedContinuation { (waiter: CheckedContinuation<Bool, Never>) in
+                let ready: Bool? = state.withLock {
+                    if $0.closed || Task.isCancelled { return false }
+                    if $0.queued < backlog {
+                        $0.queued += 1
+                        return true
+                    }
+                    $0.producer = waiter
+                    return nil
+                }
+                if let ready { waiter.resume(returning: ready) }
+            }
+        } onCancel: {
+            state.withLock { s -> CheckedContinuation<Bool, Never>? in
+                defer { s.producer = nil }
+                return s.producer
+            }?.resume(returning: false)
+        }
+    }
+
+    /// Frees a place in the queue, handing it to a waiting pass.
+    private func release() {
+        state.withLock { s -> CheckedContinuation<Bool, Never>? in
+            guard let producer = s.producer else {
+                s.queued -= 1
+                return nil
+            }
+            // The place goes straight to the waiting pass.
+            s.producer = nil
+            return producer
+        }?.resume(returning: true)
+    }
+
+    private func analyzeQueued() async {
+        for await item in queue {
+            if Task.isCancelled { break }
+            // A frame the analyzer fails on stays missing for the next scan.
+            let detected: [DetectedFace]? = switch item.image {
+            case .buffer(let buffer): try? await analyzer.detect(in: buffer)
+            case .image(let image): try? await analyzer.detect(in: image)
+            }
+            if let detected, !Task.isCancelled { record(item.frameNumber, detected) }
+            release()
+        }
+        // Cancelled (or done): let a waiting pass go on without queueing.
+        state.withLock { s -> CheckedContinuation<Bool, Never>? in
+            s.closed = true
+            defer { s.producer = nil }
+            return s.producer
+        }?.resume(returning: false)
     }
 
     private func record(_ number: Int, _ detected: [DetectedFace]) {
@@ -353,5 +482,36 @@ final class FaceCollector: ScanFrameObserver {
             $0.analyzedNow += 1
             $0.facesFound += frame.faceCount
         }
+    }
+}
+
+/// Copies scan frames into pooled 32BGRA buffers for the analysis queue.
+/// Used only from the scan pass's loop (one caller at a time).
+private final class FrameCopier: @unchecked Sendable {
+    private var pool: CVPixelBufferPool?
+    private var width = 0
+    private var height = 0
+
+    func copy(_ frame: BGRAFrame) throws -> CVPixelBuffer {
+        if pool == nil || frame.width != width || frame.height != height {
+            let attributes: [CFString: Any] = [
+                kCVPixelBufferPixelFormatTypeKey: kCVPixelFormatType_32BGRA,
+                kCVPixelBufferWidthKey: frame.width,
+                kCVPixelBufferHeightKey: frame.height,
+                kCVPixelBufferIOSurfacePropertiesKey: [CFString: Any](),
+            ]
+            var created: CVPixelBufferPool?
+            CVPixelBufferPoolCreate(kCFAllocatorDefault, nil, attributes as CFDictionary, &created)
+            pool = created
+            width = frame.width
+            height = frame.height
+        }
+        var created: CVPixelBuffer?
+        let status = pool.map { CVPixelBufferPoolCreatePixelBuffer(kCFAllocatorDefault, $0, &created) } ?? kCVReturnError
+        guard status == kCVReturnSuccess, let buffer = created else {
+            throw DecodeError("Could not create a frame for face detection (\(status))")
+        }
+        try VisionFaceAnalyzer.copy(frame, into: buffer)
+        return buffer
     }
 }
