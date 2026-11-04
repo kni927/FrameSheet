@@ -31,9 +31,9 @@ procedures are in skills (Skills, below); the reasons are in
   keeps the ID. A new Mac mini HQ tells Central HQ, which renames the file
   (also when its morning check finds the file pointing at a finished one).
 - **Mac mini Gate** (local, always on): `🖥️ Mac mini Gate` (as a relay
-  `To:`, `🖥️ Mac mini Gate | macminihq-*`), the session of
+  `To:`, `🖥️ Mac mini Gate | macminigate-* | macminihq-*`), the session of
   the Remote Control server that launchd keeps running in
-  `~/Projects/Local/MacMiniHQ` (kni927/dotfiles `docs/AUTOMATIONS.md`). It
+  `~/Projects/Local/MacMiniGate` (kni927/dotfiles `docs/AUTOMATIONS.md`). It
   stays reachable from the Web and the phone when Claude Desktop restarts or
   loses its sign-in, takes relayed messages while Mac mini HQ is gone, and
   tells the owner when Mac mini HQ needs a sign-in or `/rc`. It has no Desktop
