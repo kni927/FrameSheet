@@ -485,7 +485,11 @@ sessions (tested 2026-11-04; `docs/CLOUD_ENVIRONMENTS.md` in
   replaced without asking the owner (owner-approved, 2026-11-04): once it
   is detached and the predecessor is idle with its handover pushed, it turns
   the predecessor's Remote Control off (`set_remote_control` false), then
-  `archive_session` (`local-handover`).
+  `archive_session` (`local-handover`). Archiving a parent never takes its
+  children with it: a cloud parent is archived without a prompt and its
+  cloud child moves to the top level (tested 2026-11-05); a local parent
+  asks "Archive this session" or "Archive 2 sessions", and the first keeps
+  the child (2026-11-04).
 - **Screen operations:** before computer use, ask the owner to stand by;
   run `open -a Claude` right before each computer-use approval, or the
   dialog stays hidden. Screen work runs in the main session or a new
