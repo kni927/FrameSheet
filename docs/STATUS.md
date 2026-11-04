@@ -22,7 +22,7 @@ reproduces MoviePrint v0.2.23 for Apple Silicon: decisions 14–22 in
   legibility pass (done) → T04 save, header, naming, PNG/JSON export and
   import (done) → T04b frames AVFoundation cannot decode (done, decision 25)
   → T05 shot scan, timeline, cut/merge, EDL (done) → T06 player view (done)
-  → T07 faces Lv1 (done) → T08 transforms, Save All, polish → version and
+  → T07 faces Lv1 (done) → T08 transforms, Save All, polish (in progress, TF #01) → version and
   release TASK.
 - Face follow-ups (owner, 2026-11-04): a "per shot" scope (the middle frame of
   each scene); more Vision workers on chips with two Neural Engines (measure
