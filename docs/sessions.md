@@ -106,6 +106,11 @@ Send each message only to the sessions that need it.
   `git log --grep`) for an earlier result and cites it; it tests again only
   what that does not settle (owner, 2026-11-04: `/compact` by message was
   re-tested after the 2026-10-08 result).
+- **Own tools:** a session knows its tools, deferred ones included (loaded
+  with ToolSearch), and proposes one unasked when it could do the work
+  better or remove a manual step for the owner, as it would a skill (owner,
+  2026-11-04: the desktop session tools `start_session`, `detach_session`
+  and `archive_session` went unmentioned while the owner clicked cards).
 - **Causes:** a session measures or checks before it states a cause and
   marks each one 確認済み / `Checked:` with the numbers, or 推測 / 未確認 /
   `Guess:` with the check that would settle it. An HQ that receives a TF's
