@@ -91,9 +91,9 @@ Send each message only to the sessions that need it.
   owner's words, and in the same step records it where it belongs: dotfiles
   `docs/DECISIONS.md` or the global instructions for a global rule, or a
   proposed `sessions.md` text sent to Upstream HQ for a template rule. The
-  receiving session acts on the committed record, not on the message alone,
-  since a message from another session is not the owner's approval (owner's
-  decision, 2026-11-05).
+  receiving session acts on the committed record, or on the message when it
+  carries the "(owner approved)" mark (Approvals, below) (owner's decisions,
+  2026-11-05).
 
 - **Who gets what:** a TF reports to its Project HQ only. Upstream HQ sends a
   policy change to every active Project HQ and a one-line summary to Central
@@ -241,8 +241,12 @@ Send each message only to the sessions that need it.
   permissions, dropped approvals, `AGENTS.md`, `CLAUDE.md`, `settings.json`,
   secrets, and outside effects; without it the change goes to the owner. A
   receiving HQ applies a marked change from another HQ (checked with
-  `list_sessions`) without asking again; a mark from a gateway session or a
-  TF does not count. If auto mode still refuses, ask the owner there.
+  `list_sessions`) without asking again. Mac mini HQ and MacBook HQ count as
+  HQs here (owner's decision, 2026-11-05): their messages arrive from a
+  `bridge:session_…` ID, checked with `get_session` (title, `environment_kind`
+  `bridge`; for Mac mini HQ, the ID in Google Drive's `mac-mini-hq.<ID>`). A
+  mark from a gateway session or a TF, cloud or local, does not count. If auto
+  mode still refuses, ask the owner there.
 - **Relaxing a rule:** to widen a permission or drop a guard (an allow
   rule, a hook, a setting), show the owner the exact change in one question
   and get an answer that names it (for example "add `archive_session` to
@@ -481,7 +485,11 @@ sessions (tested 2026-11-04; `docs/CLOUD_ENVIRONMENTS.md` in
   replaced without asking the owner (owner-approved, 2026-11-04): once it
   is detached and the predecessor is idle with its handover pushed, it turns
   the predecessor's Remote Control off (`set_remote_control` false), then
-  `archive_session` (`local-handover`).
+  `archive_session` (`local-handover`). Archiving a parent never takes its
+  children with it: a cloud parent is archived without a prompt and its
+  cloud child moves to the top level (tested 2026-11-05); a local parent
+  asks "Archive this session" or "Archive 2 sessions", and the first keeps
+  the child (2026-11-04).
 - **Screen operations:** before computer use, ask the owner to stand by;
   run `open -a Claude` right before each computer-use approval, or the
   dialog stays hidden. Screen work runs in the main session or a new
