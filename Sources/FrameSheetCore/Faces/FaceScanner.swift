@@ -26,7 +26,7 @@ import Synchronization
 // minutes for a sheet of 400).
 
 /// Which frames a face scan analyzes (Add faces sheet, §4).
-public enum FaceScanScope: String, CaseIterable, Sendable {
+public enum FaceScanScope: String, Codable, CaseIterable, Sendable {
     /// MoviePrint "Scan every 10th frame": scan resolution 0.1.
     case everyTenth
     /// "Scan every 100th frame": 0.01.
@@ -411,7 +411,7 @@ public enum FaceScanner {
 final class FaceCollector: ScanFrameObserver {
     /// Analysis workers: Vision on one worker (18 ms a frame at 720 px)
     /// was slower than the reader on a 24 fps film sampled every 10th frame.
-    static let defaultWorkers = 1
+    static let defaultWorkers = 2
 
     /// Frames queued, being analyzed, or analyzed but waiting for an
     /// earlier frame, at most, per worker (0.9 MB a 720 px frame).

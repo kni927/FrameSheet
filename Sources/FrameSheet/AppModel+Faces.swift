@@ -12,6 +12,11 @@ struct FaceScanJob: Equatable {
     var fraction: Double?
     /// The shot scan reads part of the frames (the combined pass).
     var combined = false
+    /// What the faces sheet stores of the scan.
+    var source: FaceSheetSource
+    /// Apply: the faces sheet whose thumbs the scan replaces; nil adds a
+    /// faces sheet.
+    var target: SheetRef?
 
     var message: String {
         let percent = fraction.map { " \(Int(($0 * 100).rounded(.down))) %" } ?? "…"
@@ -73,12 +78,43 @@ extension AppModel {
         guard scanJob == nil, faceScanJob == nil, let file = currentFile, let sheet = currentSheet,
               sheet.type != .faces
         else { return }
+        let source = FaceSheetSource(
+            scope: scope, thumbFrames: shownThumbs(of: sheet).map(\.frameNumber), frameCount: file.frameCount,
+            thresholds: library.settings.faceThresholds)
+        runFaceScan(file, source: source, target: nil)
+    }
+
+    /// Apply (Settings, Face detection) is available: the current sheet is
+    /// a faces sheet made with other thresholds than the current ones, and
+    /// nothing scans.
+    var canApplyFaceThresholds: Bool {
+        guard !isScanning, let ref = currentRef else { return false }
+        return library.faceSheetNeedsRescan(ref, thresholds: library.settings.faceThresholds)
+    }
+
+    /// The current sheet is a faces sheet.
+    var isFacesSheetShown: Bool { currentSheet?.type == .faces }
+
+    /// Apply: rescans the current faces sheet's frames with the current
+    /// thresholds and replaces its thumbs in place (one undo step); Cancel
+    /// keeps what was found, and Apply resumes it.
+    func applyFaceThresholds() {
+        guard scanJob == nil, faceScanJob == nil, canApplyFaceThresholds, let file = currentFile,
+              let ref = currentRef, let source = library.faceSheetSource(ref)
+        else { return }
+        runFaceScan(file, source: source.with(library.settings.faceThresholds), target: ref)
+    }
+
+    /// Scans `source`'s frames of `file` for faces, then adds a faces sheet
+    /// or, with `target`, replaces that sheet's thumbs.
+    private func runFaceScan(_ file: MovieFile, source: FaceSheetSource, target: SheetRef?) {
         checkMovieFile(file.id)
         guard !missing.contains(file.id) else {
             toast = "\(file.name): the movie is missing."
             return
         }
-        let frames = scope.frames(thumbFrames: shownThumbs(of: sheet).map(\.frameNumber), frameCount: file.frameCount)
+        let scope = source.scope
+        let frames = source.frames(frameCount: file.frameCount)
         guard !frames.isEmpty else { return }
         cancelScrub()
         // The scan holds the DecodeGate; playback would hold it as well.
@@ -86,7 +122,7 @@ extension AppModel {
         let settings = library.settings
         let store = faceStore
         let scans = scanStore
-        faceScanJob = FaceScanJob(fileId: file.id, fileName: file.name, scope: scope)
+        faceScanJob = FaceScanJob(fileId: file.id, fileName: file.name, scope: scope, source: source, target: target)
         // The frames the scan will analyze (those not in the face cache).
         var pending = frames
         if let stored = (try? store?.load(file.id)) ?? nil, stored.thresholds == settings.faceThresholds {
@@ -98,7 +134,8 @@ extension AppModel {
         let log = ScanLog("face scan")
         scanLog = log
         let decoder = openBackend(file.id)?.kind.rawValue ?? "not open yet"
-        log.write("app: face scan of \(file.name), scope \(scope.label.lowercased()), frames \(frames.first ?? 0)–"
+        log.write("app: face scan of \(file.name)\(target == nil ? "" : " (Apply)"), "
+            + "scope \(scope.label.lowercased()), frames \(frames.first ?? 0)–"
             + "\(frames.last ?? 0) (\(frames.count) frames, \(pending.count) not in the face cache), "
             + "thresholds confidence \(settings.faceThresholds.confidence) size \(settings.faceThresholds.size), "
             + "thumbnail backend \(decoder), main area \(Int(mainAreaSize.width))x\(Int(mainAreaSize.height)) pt")
@@ -225,15 +262,27 @@ extension AppModel {
         }
     }
 
-    /// The scan is done: a faces sheet of the scope's frames with faces, as
-    /// one undo step.
+    /// The scan is done: a faces sheet of the scope's frames with faces, or
+    /// (Apply) the target sheet's thumbs replaced, as one undo step.
     private func finishFaceScan(_ fileId: UUID, frames: [Int], data: FaceData) {
         let job = faceScanJob
         faceScanJob = nil
         faceScanFrames = nil
         thumbnailsChanged()
+        if let job, let target = job.target {
+            let replaced = edit { $0.replaceFacesSheetThumbs(target, frames: frames, faces: data, source: job.source) }
+            if replaced {
+                if currentRef == target { selectedThumbId = nil }
+            } else if library.sheet(target.sheetId, of: target.fileId) == nil {
+                showNotice("The faces sheet was removed during the scan.")
+            } else {
+                showNotice("No faces found in \(job.fileName) with these thresholds. The sheet is unchanged.")
+            }
+            return
+        }
         let added = edit { library -> Bool in
-            guard let sheet = library.addFacesSheet(to: fileId, frames: frames, faces: data) else { return false }
+            guard let sheet = library.addFacesSheet(to: fileId, frames: frames, faces: data, source: job?.source)
+            else { return false }
             library.currentFileId = fileId
             library.currentSheetId = sheet.id
             return true
@@ -253,7 +302,7 @@ extension AppModel {
         loadCurrentSheet()
         if cancelled, let job {
             let at = job.fraction.map { " at \(Int(($0 * 100).rounded(.down))) %" } ?? ""
-            showNotice("Face detection stopped\(at). Add faces sheet resumes it.")
+            showNotice("Face detection stopped\(at). \(job.target == nil ? "Add faces sheet" : "Apply") resumes it.")
         }
     }
 

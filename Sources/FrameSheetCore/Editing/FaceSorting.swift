@@ -9,7 +9,7 @@ import Foundation
 // `FILTER_METHOD_FACESIZE` (app/utils/constants.js).
 
 /// The toolbar's Sort menu.
-public enum ThumbSort: String, CaseIterable, Sendable {
+public enum ThumbSort: String, Codable, CaseIterable, Sendable {
     case reverse, frameNumber, faceCount, faceSize, faceConfidence
 
     public var label: String {
@@ -127,6 +127,11 @@ extension Library {
     public mutating func sortThumbs(_ ref: SheetRef, by sort: ThumbSort, includeHidden: Bool) {
         withSheet(ref) { sheet, _ in
             guard sheet.type != .shot, !sort.needsFaces || sheet.type == .faces else { return }
+            if sheet.type == .faces {
+                let last = sheet.faceSort ?? FaceSheetSort(sort: .faceSize)
+                sheet.faceSort = sort == .reverse
+                    ? FaceSheetSort(sort: last.sort, reversed: !last.reversed) : FaceSheetSort(sort: sort)
+            }
             if sort == .reverse {
                 sheet.thumbs.reverse()
                 sheet.reindex()
@@ -170,18 +175,18 @@ extension Library {
 
     /// Add faces sheet (§5): the scanned frames of `frames` that contain
     /// faces, with their faces, sorted by face size and in an optimized
-    /// grid, in grid view. Nil when no frame has a face (MoviePrint made an
-    /// empty sheet).
+    /// grid, in grid view, with the scan's `source` stored for Apply. Nil
+    /// when no frame has a face (MoviePrint made an empty sheet).
     @discardableResult
-    public mutating func addFacesSheet(to fileId: UUID, frames: [Int], faces: FaceData) -> Sheet? {
-        let thumbs = frames.compactMap { number -> Thumb? in
-            guard let frame = faces.frame(number), frame.faceCount > 0 else { return nil }
-            return Thumb(frameNumber: number, index: 0, faces: frame.faces)
-        }
+    public mutating func addFacesSheet(
+        to fileId: UUID, frames: [Int], faces: FaceData, source: FaceSheetSource? = nil
+    ) -> Sheet? {
+        let thumbs = Self.facesThumbs(frames: frames, faces: faces)
         guard !thumbs.isEmpty, let sheet = addSheet(to: fileId, type: .faces, view: .grid, thumbs: thumbs) else {
             return nil
         }
         let ref = SheetRef(fileId: fileId, sheetId: sheet.id)
+        withSheet(ref) { sheet, _ in sheet.faceSource = source }
         sortThumbs(ref, by: .faceSize, includeHidden: false)
         return self.sheet(sheet.id, of: fileId)
     }

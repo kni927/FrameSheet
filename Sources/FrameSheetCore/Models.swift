@@ -161,6 +161,12 @@ public struct Sheet: Codable, Sendable, Identifiable, Equatable {
     public var scenes: [Scene]
     /// Faces sheets: the Filter menu's ranges (nil until first set).
     public var faceFilter: FaceFilter?
+    /// Faces sheets: the frames and thresholds the sheet was scanned with,
+    /// for Apply (nil on sheets made before it was stored).
+    public var faceSource: FaceSheetSource?
+    /// Faces sheets: the last Sort, which Apply sorts the new thumbs by
+    /// (nil: the initial sort by face size).
+    public var faceSort: FaceSheetSort?
 
     public init(
         id: UUID = UUID(), name: String, type: SheetType, view: SheetView = .grid,

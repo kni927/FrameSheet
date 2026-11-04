@@ -351,6 +351,140 @@ private extension Library {
     }
 }
 
+/// Apply (Settings, Face detection): the stored scan source and the
+/// in-place replacement of a faces sheet's thumbs.
+@Suite struct FaceSheetRescanTests {
+    private func movie() -> (Library, MovieFile) {
+        var library = Library()
+        let file = MovieFile(
+            url: URL(fileURLWithPath: "/movies/a.mp4"), duration: 40, frameCount: 1000, fps: 25,
+            width: 1920, height: 1080, size: 1, fourCC: "avc1")
+        library.files.append(file)
+        return (library, file)
+    }
+
+    private func data(_ thresholds: FaceThresholds, _ frames: [(Int, [Double])]) -> FaceData {
+        var data = FaceData(thresholds: thresholds)
+        for (frame, sizes) in frames {
+            data.record(FaceFrame(frameNumber: frame, faces: sizes.map { face($0) }))
+        }
+        return data
+    }
+
+    @Test func sourceRebuildsTheScopesFrames() throws {
+        let thumbs = [600, 100, 1100, 350]
+        for scope in FaceScanScope.allCases {
+            let source = FaceSheetSource(scope: scope, thumbFrames: thumbs, frameCount: 2000, thresholds: FaceThresholds())
+            #expect(source.frames(frameCount: 2000) == scope.frames(thumbFrames: thumbs, frameCount: 2000))
+            let decoded = try JSONDecoder().decode(FaceSheetSource.self, from: JSONEncoder().encode(source))
+            #expect(decoded == source)
+        }
+        let sampled = FaceSheetSource(scope: .everyTenth, thumbFrames: thumbs, frameCount: 2000, thresholds: nil)
+        #expect(sampled.lowFrame == 100 && sampled.highFrame == 1100 && sampled.thumbFrames == nil)
+        let exact = FaceSheetSource(scope: .thumbs, thumbFrames: thumbs + [5000], frameCount: 2000, thresholds: nil)
+        #expect(exact.thumbFrames == [100, 350, 600, 1100])
+    }
+
+    @Test func sourceDecodesTolerantly() throws {
+        let json = #"{"scope": "perShot", "lowFrame": 10, "thresholds": {"bad": 1}}"#
+        let source = try JSONDecoder().decode(FaceSheetSource.self, from: Data(json.utf8))
+        #expect(source.scope == .everyTenth && source.lowFrame == 10 && source.highFrame == 10)
+        #expect(source.thresholds == nil)
+        let sort = try JSONDecoder().decode(FaceSheetSort.self, from: Data(#"{"sort": "unknown"}"#.utf8))
+        #expect(sort == FaceSheetSort(sort: .faceSize))
+        // A sheet saved before Apply decodes without either.
+        let sheet = Sheet(name: "Sheet-1", type: .faces)
+        var object = try #require(
+            JSONSerialization.jsonObject(with: JSONEncoder().encode(sheet)) as? [String: Any])
+        object["faceSource"] = nil
+        object["faceSort"] = nil
+        let old = try JSONDecoder().decode(Sheet.self, from: JSONSerialization.data(withJSONObject: object))
+        #expect(old.faceSource == nil && old.faceSort == nil)
+    }
+
+    @Test func addedSheetStoresItsSourceAndOlderSheetsFallBack() throws {
+        var (library, file) = movie()
+        let thresholds = FaceThresholds(confidence: 70, size: 10)
+        let source = FaceSheetSource(scope: .thumbs, thumbFrames: [10, 20, 30], frameCount: 1000, thresholds: thresholds)
+        let added = library.addFacesSheet(
+            to: file.id, frames: [10, 20, 30], faces: data(thresholds, [(10, [20]), (20, [40]), (30, [])]),
+            source: source)
+        let sheet = try #require(added)
+        let ref = SheetRef(fileId: file.id, sheetId: sheet.id)
+        #expect(library.faceSheetSource(ref) == source)
+        #expect(!library.faceSheetNeedsRescan(ref, thresholds: thresholds))
+        #expect(library.faceSheetNeedsRescan(ref, thresholds: FaceThresholds(confidence: 50, size: 10)))
+
+        // Made before Apply: every 10th frame over its own frames, thresholds unknown.
+        library.sheets[file.id]![0].faceSource = nil
+        let fallback = try #require(library.faceSheetSource(ref))
+        #expect(fallback.scope == .everyTenth && fallback.lowFrame == 10 && fallback.highFrame == 20)
+        #expect(fallback.thresholds == nil)
+        #expect(library.faceSheetNeedsRescan(ref, thresholds: thresholds))
+        // With a parent sheet: over the parent's shown thumbs.
+        let interval = library.addDefaultIntervalSheet(to: file.id)
+        let parent = try #require(interval)
+        library.sheets[file.id]![0].parentSheetId = parent.id
+        let fromParent = try #require(library.faceSheetSource(ref))
+        #expect(fromParent.lowFrame == parent.thumbs.map(\.frameNumber).min())
+        #expect(fromParent.highFrame == parent.thumbs.map(\.frameNumber).max())
+        // Not a faces sheet.
+        #expect(library.faceSheetSource(SheetRef(fileId: file.id, sheetId: parent.id)) == nil)
+    }
+
+    @Test func replacementKeepsNameSortAndFilterAsOneUndoStep() throws {
+        var (library, file) = movie()
+        let old = FaceThresholds(confidence: 70, size: 10)
+        let frames = [100, 200, 300, 400, 500]
+        let source = FaceSheetSource(scope: .everyHundredth, thumbFrames: [100, 500], frameCount: 1000, thresholds: old)
+        let added = library.addFacesSheet(
+            to: file.id, frames: frames, faces: data(old, [(100, [30]), (200, [60]), (300, [55]), (400, []), (500, [80])]),
+            source: source)
+        let sheet = try #require(added)
+        let ref = SheetRef(fileId: file.id, sheetId: sheet.id)
+        var filter = FaceFilter()
+        filter.size.enabled = true
+        library.setFaceFilter(ref, filter)
+        library.sortThumbs(ref, by: .frameNumber, includeHidden: false)
+        library.sortThumbs(ref, by: .reverse, includeHidden: false)
+        #expect(library.faceSheet(ref).faceSort == FaceSheetSort(sort: .frameNumber, reversed: true))
+        let before = library
+
+        var document = EditableLibrary(library)
+        let new = FaceThresholds(confidence: 50, size: 5)
+        let replaced = document.edit {
+            $0.replaceFacesSheetThumbs(
+                ref, frames: frames,
+                faces: data(new, [(100, [70]), (200, [6]), (300, [52, 8]), (400, [90]), (500, [])]),
+                source: source.with(new))
+        }
+        #expect(replaced)
+        let after = document.library.faceSheet(ref)
+        #expect(after.name == sheet.name && after.id == sheet.id && after.type == .faces)
+        #expect(after.faceFilter == filter)
+        #expect(after.faceSort == FaceSheetSort(sort: .frameNumber, reversed: true))
+        #expect(after.faceSource == source.with(new))
+        // New thumbs: frame 500 lost its face, 400 found one; size ≥ 50 shows 100, 300, 400, reversed.
+        #expect(Set(after.thumbs.map(\.frameNumber)) == [100, 200, 300, 400])
+        #expect(after.visibleThumbs.map(\.frameNumber) == [400, 300, 100])
+        #expect(after.thumbs.map(\.index) == Array(0..<4))
+        #expect(!document.library.faceSheetNeedsRescan(ref, thresholds: new))
+        #expect(document.library.sheets[file.id]?.count == 1)
+
+        let undone = document.undo()
+        #expect(undone)
+        #expect(document.library == before)
+        #expect(!document.history.canUndo)
+
+        // No faces: nothing changes, no undo step.
+        var unchanged = EditableLibrary(before)
+        let none = unchanged.edit {
+            $0.replaceFacesSheetThumbs(ref, frames: frames, faces: data(new, [(100, [])]), source: source.with(new))
+        }
+        #expect(!none && unchanged.library == before && !unchanged.history.canUndo)
+    }
+}
+
 /// The analysis queue behind the scan pass's observer, fed like the pass
 /// feeds it: frames lent one at a time, reused after each call.
 @Suite(.timeLimit(.minutes(1))) struct FaceCollectorTests {

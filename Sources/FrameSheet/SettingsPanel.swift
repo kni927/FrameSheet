@@ -893,7 +893,9 @@ private struct TimelineStylingRows: View {
     }
 }
 
-/// Face detection (§6): the thresholds a face scan stores faces with.
+/// Face detection (§6): the thresholds a face scan stores faces with. On a
+/// faces sheet, Apply rescans the sheet's frames with them and replaces its
+/// thumbs.
 private struct FaceDetectionSection: View {
     @Environment(AppModel.self) private var model
 
@@ -905,9 +907,18 @@ private struct FaceDetectionSection: View {
             LabeledSlider(
                 title: "Size", value: model.setting(\.faceSizeThreshold), range: 0...100, unit: " %",
                 help: "Faces smaller than this share of the frame height are ignored")
-            Text("Takes effect on the next scan")
-                .font(Theme.panelCaption)
-                .foregroundStyle(Theme.textMuted)
+            HStack {
+                Text(model.isFacesSheetShown ? "Apply rescans this faces sheet" : "Takes effect on the next scan")
+                    .font(Theme.panelCaption)
+                    .foregroundStyle(Theme.textMuted)
+                Spacer(minLength: 0)
+                let canApply = model.canApplyFaceThresholds
+                let applied = model.isFacesSheetShown && !model.isScanning && !canApply
+                Button("Apply") { model.applyFaceThresholds() }
+                    .controlSize(.small)
+                    .disabled(!canApply)
+                    .help(applied ? "These thresholds are already applied" : "Rescan this faces sheet with these thresholds")
+            }
         }
     }
 }
