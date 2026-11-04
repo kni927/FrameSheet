@@ -31,9 +31,9 @@ procedures are in skills (Skills, below); the reasons are in
   keeps the ID. A new Mac mini HQ tells Central HQ, which renames the file
   (also when its morning check finds the file pointing at a finished one).
 - **Mac mini Gate** (local, always on): `🖥️ Mac mini Gate` (as a relay
-  `To:`, `🖥️ Mac mini Gate | macminihq-*`), the session of
+  `To:`, `🖥️ Mac mini Gate | macminigate-* | macminihq-*`), the session of
   the Remote Control server that launchd keeps running in
-  `~/Projects/Local/MacMiniHQ` (kni927/dotfiles `docs/AUTOMATIONS.md`). It
+  `~/Projects/Local/MacMiniGate` (kni927/dotfiles `docs/AUTOMATIONS.md`). It
   stays reachable from the Web and the phone when Claude Desktop restarts or
   loses its sign-in, takes relayed messages while Mac mini HQ is gone, and
   tells the owner when Mac mini HQ needs a sign-in or `/rc`. It has no Desktop
@@ -101,6 +101,16 @@ Send each message only to the sessions that need it.
   buttons (in the Claude desktop app, `wrap_up`'s `ask`/`actions`: pass the
   recap only); a skipped or unanswered question is not a decision (owner,
   2026-11-03, 2026-11-04).
+- **Earlier results:** before a test or an investigation, a session
+  searches the records (`docs/` and `docs/archives/` in the repositories,
+  `git log --grep`) for an earlier result and cites it; it tests again only
+  what that does not settle (owner, 2026-11-04: `/compact` by message was
+  re-tested after the 2026-10-08 result).
+- **Own tools:** a session knows its tools, deferred ones included (loaded
+  with ToolSearch), and proposes one unasked when it could do the work
+  better or remove a manual step for the owner, as it would a skill (owner,
+  2026-11-04: the desktop session tools `start_session`, `detach_session`
+  and `archive_session` went unmentioned while the owner clicked cards).
 - **Causes:** a session measures or checks before it states a cause and
   marks each one 確認済み / `Checked:` with the numbers, or 推測 / 未確認 /
   `Guess:` with the check that would settle it. An HQ that receives a TF's
@@ -305,24 +315,28 @@ same way, is the `Trusted` environment's setup script
 
 Usage: `get_session` without an ID (cloud), `get_usage` for `self` (local);
 in a `Trusted` cloud session a hook adds one `Context usage: NN% …` line
-when a step below first applies (70% before any compaction, 75% after one,
-each later compaction), with the compaction count and that step, and stays
-silent for the rest of that step. Compactions are the `compact_boundary` entries in the session's own
-transcript. Locally the fast-jev-compaction plugin compacts at 90% and keeps
-the conversation verbatim; in the cloud Claude Code's own compaction runs at
-80% with its built-in summary, which loses detail (`docs/CLOUD_ENVIRONMENTS.md`
-in `kni927/dotfiles`).
+when a step below first applies, and stays silent for the rest of that step.
+Compactions are the `compact_boundary` entries in the session's own
+transcript, with their `trigger`. Only a `/compact` the owner types goes
+through the fast-jev-compaction plugin, which keeps the conversation
+verbatim; Claude Code's automatic compaction (about 78% in the cloud, about
+97% locally) bypasses it and writes its built-in summary, which loses
+detail, and the plugin cannot start a compaction itself in cloud or desktop
+sessions (tested 2026-11-04; `docs/CLOUD_ENVIRONMENTS.md` in
+`kni927/dotfiles`).
 
 - Check usage at natural breaks and before a step that would not fit; report
   it only when handing over or wrapping up.
-- Before its first compaction, a cloud HQ past 70% ends one reply with one
-  English line asking the owner to type `/compact`, only in the reply that
-  answers the hook's line; it does not repeat the request.
-- After the first compaction, a cloud HQ hands over and a local TF wraps up
-  at the first natural break past its threshold (cloud HQ 75%, local TF
-  80%); after a second, at the next natural break. The owner may say
-  "handover" or "wrap up" at any time. Gateway and Workspace sessions are
-  exempt.
+- Past its ask threshold (cloud HQ 72.5%, local TF or Mac HQ 90%), a session
+  ends one reply with one English line asking the owner to type `/compact`,
+  and does not repeat it until usage crosses the threshold again. A
+  `/compact` is no reason to hand over or wrap up.
+- Hand over (cloud HQ; a local session with `local-handover`) or wrap up
+  (local TF) before an automatic compaction comes: at the first natural break past 76% (cloud HQ) or 94% (local TF),
+  when the owner has not compacted. After an automatic compaction (a
+  `compact_boundary` whose `trigger` is not `manual`), at the next natural
+  break. The owner may say "handover" or "wrap up" at any time. Gateway and
+  Workspace sessions are exempt.
 - A session that wrapped up or handed over ends with this block and waits:
 
   ```markdown
@@ -396,9 +410,26 @@ in `kni927/dotfiles`).
 
 ## Local sessions on the Mac
 
+- **Mac work stays on the Mac:** work done mainly on a Mac (a launchd job,
+  local logs, a fix that has to be tried there) goes to a local session on
+  that Mac: Mac mini HQ, MacBook HQ, or a Workspace session. A cloud HQ does
+  not run it by relaying commands and logs, which leaves the owner to carry
+  every step. When a cloud HQ finds itself doing so, it hands the work over:
+  it sends the local session what was tried, the commits and the current
+  state (relay, `mac-relay`), and stops (owner's decision, 2026-11-05, after
+  the Gate's server took four relayed rounds in one evening).
 - **Starting a TF:** the owner types `/tf <what>` in a new local session or
   starts one from an HQ's card (`offer-tf`), with **Start with worktree**
-  only when another TF works in the main clone. Server mode (`rc-server`)
+  only when another TF works in the main clone; a TF handing over starts its
+  successor itself (`start_session`, then `detach_session`), and the
+  successor archives it (dotfiles `/tf`, `local-handover`).
+- **Handing over a local session:** a TF or a base session past its
+  threshold, after an automatic compaction, or when the owner says so, hands
+  over with the global skill `local-handover` (dotfiles): handover file,
+  `start_session`, `detach_session`, `✅ … (handover YYYY-MM-DD)`; the
+  successor takes over the role (Mac mini HQ tells Central HQ its ID) and
+  archives the predecessor. The Gate has no desktop tools; the owner
+  replaces it. Server mode (`rc-server`)
   is the owner's option.
 - **One TF per working directory:** sessions there share `TASK.md`, changes,
   and build output. A TF that finds `TASK.md` or uncommitted changes takes no
@@ -420,8 +451,8 @@ in `kni927/dotfiles`).
 - **How long a TF runs:** it keeps taking TASKs while they follow one
   another, a release included, and wraps up when none waits, hours of idle
   lie ahead, or Context usage says so. Conflicting TASKs run in order or in
-  subagents. Remaining Mac work goes to a new TF by card; other work to a
-  cloud session the Project HQ starts. Never keep sessions warm with
+  subagents. Remaining Mac work goes to a new TF the TF starts itself; other
+  work to a cloud session the Project HQ starts. Never keep sessions warm with
   periodic messages; what the next TF needs goes into the repository.
 - **Archiving:** the owner archives local sessions in the Mac app; no cloud
   session archives a local one (server-mode sessions excepted), since the
@@ -429,7 +460,11 @@ in `kni927/dotfiles`).
   session that started a child (a sub-task, a check, a test) archives it
   from the same side once its work is verified (pushed, nothing left
   uncommitted). A child never archives itself; an HQ's successor archives its
-  predecessor (Handover).
+  predecessor (Handover), and a local successor archives the session it
+  replaced without asking the owner (owner-approved, 2026-11-04): once it
+  is detached and the predecessor is idle with its handover pushed, it turns
+  the predecessor's Remote Control off (`set_remote_control` false), then
+  `archive_session` (`local-handover`).
 - **Screen operations:** before computer use, ask the owner to stand by;
   run `open -a Claude` right before each computer-use approval, or the
   dialog stays hidden. Screen work runs in the main session or a new

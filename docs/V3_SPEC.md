@@ -37,12 +37,15 @@ builds them.
   security-scoped bookmark), name, folder, duration, frame count, fps, width,
   height, size, fourCC, poster frame, transform (rotation, crop, aspect
   ratio), IN/OUT frame, scan state.
-- **Transform** (T08): rotation 0/90/180/270, crop in source pixels, aspect
+- **Transform** (T08): rotation 0/90/180/270, crop in the rotated frame's pixels (as MoviePrint's `getCropRect`;
+  differs from source pixels at 90° and 270°), aspect
   ratio presets plus custom, applied once in the decode output so thumbs,
   scrub, scans and saves agree (the player turns and crops the video view).
   A rotation or crop change, also by undo/redo, clears the movie's stored
   shot and face scans (decision 26); face boxes already on a faces sheet keep
-  their old coordinates until that sheet is scanned again. Two corrections
+  their old coordinates until that sheet is scanned again; the sheet records
+  the transform its faces were found with and shows a banner, with Apply
+  enabled, when the rotation or crop differs. Two corrections
   of MoviePrint: the 2.21:1 preset is 0.4525 (MoviePrint's 0.5525 is
   1.81:1), and a portrait aspect ratio scales a saved thumb's height as
   height / ratio (MoviePrint multiplies).
