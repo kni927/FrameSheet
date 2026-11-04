@@ -61,3 +61,17 @@ history of this file up to tag v2.3.1.
   fetched with ffmpeg, so every frame is exact (ffmpeg 0.1–0.4 s per frame).
   Without ffmpeg or with the option off, the nearest decodable frame is shown
   with its real number and a marker, and an inexact scrub is refused.
+
+### 6. A scan timing test fails under memory pressure
+* **Description**: `frequentThumbRequestsCostLittle` (`ScanTests.swift`)
+  expects a scan with thumb requests every 100 ms to take at most 1.3× the
+  scan alone plus 0.2 s. During T08 it failed in 3 of 7 `scripts/check.sh`
+  runs (1.34×, 1.46×, 1.75×) and passed in the others (1.07–1.14×), which
+  stops `scripts/check.sh install` before the build.
+* **Reason**: Checked (2026-11-05): after the failing runs the load average
+  was 8.6–9.1, with little free memory and active swapping. With apps closed
+  (load average 3.8, no swap-outs), it passed at 1.13×. Which part of the load
+  slows the shared run most is not measured.
+* **Workaround**: Close memory-heavy apps (browsers, a remote-screen app) and
+  run again. Record the load (`top -l 2 -o cpu -n 8 -stats command,cpu`) as
+  the `slowness-check` skill says when it recurs.

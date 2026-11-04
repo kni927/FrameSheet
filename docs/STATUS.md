@@ -5,7 +5,7 @@ what comes next, what is on hold, and what waits on the owner. Rewrite it
 rather than append; keep it under about 40 lines. Rules are in `AGENTS.md`,
 decisions in `docs/DECISIONS.md`, and history in `docs/tasks/` and Git.
 
-Updated: 2026-11-03
+Updated: 2026-11-05
 
 ## Summary
 
@@ -18,29 +18,23 @@ reproduces MoviePrint v0.2.23 for Apple Silicon: decisions 14–22 in
 - Spike follow-ups: measure 4K HEVC and HDR once the owner has such files;
   re-measure on the fastest Mac before raising defaults; re-check decode speed
   with the macOS 27 `AVAssetReaderOutput.Provider` API.
-- v3.0.0 order (owner, 2026-11-02): T03 interval editing (done) → T03b UI
-  legibility pass (done) → T04 save, header, naming, PNG/JSON export and
-  import (done) → T04b frames AVFoundation cannot decode (done, decision 25)
-  → T05 shot scan, timeline, cut/merge, EDL (done) → T06 player view (done)
-  → T07 faces Lv1 (done) → T08 transforms, Save All, polish (in progress, TF #01) → version and
-  release TASK.
+- v3.0.0 order (owner, 2026-11-02): T03 → T03b → T04 → T04b → T05 → T06 →
+  T07 → T08 transforms, Save All, polish (all done) → version and release TASK.
 - Face follow-ups (owner, 2026-11-04): a "per shot" scope (the middle frame of
   each scene); more Vision workers on chips with two Neural Engines (measure
-  first); a faces sheet opened after a relaunch decodes its thumbs one by one
-  (a sequential read would fix it).
-- Scans run slower while a remote-screen app is active (it shares the GPU and
-  media engine): 33 s instead of 19 s for a 12 min film's face scan.
-- Audio for ffmpeg playback (owner: later, e.g. T08).
-- T08: move only the Experimental section to the Settings window (owner,
-  2026-11-04; the collapsible panel sections cover the rest).
-- Hung runs: `scripts/check.sh` stops itself after 15 min; `scripts/check.sh
-  stop` ends a run the sandbox cannot (owner, 2026-11-03).
+  first).
+- Audio for ffmpeg playback (deferred from T08; the "no audio" label stays).
+- Spec wording (T08): full screen is 🌐F on macOS 27 (§8 says ⌃⌘F); the crop
+  is in the rotated frame's pixels (§3 says source pixels).
+- Run `tools/spike/run-all.sh quick` once with a rotated and a cropped movie.
+- Scans and timing tests run slower under load (a remote-screen app, a
+  browser using much memory): KNOWN_ISSUES 6.
 - Tooltips on every control, kept short (owner, 2026-11-02/03).
-- Not yet tried by the owner: Rename/Delete sheet, ⌃⌘F, the scrub at the
-  smallest window size, ⌘Z while renaming, MoviePrint 0.2.23 files (only
-  0.2.12 runs on the owner's Mac).
+- Not yet tried by the owner: MoviePrint 0.2.23 files (only 0.2.12 runs on
+  the owner's Mac).
 - Builds and tests go through `scripts/check.sh` (`install` also installs
-  and launches); it runs outside the sandbox without a dialog.
+  and launches); it runs outside the sandbox without a dialog; `stop` ends a
+  hung run.
 
 ## On hold
 
