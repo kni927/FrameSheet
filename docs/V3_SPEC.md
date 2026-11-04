@@ -229,7 +229,7 @@ the 2026-11-01 app-icon choice).
 | ⌥ while dropping | Clear list, then add |
 | ⌘Z / ⇧⌘Z | Undo / redo |
 | ⌘0 / ⌘= / ⌘− | Fit / zoom in / zoom out |
-| ⌃⌘F | Full screen |
+| 🌐F (Fn+F) | Full screen (macOS 27; ⌃⌘F before); letter shortcuts ignore Fn/Globe |
 
 Letter and number keys do nothing while a text field has focus. MoviePrint's
 Alt and Ctrl become Option and Control.
