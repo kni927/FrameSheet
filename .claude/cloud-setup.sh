@@ -11,7 +11,7 @@
 # because plugins load before the hook runs.
 # The repositories are already cloned when it runs, but GitHub is not yet
 # reachable. kni927/dotfiles docs/CLOUD_ENVIRONMENTS.md explains each part.
-version=2026-11-03.1
+version=2026-11-04.1
 refresh=0; [ "${1:-}" = --refresh ] && refresh=1
 
 if [ $refresh = 0 ]; then
@@ -29,22 +29,26 @@ command -v shellcheck >/dev/null ||
 mkdir -p ~/.claude/hooks
 cat > ~/.claude/hooks/context-alert.py <<'PY'
 # UserPromptSubmit hook for Trusted cloud sessions (setup script). When a
-# step of docs/sessions.md "Context usage" first applies (70% before any
-# compaction, 75% after one, each later compaction), it adds one line with
-# the usage, the compaction count, and that step; later prompts in the same
-# step stay silent (owner, 2026-10-31: the session rail shows usage).
+# step of docs/sessions.md "Context usage" first applies (72.5%: ask for
+# /compact; 76%: hand over before Claude Code's automatic compaction at about
+# 78%; an automatic compaction happened: hand over), it adds one line with
+# the usage and that step; later prompts in the same step stay silent
+# (owner, 2026-10-31: the session rail shows usage; thresholds 2026-11-04).
 import json, os, sys
 
 WINDOW = int(os.environ.get("CONTEXT_WINDOW_TOKENS", "1000000"))
 try:
     path = json.load(sys.stdin).get("transcript_path") or ""
-    compactions, used = 0, 0
+    compactions, automatic, used = 0, 0, 0
     with open(path, "rb") as f:
         for raw in f:
             if b'"compact_boundary"' in raw:
                 try:
-                    if json.loads(raw).get("subtype") == "compact_boundary":
+                    e = json.loads(raw)
+                    if e.get("subtype") == "compact_boundary":
                         compactions, used = compactions + 1, 0
+                        if (e.get("compactMetadata") or {}).get("trigger") != "manual":
+                            automatic += 1
                         continue
                 except ValueError:
                     pass
@@ -61,17 +65,21 @@ try:
                        ("input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens")) or used
 except Exception:
     sys.exit(0)
-pct = used * 100 // WINDOW
-if compactions == 0 and pct >= 70:
-    step = ("no compaction yet: a cloud HQ ends its reply with the one-line /compact "
-            "request and does not hand over")
-elif compactions == 1 and pct >= 75:
-    step = "compacted once: a cloud HQ hands over at the next natural break"
-elif compactions >= 2:
-    step = f"compacted {compactions} times: a cloud HQ hands over at the next natural break"
+pct = used * 100 / WINDOW
+if automatic:
+    stage = f"auto{automatic}"
+    step = ("an automatic compaction replaced earlier detail with a summary: a cloud HQ "
+            "hands over at the next natural break")
+elif pct >= 76:
+    stage = f"handover{compactions}"
+    step = ("a cloud HQ hands over at the next natural break, before the automatic "
+            "compaction at about 78%")
+elif pct >= 72.5:
+    stage = f"ask{compactions}"
+    step = "a cloud HQ ends its reply with the one-line /compact request"
 else:
     sys.exit(0)
-stage, mark = str(min(compactions, 99)), path + ".context-alert"
+mark = path + ".context-alert"
 try:
     with open(mark) as f:
         if f.read().strip() == stage:
@@ -83,7 +91,7 @@ try:
         f.write(stage)
 except OSError:
     pass
-print(f'Context usage: {pct}% ({used:,} / {WINDOW:,} tokens); {step} '
+print(f'Context usage: {pct:.1f}% ({used:,} / {WINDOW:,} tokens); {step} '
       '(docs/sessions.md "Context usage").')
 PY
 
@@ -495,7 +503,9 @@ import json, os
 
 p = os.path.expanduser("~/.claude/settings.json")
 d = json.load(open(p)) if os.path.exists(p) else {}
-d.setdefault("pluginConfigs", {})["fast-jev-compaction@fast-jev-compaction"] = {"options": {"compactAtPercent": 78}}
+# The plugin cannot start a compaction in a session run through the SDK, which
+# cloud and desktop sessions are; only /compact reaches it (2026-11-04).
+d.setdefault("pluginConfigs", {})["fast-jev-compaction@fast-jev-compaction"] = {"options": {"compactAtPercent": 100}}
 d["attribution"] = {"commit": "", "pr": "", "sessionUrl": True}
 allow = d.setdefault("permissions", {}).setdefault("allow", [])
 # A connector appears under its readable name or under its UUID (a session

@@ -305,24 +305,28 @@ same way, is the `Trusted` environment's setup script
 
 Usage: `get_session` without an ID (cloud), `get_usage` for `self` (local);
 in a `Trusted` cloud session a hook adds one `Context usage: NN% …` line
-when a step below first applies (70% before any compaction, 75% after one,
-each later compaction), with the compaction count and that step, and stays
-silent for the rest of that step. Compactions are the `compact_boundary` entries in the session's own
-transcript. Locally the fast-jev-compaction plugin compacts at 90% and keeps
-the conversation verbatim; in the cloud Claude Code's own compaction runs at
-80% with its built-in summary, which loses detail (`docs/CLOUD_ENVIRONMENTS.md`
-in `kni927/dotfiles`).
+when a step below first applies, and stays silent for the rest of that step.
+Compactions are the `compact_boundary` entries in the session's own
+transcript, with their `trigger`. Only a `/compact` the owner types goes
+through the fast-jev-compaction plugin, which keeps the conversation
+verbatim; Claude Code's automatic compaction (about 78% in the cloud, about
+97% locally) bypasses it and writes its built-in summary, which loses
+detail, and the plugin cannot start a compaction itself in cloud or desktop
+sessions (tested 2026-11-04; `docs/CLOUD_ENVIRONMENTS.md` in
+`kni927/dotfiles`).
 
 - Check usage at natural breaks and before a step that would not fit; report
   it only when handing over or wrapping up.
-- Before its first compaction, a cloud HQ past 70% ends one reply with one
-  English line asking the owner to type `/compact`, only in the reply that
-  answers the hook's line; it does not repeat the request.
-- After the first compaction, a cloud HQ hands over and a local TF wraps up
-  at the first natural break past its threshold (cloud HQ 75%, local TF
-  80%); after a second, at the next natural break. The owner may say
-  "handover" or "wrap up" at any time. Gateway and Workspace sessions are
-  exempt.
+- Past its ask threshold (cloud HQ 72.5%, local TF or Mac HQ 90%), a session
+  ends one reply with one English line asking the owner to type `/compact`,
+  and does not repeat it until usage crosses the threshold again. A
+  `/compact` is no reason to hand over or wrap up.
+- Hand over (cloud HQ) or wrap up (local TF) before an automatic compaction
+  comes: at the first natural break past 76% (cloud HQ) or 94% (local TF),
+  when the owner has not compacted. After an automatic compaction (a
+  `compact_boundary` whose `trigger` is not `manual`), at the next natural
+  break. The owner may say "handover" or "wrap up" at any time. Gateway and
+  Workspace sessions are exempt.
 - A session that wrapped up or handed over ends with this block and waits:
 
   ```markdown
