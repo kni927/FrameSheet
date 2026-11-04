@@ -25,7 +25,8 @@ reproduces MoviePrint v0.2.23 for Apple Silicon: decisions 14–22 in
   → T07 faces Lv1 (in progress, TF #01) → T08 transforms, Save All, polish → version and release
   TASK.
 - Audio for ffmpeg playback (owner: later, e.g. T08).
-- Next UI step (owner): move some right-panel settings to the Settings window.
+- T08: move only the Experimental section to the Settings window (owner,
+  2026-11-04; the collapsible panel sections cover the rest).
 - Hung runs: `scripts/check.sh` stops itself after 15 min; `scripts/check.sh
   stop` ends a run the sandbox cannot (owner, 2026-11-03).
 - Tooltips on every control, kept short (owner, 2026-11-02/03).

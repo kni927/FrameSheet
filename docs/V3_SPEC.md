@@ -164,9 +164,10 @@ the 2026-11-01 app-icon choice).
   byte limit (T04b); Clear thumbnail cache.
 - **Fetch exact frames with ffmpeg** (Settings window, default on; disabled
   with a note without ffmpeg): step 3 of decision 25.
-- **Experimental:** shot detection method Mean (default) / Histogram; detection
-  chart (key F); input fields instead of
-  sliders.
+- **Experimental** (Settings window, owner 2026-11-04; the right panel keeps
+  its collapsible sections): shot detection method Mean (default) /
+  Histogram; input fields instead of sliders. The detection chart stays on
+  key F.
 - **ffmpeg** (Settings window): found path and version; Choose… to set a path (§10).
 
 ## 7. Thumb and scene interactions
