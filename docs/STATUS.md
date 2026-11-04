@@ -22,7 +22,7 @@ reproduces MoviePrint v0.2.23 for Apple Silicon: decisions 14–22 in
   legibility pass (done) → T04 save, header, naming, PNG/JSON export and
   import (done) → T04b frames AVFoundation cannot decode (done, decision 25)
   → T05 shot scan, timeline, cut/merge, EDL (done) → T06 player view (done)
-  → T07 faces Lv1 → T08 transforms, Save All, polish → version and release
+  → T07 faces Lv1 (in progress, TF #01) → T08 transforms, Save All, polish → version and release
   TASK.
 - Audio for ffmpeg playback (owner: later, e.g. T08).
 - Next UI step (owner): move some right-panel settings to the Settings window.
