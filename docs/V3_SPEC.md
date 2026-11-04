@@ -207,7 +207,8 @@ the 2026-11-01 app-icon choice).
 | ← / → | Player ±10 frames |
 | ⇧ ← / → | ±1 frame |
 | ⌥ ← / → | ±100 frames |
-| ⇧⌥ ← / → | Previous/next cut (timeline) or thumb (grid) |
+| ⇧⌥ ← / → | Previous/next cut (timeline) or thumb (grid); stops at the ends (MoviePrint wraps) |
+| P | Player: play / pause (T06) |
 | Return | Timeline: cut here, or merge at a cut. Shot grid: change thumb. Interval grid: change thumb; ⇧/⌥ add before/after |
 | S | Player: save current frame |
 | ⌥ while dropping | Clear list, then add |
@@ -220,13 +221,17 @@ Alt and Ctrl become Option and Control.
 
 ## 9. Player view
 
-- Video on top, the sheet as one horizontal strip below (thumbs, or scene bars
-  at 0.3 px per frame).
+- Native video on top, the frame strip below it (MoviePrint draws the strip
+  inside the video area), and the sheet as one horizontal strip below (thumbs,
+  or scene bars at 0.3 px per frame). The player hides both sidebars and
+  restores them on close (T06).
 - Frame strip: 20 vertical slices of consecutive frames around the current
   frame (19 in grid mode); middle slice ≈ 1/4 width (1/3 for an odd count),
   halving outward; 1 px gaps, 8 px at a cut.
-- Current frame number; playback with audio (AVPlayer); save frame; timeline
-  bar with playhead and IN/OUT.
+- Current frame number; playback with audio (AVPlayer; key P), showing an
+  exact still while paused; ffmpeg-routed files play video only, paced by
+  pts, labeled "Playback using ffmpeg · no audio" (owner, T06; audio later);
+  save frame; timeline bar with playhead and IN/OUT.
 - Buttons: previous cut/thumb, −100, −10, −1, CUT/MERGE or CHANGE / ADD BEFORE
   / ADD AFTER, +1, +10, +100, next.
 
