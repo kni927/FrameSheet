@@ -9,6 +9,14 @@ struct SaveProgress: Equatable {
     var fraction: Double?
 }
 
+/// Save All sheets: which of the queue is being saved.
+struct SaveAllProgress: Equatable {
+    var index: Int
+    var count: Int
+    /// "movie.mov – Sheet-2".
+    var title: String
+}
+
 struct SaveError: Error, LocalizedError {
     var message: String
     init(_ message: String) { self.message = message }
@@ -53,7 +61,7 @@ extension AppModel {
         return PrintOutput.Plan(file: file, sheet: sheet, settings: library.settings)
     }
 
-    var isSaving: Bool { progress != nil }
+    var isSaving: Bool { progress != nil || saveAllProgress != nil }
 
     /// Shows a confirmation that clears itself after a few seconds.
     func showNotice(_ message: String) {
@@ -116,6 +124,74 @@ extension AppModel {
             }
         }
     }
+
+    /// Save All sheets (the Save button's menu, §12): every sheet of every
+    /// movie, in movie-list order, one after the other (`SaveAllQueue`), each
+    /// as Save Sheet writes it, with the current output settings and naming;
+    /// so their decodes pass the DecodeGate one at a time. A movie without a
+    /// sheet first gets the default interval sheet (not undoable, like the
+    /// sheet a movie gets when first selected). A modal sheet shows the
+    /// progress with Cancel; missing movies and empty sheets are skipped and
+    /// counted. The notice gives the count and the time, which also goes to
+    /// the scan log.
+    func saveAllSheets() {
+        guard !isSaving, !isScanning, !library.files.isEmpty else { return }
+        let empty = SaveAllPlan.moviesWithoutSheets(library)
+        if !empty.isEmpty {
+            update { library in
+                for id in empty { _ = library.addDefaultIntervalSheet(to: id) }
+            }
+        }
+        let items = SaveAllPlan.items(library)
+        guard !items.isEmpty else { return }
+        let settings = library.settings
+        saveAllProgress = SaveAllProgress(index: 0, count: items.count, title: "")
+        let log = ScanLog("save all")
+        saveJob = Task {
+            defer {
+                saveAllProgress = nil
+                progress = nil
+                saveJob = nil
+            }
+            log.write("app: save all, \(items.count) sheets of \(library.files.count) movies, "
+                + "\(settings.outputFormat == .png ? "PNG" : "JPG"), individual thumbs \(settings.includeIndividualThumbs)")
+            let report = await SaveAllQueue.run(items) { index, item in
+                let file = library.file(item.fileId)
+                let sheet = library.sheet(item.sheetId, of: item.fileId)
+                saveAllProgress = SaveAllProgress(
+                    index: index, count: items.count,
+                    title: "\(file?.name ?? "Movie") – \(sheet?.name ?? "Sheet")")
+            } save: { item in
+                try await saveForSaveAll(item, settings: settings, log: log)
+            }
+            log.end(report.summary)
+            showNotice(report.summary)
+            if let first = report.failures.first {
+                toast = "Save All: \(report.failures.count) sheet(s) not saved; first: \(first.reason)"
+            }
+        }
+    }
+
+    /// One sheet of Save All; the reason when it is skipped.
+    private func saveForSaveAll(
+        _ item: SheetRef, settings: FrameSheetCore.Settings, log: ScanLog
+    ) async throws -> SaveAllOutcome {
+        guard let file = library.file(item.fileId), let sheet = library.sheet(item.sheetId, of: item.fileId) else {
+            return .failed("The sheet was removed")
+        }
+        checkMovieFile(file.id)
+        guard !missing.contains(file.id) else { return .failed("\(file.name): the movie is missing") }
+        let plan = PrintOutput.Plan(file: file, sheet: sheet, settings: settings)
+        guard !plan.thumbs.isEmpty else { return .failed("\(file.name) – \(sheet.name) has no thumbs") }
+        let started = ContinuousClock.now
+        let (_, failures, fromWindow) = try await writeSheet(file: file, sheet: sheet, settings: settings, plan: plan)
+        let took = ContinuousClock.now - started
+        log.write("app: saved sheet \(sheet.thumbs.count) thumbs, \(plan.width)x\(plan.height) px in \(took), "
+            + "\(failures) frame(s) not decoded, \(fromWindow) from the window")
+        return .saved
+    }
+
+    func cancelSaveAll() { saveJob?.cancel() }
 
     /// Frames per decode batch of a save: small, so the toast counts frames
     /// as they arrive and Cancel takes effect soon.

@@ -921,6 +921,42 @@ private func brightestQuadrant(_ image: CGImage) -> Int {
         #expect(observer.state.withLock { $0.brightQuadrant } == brightestQuadrant(thumb.image))
     }
 
+    /// A faces sheet's thumbs after a relaunch (T08): listed frames read in
+    /// one sequential pass, transformed, each the frame asked for.
+    @Test(.enabled(if: ShotScanIntegrationTests.tools != nil)) func sequentialThumbnails() async throws {
+        let clip = try await Self.makeClip("thumbs.mp4", filter: Self.segments)
+        var transform = MovieTransform()
+        transform.rotation = 90
+        transform.cropTop = 20
+        let got = Locked<[Int: CGImage]>([:])
+        var ended: ScanEvent?
+        for await event in SequentialThumbnails.read(
+            url: clip, frames: [100, 5, 40, 60, 40], width: 90, transform: transform, ffmpeg: Self.tools
+        ) { frame, image in
+            got.update { $0[frame] = image }
+        } {
+            if case .finished = event { ended = event }
+            if case .failed(let message) = event { Issue.record("\(message)") }
+        }
+        #expect(ended != nil)
+        let images = got.get()
+        #expect(images.keys.sorted() == [5, 40, 60, 100])
+        // 320 × 180 turned to 180 × 320, 20 rows cropped: 180 × 300, at 90 wide.
+        #expect(images.values.allSatisfy { $0.width == 90 && $0.height == 150 })
+        // Gray 40 at frame 5, 200 at frame 40, 100 at frame 60, 230 at frame 100.
+        let levels = [5, 40, 60, 100].map { meanGray(images[$0]!) }
+        #expect(levels[0] < levels[2] && levels[2] < levels[1] && levels[1] < levels[3], "\(levels)")
+    }
+
+    private func meanGray(_ image: CGImage) -> Double {
+        var data = [UInt8](repeating: 0, count: image.width * image.height * 4)
+        let context = CGContext(
+            data: &data, width: image.width, height: image.height, bitsPerComponent: 8, bytesPerRow: image.width * 4,
+            space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+        context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
+        return Double(stride(from: 0, to: data.count, by: 4).reduce(0) { $0 + Int(data[$1]) }) / Double(data.count / 4)
+    }
+
     /// Automatic IN/OUT on a clip that fades in from black after 12 frames
     /// and ends with 8 black frames.
     @Test(.enabled(if: ShotScanIntegrationTests.tools != nil)) func automaticInOut() async throws {

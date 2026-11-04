@@ -276,7 +276,7 @@ struct SheetToolbar: ToolbarContent {
                     .disabled(noSheet)
                 }
                 // Save (decision 23): the download button, and a menu with
-                // the output location (Save All comes with T08).
+                // Save All sheets and the output location.
                 ToolbarIconGroup {
                     Button {
                         model.saveSheet()
@@ -287,6 +287,9 @@ struct SheetToolbar: ToolbarContent {
                     .toolbarHelp("Save sheet (M)")
                     .disabled(noSheet || model.isSaving)
                     Menu {
+                        Button("Save All Sheets") { model.saveAllSheets() }
+                            .disabled(model.library.files.isEmpty || model.isSaving || model.isScanning)
+                            .help("Save every sheet of every movie, one after the other")
                         Button("Open Output Location") { model.openOutputLocation() }
                     } label: {
                         Label("Save options", systemImage: "chevron.down")

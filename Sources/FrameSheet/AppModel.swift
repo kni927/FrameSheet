@@ -53,6 +53,8 @@ final class AppModel {
     var notice: String?
     /// A save in progress, shown in the toast with Cancel.
     var progress: SaveProgress?
+    /// Save All sheets in progress, shown in a modal sheet with Cancel.
+    var saveAllProgress: SaveAllProgress?
     /// The shot scan in progress (one at a time), shown in the toast with
     /// Cancel; its scenes stream into `scanJob.sheetId`.
     var scanJob: ScanJob?
@@ -1482,6 +1484,11 @@ final class AppModel {
         for frame in wanted { loading.insert(Self.loadingKey(file.id, frame, width)) }
         let log = scanLog
         let requested = ContinuousClock.now
+        // A faces sheet's many thumbs (after a relaunch nothing of them is
+        // in memory) are read in one sequential pass, as the face scan read
+        // them, instead of one request each.
+        let sequential = width == Self.thumbWidth && file.id == library.currentFileId
+            && currentSheet?.type == .faces && wanted.count >= Self.sequentialThumbMinimum
         Task {
             defer { for frame in wanted { loading.remove(Self.loadingKey(file.id, frame, width)) } }
             var failures = 0
@@ -1497,7 +1504,13 @@ final class AppModel {
                 if checkMovieFile(file.id) { toast = "\(file.name): \(error.localizedDescription)" }
                 return
             }
-            for await result in backend.frames(wanted, maxWidth: decodeWidth) {
+            var remaining = wanted
+            if sequential {
+                let delivered = await loadSequentially(remaining, of: file, decodeWidth: decodeWidth)
+                remaining.removeAll { delivered.contains($0) }
+                if remaining.isEmpty { return }
+            }
+            for await result in backend.frames(remaining, maxWidth: decodeWidth) {
                 switch result.result {
                 case .success(let frame):
                     store(frame.image, file: file.id, frame: frame.actualFrame, width: width, decodedFor: decodeWidth)
@@ -1526,6 +1539,44 @@ final class AppModel {
             for frame in wanted { loading.remove(Self.loadingKey(file.id, frame, width)) }
             if checkMovieFile(file.id) { toast = "\(file.name): \(failures) frame(s) could not be decoded." }
         }
+    }
+
+    /// Fewest uncached faces-sheet thumbs read in a sequential pass.
+    static let sequentialThumbMinimum = 24
+
+    /// Reads `frames` in one sequential pass (`SequentialThumbnails`) and
+    /// caches each thumbnail as it arrives; returns the frames delivered
+    /// (the rest are decoded one by one). Each is the exact frame.
+    private func loadSequentially(_ frames: [Int], of file: MovieFile, decodeWidth: Int) async -> Set<Int> {
+        let delivered = DeliveredFrames()
+        let started = ContinuousClock.now
+        let log = ScanLog("faces sheet thumbs")
+        log.write("app: sequential read of \(frames.count) thumbs of \(file.name) at \(decodeWidth) px")
+        let stream = SequentialThumbnails.read(
+            url: file.url, frames: frames, width: decodeWidth,
+            transform: library.file(file.id)?.transform ?? file.transform, ffmpeg: await ffmpegTools(),
+            log: log.sink
+        ) { [weak self] frame, image in
+            delivered.insert(frame)
+            Task { @MainActor in
+                guard let self else { return }
+                self.store(image, file: file.id, frame: frame, width: Self.thumbWidth, decodedFor: decodeWidth)
+                self.inexactImages[ImageKey(file: file.id, frame: frame, width: Self.thumbWidth)] = nil
+                self.imageGeneration += 1
+            }
+        }
+        var how = "ended"
+        for await event in stream {
+            switch event {
+            case .finished: how = "finished"
+            case .cancelled: how = "cancelled"
+            case .failed(let message): how = "failed: \(message)"
+            default: break
+            }
+        }
+        let got = delivered.all
+        log.end("\(how), \(got.count) of \(frames.count) thumbs in \(ContinuousClock.now - started)")
+        return got
     }
 
     /// Moves thumbs to the frame the retry decoded; a correction, not an
@@ -1569,4 +1620,12 @@ final class AppModel {
             toast = "The movie list could not be saved: \(error.localizedDescription)"
         }
     }
+}
+
+/// Frames a sequential thumbnail pass delivered, written from its task.
+private final class DeliveredFrames: @unchecked Sendable {
+    private var frames: Set<Int> = []
+    private let lock = NSLock()
+    func insert(_ frame: Int) { lock.withLock { _ = frames.insert(frame) } }
+    var all: Set<Int> { lock.withLock { frames } }
 }

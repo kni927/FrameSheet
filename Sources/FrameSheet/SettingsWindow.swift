@@ -11,6 +11,7 @@ struct SettingsWindow: View {
                 FFmpegRow()
                 ExactFramesRow()
             }
+            ExperimentalSection()
         }
         .padding(.vertical, Theme.space2)
         .frame(width: 460, alignment: .topLeading)
@@ -120,5 +121,26 @@ private struct ExactFramesRow: View {
             }
         }
         .padding(.top, Theme.space2)
+    }
+}
+
+/// Experimental (§6): the shot detection method; moved here from the
+/// settings panel (owner, 2026-11-04). The detection chart stays on key F.
+private struct ExperimentalSection: View {
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        PanelSection(title: "Experimental") {
+            PanelRow("Shot detection") {
+                Picker("Shot detection", selection: model.setting(\.shotDetectionMethod)) {
+                    ForEach(ShotDetectionMethod.allCases, id: \.self) { method in
+                        Text(method.label).tag(method)
+                    }
+                }
+                .labelsHidden()
+                .fixedSize()
+                .help("Method of the next scan (a new method scans again)")
+            }
+        }
     }
 }

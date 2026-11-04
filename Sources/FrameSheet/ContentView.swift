@@ -101,6 +101,12 @@ struct ContentView: View {
                 .environment(model)
                 .preferredColorScheme(.dark)
         }
+        .sheet(isPresented: Binding(get: { model.saveAllProgress != nil }, set: { _ in })) {
+            SaveAllSheet()
+                .environment(model)
+                .preferredColorScheme(.dark)
+                .interactiveDismissDisabled()
+        }
         .alert("Clear the movie list?", isPresented: $confirmingClear) {
             Button("Clear", role: .destructive) { model.clearList() }
                 .help("Remove all movies and their sheets")
@@ -237,7 +243,7 @@ private struct Toast: View {
                         .help("Stop face detection; it can resume later")
                 }
             }
-            if let progress = model.progress {
+            if let progress = model.progress, model.saveAllProgress == nil {
                 ToastCard {
                     ProgressView(value: progress.fraction)
                         .progressViewStyle(.linear)
@@ -297,5 +303,42 @@ private struct DismissButton: View {
         .buttonStyle(.plain)
         .foregroundStyle(Theme.textMuted)
         .help("Dismiss")
+    }
+}
+
+/// Save All sheets in progress (§12): which sheet of how many, the stage of
+/// the current save, and Cancel (Esc), which stops before the next sheet.
+private struct SaveAllSheet: View {
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        let all = model.saveAllProgress
+        let count = max(1, all?.count ?? 1)
+        let index = all?.index ?? 0
+        let inner = model.progress?.fraction ?? 0
+        VStack(alignment: .leading, spacing: Theme.space3) {
+            Text("Saving all sheets").font(Theme.sectionTitle)
+            Text("\(min(index + 1, count)) of \(count): \(all?.title ?? "")")
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .monospacedDigit()
+            ProgressView(value: min(1, (Double(index) + inner) / Double(count)))
+                .progressViewStyle(.linear)
+            Text(model.progress?.message ?? " ")
+                .font(Theme.panelCaption)
+                .foregroundStyle(Theme.textMuted)
+                .monospacedDigit()
+            HStack {
+                Spacer()
+                Button("Cancel") { model.cancelSaveAll() }
+                    .keyboardShortcut(.cancelAction)
+                    .help("Stop saving; the sheets already saved stay")
+            }
+        }
+        .padding(Theme.space6)
+        .frame(width: 440)
+        .background(Theme.base)
+        .foregroundStyle(Theme.text)
+        .font(Theme.bodySm)
     }
 }

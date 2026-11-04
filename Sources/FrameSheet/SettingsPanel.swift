@@ -25,7 +25,6 @@ struct SettingsPanel: View {
                 OutputSection()
                 NamingSection()
                 FaceDetectionSection()
-                ExperimentalSection()
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
@@ -925,25 +924,3 @@ private struct FaceDetectionSection: View {
     }
 }
 
-/// Experimental (§6): the shot detection method. Automatic IN/OUT moved
-/// to the Grid section (owner, 2026-11-03).
-private struct ExperimentalSection: View {
-    @Environment(AppModel.self) private var model
-
-    var body: some View {
-        PanelSection(title: "Experimental", expandedKey: "experimental") {
-            EmptyView()
-        } more: {
-            PanelRow("Shot detection") {
-                Picker("Shot detection", selection: model.setting(\.shotDetectionMethod)) {
-                    ForEach(ShotDetectionMethod.allCases, id: \.self) { method in
-                        Text(method.label).tag(method)
-                    }
-                }
-                .labelsHidden()
-                .fixedSize()
-                .help("Method of the next scan (a new method scans again)")
-            }
-        }
-    }
-}

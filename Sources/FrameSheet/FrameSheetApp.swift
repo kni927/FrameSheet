@@ -30,7 +30,7 @@ struct FrameSheetApp: App {
                     .keyboardShortcut("z", modifiers: [.command, .shift])
                     .disabled(!model.canPerformRedo)
             }
-            // View menu; Enter Full Screen (⌃⌘F) comes with the window.
+            // View menu; Enter Full Screen (🌐F on macOS 27) comes with the window.
             CommandGroup(before: .toolbar) {
                 Button("Fit") { model.zoomToFit() }
                     .keyboardShortcut("0", modifiers: .command)
@@ -164,7 +164,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         default:
             break
         }
-        guard flags.subtracting(.shift).isEmpty else { return event }
+        // Fn / Globe with a letter is a system shortcut (🌐F is Enter Full
+        // Screen on macOS 27), not one of the single-key commands.
+        guard flags.subtracting(.shift).isEmpty, !event.modifierFlags.contains(.function) else { return event }
         switch event.charactersIgnoringModifiers?.lowercased() {
         case "a": model.presentOpenPanel()
         case "m": model.saveSheet()

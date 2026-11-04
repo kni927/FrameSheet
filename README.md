@@ -62,7 +62,9 @@ which you can edit:
   the frame list in MoviePrint-compatible text chunks. Options: folder, file
   name templates (`[MN]` `[ME]` `[SN]` `[FN]` `[TC]`), overwrite or " edit N",
   and a folder with each thumb as its own image. **Export JSON** is in a
-  sheet's menu, and **Export EDL** (CMX3600) for shot sheets.
+  sheet's menu, and **Export EDL** (CMX3600) for shot sheets. **Save All
+  Sheets** (the Save button's menu) saves every sheet of every movie in turn,
+  with progress and Cancel; a movie without a sheet gets the default one.
 - **Import Sheet…** (the … menu, or the + button, or a drop) reads a PNG or
   JSON saved by FrameSheet or MoviePrint 0.2.x and adds the movie with that
   sheet. A moved movie shows "Movie is missing" with Locate…; **Replace
@@ -75,7 +77,8 @@ which you can edit:
   number, or a timecode format; font, size, colors, position), output and
   file names; each section opens with its chevron. The movie list (1) renames,
   duplicates, deletes and exports sheets. The thumbnail cache and ffmpeg are
-  in Settings (⌘,), with **Fetch exact frames with ffmpeg** (on by default):
+  in Settings (⌘,), with the shot detection method (Experimental) and
+  **Fetch exact frames with ffmpeg** (on by default):
   some files (open-GOP H.264) have frames AVFoundation cannot decode, and
   ffmpeg fetches those; without it such thumbs show the nearest decodable
   frame with a marker.
