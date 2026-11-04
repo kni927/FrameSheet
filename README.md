@@ -2,16 +2,24 @@
 
 FrameSheet is a macOS app that makes video contact sheets (MoviePrints).
 
-**v3 is in development**: a rebuild that reproduces
+**v3.0.0** is a rebuild that reproduces
 [MoviePrint](https://github.com/fakob/MoviePrint_v004) v0.2.23 natively for
 Apple Silicon — many movies at once, interval, shot-detection and face sheets,
 editable thumbs and scenes, and export as PNG/JPG, JSON and EDL. The target
-behavior is in [docs/V3_SPEC.md](docs/V3_SPEC.md). The released app is v2
-(tag `v2.3.1`), a settings-to-one-image contact sheet generator.
+behavior is in [docs/V3_SPEC.md](docs/V3_SPEC.md); v2 (up to tag `v2.3.1`)
+was a settings-to-one-image contact sheet generator.
 
-## Status
+## Download
 
-v3 so far: add movies with the + button, the A key or by dropping them on the
+Get `FrameSheet-3.0.0.zip` from the
+[v3.0.0 release](https://github.com/kni927/FrameSheet/releases/tag/v3.0.0).
+The app is signed with a Developer ID and notarized: unzip it, move
+FrameSheet.app to Applications and open it. What is new and the known issues
+are in the [release notes](docs/release-notes/v3.0.0.md).
+
+## Using FrameSheet
+
+Add movies with the + button, the A key or by dropping them on the
 window. Each movie gets a default interval sheet of 16 thumbs in 4 columns,
 which you can edit:
 
@@ -124,7 +132,10 @@ Requires Xcode 27.
 ```
 
 The app is assembled at `./build/FrameSheet.app` (with a zip next to it);
-SwiftPM's build products stay in `~/Library/Caches/FrameSheet/build`. Run the
+SwiftPM's build products stay in `~/Library/Caches/FrameSheet/build`.
+`scripts/release.sh X.Y.Z` builds a release from a clean checkout, notarizes
+and staples it (a notarytool keychain profile is needed) and leaves
+`build/FrameSheet-X.Y.Z.zip`. Run the
 core tests with:
 
 ```bash

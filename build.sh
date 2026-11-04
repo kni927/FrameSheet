@@ -10,9 +10,14 @@ REPO_DIR="$(cd "$(dirname "$0")" && pwd)"
 SCRATCH_DIR="${FRAMESHEET_SCRATCH_PATH:-$HOME/Library/Caches/FrameSheet/build}"
 
 # Version comes from the latest git tag (vX.Y.Z -> X.Y.Z) so releases
-# only need a tag, never a script edit. Build number is the monotonic
-# commit count. Fallbacks cover non-git contexts (e.g. a tarball).
-VERSION="$(git -C "$REPO_DIR" describe --tags --abbrev=0 2>/dev/null | sed 's/^v//' || true)"
+# only need a tag, never a script edit; FRAMESHEET_VERSION wins, so a release
+# build carries its version before the owner tags its commit
+# (scripts/release.sh). Build number is the monotonic commit count.
+# Fallbacks cover non-git contexts (e.g. a tarball).
+VERSION="${FRAMESHEET_VERSION:-}"
+if [ -z "$VERSION" ]; then
+    VERSION="$(git -C "$REPO_DIR" describe --tags --abbrev=0 2>/dev/null | sed 's/^v//' || true)"
+fi
 VERSION="${VERSION:-3.0.0}"
 BUILD_NUMBER="$(git -C "$REPO_DIR" rev-list --count HEAD 2>/dev/null || true)"
 BUILD_NUMBER="${BUILD_NUMBER:-0}"
@@ -117,7 +122,14 @@ if [ -z "$SIGN_IDENTITY" ]; then
 fi
 if [ -n "$SIGN_IDENTITY" ]; then
     echo "Signing with: $SIGN_IDENTITY"
-    codesign --force --deep --options runtime --sign "$SIGN_IDENTITY" "$APP_DIR"
+    # A release build (FRAMESHEET_RELEASE=1) needs a secure timestamp for
+    # notarization; debug builds skip it so they build offline.
+    TIMESTAMP=()
+    if [ "${FRAMESHEET_RELEASE:-}" = "1" ]; then TIMESTAMP=(--timestamp); fi
+    codesign --force --deep --options runtime ${TIMESTAMP[@]+"${TIMESTAMP[@]}"} --sign "$SIGN_IDENTITY" "$APP_DIR"
+elif [ "${FRAMESHEET_RELEASE:-}" = "1" ]; then
+    echo "ERROR: a release build needs a Developer ID Application identity." >&2
+    exit 1
 else
     echo "WARNING: no Developer ID Application identity found — falling back to ad-hoc signing (TCC grants will not survive rebuilds)."
     codesign --force --deep --sign - "$APP_DIR"

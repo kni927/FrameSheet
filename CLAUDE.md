@@ -6,10 +6,11 @@
 - Test: `swift test --scratch-path ~/Library/Caches/FrameSheet/build` — `FrameSheetCore` tests; the decode tests make short clips with the system ffmpeg and are skipped without it.
 - Check: `scripts/check.sh [install|build]` — `swift test`, `./build.sh` and, with `install`, the copy to `~/Applications`, in one call. SwiftPM cannot build inside the sandbox, so run builds and tests through this script, from the repository root as its own command, rather than one bypass per step.
 - Stop: `scripts/check.sh stop` — stops a running `scripts/check.sh` and the `swift test` / `swift build` processes it started (when a run hangs; the sandbox cannot stop them). A run also stops itself after 15 minutes (`FRAMESHEET_CHECK_TIMEOUT` seconds to change it).
+- Release: `scripts/release.sh X.Y.Z` — from a clean checkout: builds with that version (`FRAMESHEET_VERSION`; Developer ID, hardened runtime, secure timestamp), notarizes with the notarytool keychain profile (`FRAMESHEET_NOTARY_PROFILE`, default the one the owner's other apps use), staples, re-zips as `build/FrameSheet-X.Y.Z.zip` and checks it (`stapler validate`, `spctl`, `codesign -dv`); log in `~/Library/Logs/FrameSheet/release.log`. Run it only when the owner says so in chat; the owner tags the commit it prints.
 - Lint: none yet
 - Measure: `tools/spike/run-all.sh quick <out-dir> <video>...` — after decode or scan changes, a few-minute check of the v3 scan settings (one run each); `full` reruns the battery behind `docs/v3-measurements.md` (about 2 h) only when the owner asks. Run it from the repository root as its own command.
-- Sandbox-excluded scripts (listed in `.claude/settings.json` as `<script> *`): `tools/spike/run-all.sh` (VideoToolbox and the GPU are unavailable inside the sandbox; owner approved, 2026-11-02); `scripts/check.sh` (SwiftPM cannot build inside the sandbox; owner approved, 2026-11-02). Run them from the repository root as their own command, with no redirect or pipe.
-- Checkpoint commands that always ask (`permissions.ask` in `.claude/settings.json`): none yet
+- Sandbox-excluded scripts (listed in `.claude/settings.json` as `<script> *`): `tools/spike/run-all.sh` (VideoToolbox and the GPU are unavailable inside the sandbox; owner approved, 2026-11-02); `scripts/check.sh` (SwiftPM cannot build inside the sandbox; owner approved, 2026-11-02); `scripts/release.sh` (keychain and network for notarization; owner approved, 2026-11-05). Run them from the repository root as their own command, with no redirect or pipe.
+- Checkpoint commands that always ask (`permissions.ask` in `.claude/settings.json`): `scripts/release.sh` (a release step; owner approved, 2026-11-05)
 - Debug installs go to `~/Applications`, never `/Applications`.
 
 ## Read First

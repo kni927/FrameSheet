@@ -4,6 +4,12 @@ This log details the features, design changes, and bug fixes implemented during 
 
 ---
 
+## [3.0.0] — Rebuild reproducing MoviePrint 0.2.23 - 2026-11-05
+
+- v3 replaces the v2 generator with a Swift 6 / SwiftUI app for macOS 27 on Apple Silicon that reproduces MoviePrint 0.2.23 (decisions 14–26; tasks T03–T08 in `docs/tasks/`). First notarized GitHub Release since v2.0.0 (`scripts/release.sh`); notes in `docs/release-notes/v3.0.0.md`.
+
+---
+
 ## [2.3.1] — Build Housekeeping: Bundle ID, Version Sync, Dev Signing - 2026-07-18
 
 ### Changed

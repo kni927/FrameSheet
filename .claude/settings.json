@@ -2,12 +2,16 @@
   "permissions": {
     "allow": [
       "mcp__claude-code-remote__send_message"
+    ],
+    "ask": [
+      "Bash(scripts/release.sh *)"
     ]
   },
   "sandbox": {
     "excludedCommands": [
       "tools/spike/run-all.sh *",
-      "scripts/check.sh *"
+      "scripts/check.sh *",
+      "scripts/release.sh *"
     ]
   }
 }
