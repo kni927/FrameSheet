@@ -470,6 +470,7 @@ private final class Locked<T: Sendable>: Sendable {
     init(_ value: T) { self.value = Mutex(value) }
     func get() -> T { value.withLock { $0 } }
     func set(_ new: T) { value.withLock { $0 = new } }
+    func update(_ change: (inout T) -> Void) { value.withLock { change(&$0) } }
 }
 
 /// Runs `body` under a deadline that holds even when the body ignores
@@ -786,6 +787,80 @@ private func brightestQuadrant(_ image: CGImage) -> Int {
         let at = try #require(thumbDone.get())
         #expect(at < Self.frameCount - 1, "the thumb waited for the whole scan (done at frame \(at))")
         #expect(observer.state.withLock { $0.frames } == Array(0..<Self.frameCount))
+    }
+
+    /// Thumb requests every 100 ms while a scan runs (the window's misses)
+    /// cost the scan little: it pauses at most once per
+    /// `minimumRunBeforeYield` and lets every waiting request go in that
+    /// pause, so it takes at most about 1.3 × as long as alone, and the
+    /// requests are answered while it runs. The pause interval is cut from
+    /// 3 s to 1 s to keep the clip short; the overhead per pause is the same.
+    @Test(.enabled(if: ShotScanIntegrationTests.tools != nil)) func frequentThumbRequestsCostLittle() async throws {
+        let tools = try #require(Self.tools)
+        let dir = FileManager.default.temporaryDirectory.appending(path: "FrameSheetScanClips-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let clip = dir.appending(path: "long.mp4")
+        let frames = 2000
+        let made = try await ProcessRunner.run(tools.ffmpeg, [
+            "-hide_banner", "-loglevel", "error", "-y",
+            "-f", "lavfi", "-i", "testsrc2=s=640x360:r=25", "-frames:v", "\(frames)",
+            "-c:v", "libx264", "-preset", "ultrafast", "-g", "48", "-pix_fmt", "yuv420p", clip.path,
+        ])
+        try #require(made.status == 0, "\(made.stderrText)")
+        let backend = try await DecoderRouter.open(clip, ffmpeg: tools)
+        _ = try await backend.frame(0, maxWidth: 160)
+        let clock = ContinuousClock()
+
+        func seconds(_ d: Duration) -> Double {
+            Double(d.components.seconds) + Double(d.components.attoseconds) / 1e18
+        }
+
+        // Alone.
+        var start = clock.now
+        let alone = await scan(request(clip))
+        let aloneTime = seconds(clock.now - start)
+        print("frequentThumbRequestsCostLittle: alone \(String(format: "%.2f", aloneTime)) s")
+        #expect(alone.data?.frameCount == frames)
+
+        // With a request every 100 ms, each its own decode as the window's
+        // misses are, not awaited by the requester.
+        let scanning = Locked(true)
+        let asked = Locked(0)
+        let servedDuring = Locked(0)
+        let requester = Task {
+            var n = 0
+            while !Task.isCancelled, scanning.get() {
+                let frame = (n * 997) % frames
+                n += 1
+                asked.set(n)
+                Task {
+                    _ = try? await backend.frame(frame, maxWidth: 160)
+                    if scanning.get() { servedDuring.update { $0 += 1 } }
+                }
+                try? await Task.sleep(for: .milliseconds(100))
+            }
+        }
+        var req = request(clip)
+        req.minimumRunBeforeYield = .seconds(1)
+        let diagnostics = ScanDiagnostics()
+        req.diagnostics = diagnostics
+        start = clock.now
+        let shared = await scan(req)
+        let sharedTime = seconds(clock.now - start)
+        scanning.set(false)
+        requester.cancel()
+        #expect(shared.failure == nil, "\(shared.failure ?? "")")
+        #expect(shared.data?.frameCount == frames)
+        #expect(shared.data?.differences == alone.data?.differences)
+        let values = diagnostics.snapshot
+        let report = String(
+            format: "alone %.2f s, with requests %.2f s (%.2f ×), %d asked, %d served during the scan, %d pauses",
+            aloneTime, sharedTime, sharedTime / aloneTime, asked.get(), servedDuring.get(), values.pauses)
+        print("frequentThumbRequestsCostLittle: \(report)")
+        #expect(sharedTime <= aloneTime * 1.3 + 0.2, "\(report)")
+        #expect(values.pauses >= 1 && Double(values.pauses) <= sharedTime + 1, "\(report)")
+        #expect(servedDuring.get() >= 1, "\(report)")
     }
 
     /// The same with open GOPs (known issue 5): the reader reopened after

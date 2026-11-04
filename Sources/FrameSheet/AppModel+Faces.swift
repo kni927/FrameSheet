@@ -1,5 +1,7 @@
+import AppKit
 import FrameSheetCore
 import Foundation
+import Synchronization
 
 /// A face scan in progress (§10): the movie, the scope and the progress for
 /// the toast.
@@ -17,6 +19,29 @@ struct FaceScanJob: Equatable {
     }
 }
 
+/// The face scan's thumbnails, handed from its analysis worker to the main
+/// actor.
+final class ScanThumbnailInbox: Sendable {
+    struct Item: @unchecked Sendable {
+        var frame: Int
+        var image: CGImage
+        var width: Int
+    }
+
+    private let items = Mutex<[Item]>([])
+
+    func add(_ frame: Int, _ image: CGImage, _ width: Int) {
+        items.withLock { $0.append(Item(frame: frame, image: image, width: width)) }
+    }
+
+    func take() -> [Item] {
+        items.withLock { items in
+            defer { items.removeAll() }
+            return items
+        }
+    }
+}
+
 /// Faces in the app (§4, §5, §10; T07): Add faces sheet scans the current
 /// movie's frames of a scope for faces (frames already in the face cache are
 /// not read again) and adds a faces sheet of the frames with faces; Cancel
@@ -24,6 +49,10 @@ struct FaceScanJob: Equatable {
 /// not read the frames, the face scan reads them in the shot scan's pass
 /// (combined), which leaves the shot scan stopped part way (or complete).
 /// Sort and Filter are one undo step each.
+///
+/// The scan makes the thumbnails of the frames with faces from the frames it
+/// analyzes, at the size the faces sheet draws them, so the sheet shows as
+/// soon as it is added; decoding them again took minutes on open-GOP films.
 extension AppModel {
     var isFaceScanning: Bool { faceScanJob != nil }
 
@@ -60,6 +89,14 @@ extension AppModel {
         let store = faceStore
         let scans = scanStore
         faceScanJob = FaceScanJob(fileId: file.id, fileName: file.name, scope: scope)
+        // The frames the scan will analyze (those not in the face cache).
+        var pending = frames
+        if let stored = (try? store?.load(file.id)) ?? nil, stored.thresholds == settings.faceThresholds {
+            pending = stored.missing(frames)
+        }
+        faceScanFrames = (file.id, Set(pending))
+        let inbox = ScanThumbnailInbox()
+        let thumbnails = scanThumbnails(for: file, settings: settings, inbox: inbox)
         scanTask = Task {
             var single: (any DecodeBackend)?
             if scope == .thumbs {
@@ -67,6 +104,7 @@ extension AppModel {
                     single = try await backend(for: file)
                 } catch {
                     faceScanJob = nil
+                    faceScanFrames = nil
                     scanTask = nil
                     toast = "\(file.name): \(error.localizedDescription)"
                     return
@@ -76,7 +114,8 @@ extension AppModel {
                 fileId: file.id, url: library.file(file.id)?.url ?? file.url, frames: frames,
                 thresholds: settings.faceThresholds, analyzer: VisionFaceAnalyzer.shared,
                 ffmpeg: await ffmpegTools(), singleFrames: single, faceStore: store, scanStore: scans,
-                method: settings.shotDetectionMethod, shotThreshold: settings.shotDetectionThreshold)
+                method: settings.shotDetectionMethod, shotThreshold: settings.shotDetectionThreshold,
+                thumbnails: thumbnails)
             var ended = false
             for await event in FaceScanner.scan(request) {
                 switch event {
@@ -85,26 +124,59 @@ extension AppModel {
                     faceScanJob?.fraction = 0
                 case .progress(let fraction):
                     faceScanJob?.fraction = fraction
+                    storeScanThumbnails(inbox, file.id)
                 case .finished(let data, let shotScan):
                     ended = true
+                    storeScanThumbnails(inbox, file.id)
                     noteShotScan(file.id, shotScan)
                     finishFaceScan(file.id, frames: frames, data: data)
                 case .cancelled(_, let shotScan):
                     ended = true
+                    storeScanThumbnails(inbox, file.id)
                     noteShotScan(file.id, shotScan)
                     endFaceScan(cancelled: true)
                 case .failed(let message, _):
                     ended = true
+                    storeScanThumbnails(inbox, file.id)
                     endFaceScan(cancelled: false)
                     toast = "\(file.name): face detection failed: \(message)"
                 }
             }
             // Cancel ends the stream before the scanner's last event.
             if !ended {
+                storeScanThumbnails(inbox, file.id)
                 if faceScanJob?.combined == true { stoppedScans.insert(file.id) }
                 endFaceScan(cancelled: true)
             }
             scanTask = nil
+        }
+    }
+
+    /// Thumbnails from the face scan's frames: the n-th frame with faces at
+    /// the width a faces sheet of n thumbs draws them in the main area now
+    /// (so each is at least as wide as the finished sheet needs, and the
+    /// first few, drawn largest, are few), cached as they arrive.
+    private func scanThumbnails(
+        for file: MovieFile, settings: FrameSheetCore.Settings, inbox: ScanThumbnailInbox
+    ) -> FaceScanThumbnails {
+        let padding = SheetGridView.padding
+        let width = mainAreaSize.width - padding * 2 - GridGeometry.minPrintWidthMargin
+        let height = mainAreaSize.height - padding * 2
+        let scale = NSScreen.main?.backingScaleFactor ?? 2
+        return FaceScanThumbnails(
+            width: { count in
+                ThumbnailWidth.facesSheetDecodeWidth(
+                    file: file, thumbCount: count, settings: settings, containerWidth: width,
+                    containerHeight: height, scale: scale)
+            },
+            deliver: { frame, image, madeFor in inbox.add(frame, image, madeFor) })
+    }
+
+    /// Caches the thumbnails the scan made since the last call; before the
+    /// faces sheet is added, so it finds all of them.
+    private func storeScanThumbnails(_ inbox: ScanThumbnailInbox, _ fileId: UUID) {
+        for item in inbox.take() {
+            storeScanThumbnail(item.image, file: fileId, frame: item.frame, width: item.width)
         }
     }
 
@@ -128,6 +200,8 @@ extension AppModel {
     private func finishFaceScan(_ fileId: UUID, frames: [Int], data: FaceData) {
         let job = faceScanJob
         faceScanJob = nil
+        faceScanFrames = nil
+        thumbnailsChanged()
         let added = edit { library -> Bool in
             guard let sheet = library.addFacesSheet(to: fileId, frames: frames, faces: data) else { return false }
             library.currentFileId = fileId
@@ -144,6 +218,9 @@ extension AppModel {
     private func endFaceScan(cancelled: Bool) {
         let job = faceScanJob
         faceScanJob = nil
+        faceScanFrames = nil
+        thumbnailsChanged()
+        loadCurrentSheet()
         if cancelled, let job {
             let at = job.fraction.map { " at \(Int(($0 * 100).rounded(.down))) %" } ?? ""
             showNotice("Face detection stopped\(at). Add faces sheet resumes it.")

@@ -1,3 +1,4 @@
+import Accelerate
 import CoreGraphics
 import CoreVideo
 import Foundation
@@ -15,6 +16,12 @@ import Synchronization
 // worker through a short queue (`FaceCollector.backlog`). When the queue is
 // full the pass waits, so every sampled frame is analyzed; results are
 // recorded in frame order, and a scan ends once the queue has drained.
+//
+// A frame found to have faces also gives its thumbnail (`FaceScanThumbnails`)
+// from the scan's own 720 px frame, so the new faces sheet shows without
+// decoding its frames again: on open-GOP films most of them miss the exact
+// image request and took the earlier-GOP read or ffmpeg (0.1–0.4 s each,
+// minutes for a sheet of 400).
 
 /// Which frames a face scan analyzes (Add faces sheet, §4).
 public enum FaceScanScope: String, CaseIterable, Sendable {
@@ -72,6 +79,27 @@ public enum FaceScanScope: String, CaseIterable, Sendable {
     }
 }
 
+/// Thumbnails of the frames found to have faces, made from the scan's own
+/// upright frames (exact: each is the frame scanned), for the window's cache.
+public struct FaceScanThumbnails: Sendable {
+    /// The width for the n-th frame with faces in the scope (1-based,
+    /// frames found by earlier scans counted), so they are made at the size
+    /// a faces sheet of that many thumbs draws them; never wider than the
+    /// scan frame.
+    public var width: @Sendable (Int) -> Int
+    /// Receives a frame's thumbnail and the width it was made for, on the
+    /// analysis worker.
+    public var deliver: @Sendable (_ frame: Int, _ image: CGImage, _ width: Int) -> Void
+
+    public init(
+        width: @escaping @Sendable (Int) -> Int,
+        deliver: @escaping @Sendable (_ frame: Int, _ image: CGImage, _ width: Int) -> Void
+    ) {
+        self.width = width
+        self.deliver = deliver
+    }
+}
+
 public struct FaceScanRequest: Sendable {
     public var fileId: UUID
     public var url: URL
@@ -90,6 +118,8 @@ public struct FaceScanRequest: Sendable {
     /// Shot scan settings of the combined pass.
     public var method: ShotDetectionMethod
     public var shotThreshold: Double
+    /// Thumbnails of the frames with faces; nil makes none.
+    public var thumbnails: FaceScanThumbnails?
 
     /// Tuning, changed by tests and the probe.
     var checkpointInterval: Duration = .seconds(30)
@@ -97,11 +127,16 @@ public struct FaceScanRequest: Sendable {
     /// `ScanRequest.stopAfterFrames`).
     var stopAfterFrames: Int?
     var yieldCheckFrames = 30
+    /// Pauses for thumb requests (tests, the probe).
+    var minimumRunBeforeYield: Duration?
+    /// Counters of the passes' decoder sharing (the probe).
+    var diagnostics: ScanDiagnostics?
 
     public init(
         fileId: UUID, url: URL, frames: [Int], thresholds: FaceThresholds, analyzer: any FaceAnalyzer,
         ffmpeg: FFmpegTools?, singleFrames: (any DecodeBackend)? = nil, faceStore: FaceCacheStore?,
-        scanStore: ScanCacheStore?, method: ShotDetectionMethod, shotThreshold: Double
+        scanStore: ScanCacheStore?, method: ShotDetectionMethod, shotThreshold: Double,
+        thumbnails: FaceScanThumbnails? = nil
     ) {
         self.fileId = fileId
         self.url = url
@@ -114,6 +149,17 @@ public struct FaceScanRequest: Sendable {
         self.scanStore = scanStore
         self.method = method
         self.shotThreshold = shotThreshold
+        self.thumbnails = thumbnails
+    }
+}
+
+extension FaceScanRequest {
+    /// Copies the tuning onto a pass.
+    func tune(_ pass: inout ScanRequest) {
+        pass.stopAfterFrames = stopAfterFrames
+        pass.yieldCheckFrames = yieldCheckFrames
+        if let minimumRunBeforeYield { pass.minimumRunBeforeYield = minimumRunBeforeYield }
+        pass.diagnostics = diagnostics
     }
 }
 
@@ -150,7 +196,11 @@ public enum FaceScanner {
             start = stored
         }
         let missing = start.missing(request.frames)
-        let collector = FaceCollector(data: start, wanted: Set(missing), analyzer: request.analyzer)
+        // Frames with faces an earlier scan found in this scope.
+        let found = request.frames.reduce(0) { $0 + ((start.frame($1)?.faceCount ?? 0) > 0 ? 1 : 0) }
+        let collector = FaceCollector(
+            data: start, wanted: Set(missing), analyzer: request.analyzer, thumbnails: request.thumbnails,
+            facesFramesBefore: found)
         let saver = Saver(request: request, collector: collector)
         guard !missing.isEmpty else {
             continuation.yield(.started(missing: 0, combined: false))
@@ -211,8 +261,7 @@ public enum FaceScanner {
                 fileId: request.fileId, url: request.url, method: request.method, threshold: request.shotThreshold,
                 ffmpeg: request.ffmpeg, store: nil, observer: collector)
             pass.frameList = facesOnly
-            pass.stopAfterFrames = request.stopAfterFrames
-            pass.yieldCheckFrames = request.yieldCheckFrames
+            request.tune(&pass)
             outcome = await consume(ShotScanner.scan(pass), saver: saver) { scanned, count in
                 continuation.yield(.progress(facesOnlyWork * Double(scanned) / Double(max(1, count)) / totalWork))
             } ended: { _ in }
@@ -224,8 +273,7 @@ public enum FaceScanner {
             let last = combined.last!
             // Up to the last sampled frame, unless that is the movie's end.
             pass.endFrame = last >= source.info.frameCount - 1 ? nil : last
-            pass.stopAfterFrames = request.stopAfterFrames
-            pass.yieldCheckFrames = request.yieldCheckFrames
+            request.tune(&pass)
             let base = facesOnlyWork
             outcome = await consume(ShotScanner.scan(pass), saver: saver) { scanned, _ in
                 let done = Double(max(0, min(scanned, last + 1) - min(covered, last + 1)))
@@ -338,6 +386,7 @@ final class FaceCollector: ScanFrameObserver {
     let wanted: Set<Int>
     let analyzer: any FaceAnalyzer
     let backlog: Int
+    let thumbnails: FaceScanThumbnails?
     private let state: Mutex<State>
     private let copier = FrameCopier()
     private let queue: AsyncStream<Item>
@@ -348,6 +397,8 @@ final class FaceCollector: ScanFrameObserver {
         /// Frames analyzed by this scan.
         var analyzedNow = 0
         var facesFound = 0
+        /// Frames with faces in the scope: found before this scan, and now.
+        var facesFrames = 0
         /// Frames handed to the queue (each frame once per scan).
         var taken = Set<Int>()
         /// Frames in the queue or being analyzed.
@@ -368,11 +419,15 @@ final class FaceCollector: ScanFrameObserver {
         var image: Image
     }
 
-    init(data: FaceData, wanted: Set<Int>, analyzer: any FaceAnalyzer, backlog: Int = FaceCollector.defaultBacklog) {
+    init(
+        data: FaceData, wanted: Set<Int>, analyzer: any FaceAnalyzer, backlog: Int = FaceCollector.defaultBacklog,
+        thumbnails: FaceScanThumbnails? = nil, facesFramesBefore: Int = 0
+    ) {
         self.wanted = wanted
         self.analyzer = analyzer
         self.backlog = max(1, backlog)
-        state = Mutex(State(data: data))
+        self.thumbnails = thumbnails
+        state = Mutex(State(data: data, facesFrames: facesFramesBefore))
         (queue, input) = AsyncStream.makeStream(of: Item.self)
     }
 
@@ -464,7 +519,13 @@ final class FaceCollector: ScanFrameObserver {
             case .buffer(let buffer): try? await analyzer.detect(in: buffer)
             case .image(let image): try? await analyzer.detect(in: image)
             }
-            if let detected, !Task.isCancelled { record(item.frameNumber, detected) }
+            if let detected, !Task.isCancelled, let nth = record(item.frameNumber, detected),
+               let thumbnails, case .buffer(let buffer) = item.image {
+                let width = thumbnails.width(nth)
+                if let image = Self.thumbnail(of: buffer, width: width) {
+                    thumbnails.deliver(item.frameNumber, image, min(width, image.width))
+                }
+            }
             release()
         }
         // Cancelled (or done): let a waiting pass go on without queueing.
@@ -475,13 +536,47 @@ final class FaceCollector: ScanFrameObserver {
         }?.resume(returning: false)
     }
 
-    private func record(_ number: Int, _ detected: [DetectedFace]) {
+    /// Records a frame; for a frame with faces, which one in the scope it
+    /// is (1-based), else nil.
+    private func record(_ number: Int, _ detected: [DetectedFace]) -> Int? {
         state.withLock {
             let frame = FaceDetection.frame(number, detected: detected, thresholds: $0.data.thresholds)
             $0.data.record(frame)
             $0.analyzedNow += 1
             $0.facesFound += frame.faceCount
+            guard frame.faceCount > 0 else { return nil }
+            $0.facesFrames += 1
+            return $0.facesFrames
         }
+    }
+
+    /// A thumbnail of a scan frame, at most `width` pixels wide (aspect
+    /// kept, never enlarged). The scan's BGRA frames carry the movie's
+    /// colors without conversion; they are tagged Rec. 709, as HD video and
+    /// the image generator's thumbs of it are.
+    static func thumbnail(of buffer: CVPixelBuffer, width: Int) -> CGImage? {
+        CVPixelBufferLockBaseAddress(buffer, .readOnly)
+        defer { CVPixelBufferUnlockBaseAddress(buffer, .readOnly) }
+        guard let base = CVPixelBufferGetBaseAddress(buffer) else { return nil }
+        let sourceWidth = CVPixelBufferGetWidth(buffer)
+        let sourceHeight = CVPixelBufferGetHeight(buffer)
+        guard sourceWidth > 0, sourceHeight > 0 else { return nil }
+        let w = min(max(1, width), sourceWidth)
+        let h = max(1, Int((Double(w) * Double(sourceHeight) / Double(sourceWidth)).rounded()))
+        guard let space = CGColorSpace(name: CGColorSpace.itur_709) ?? CGColorSpace(name: CGColorSpace.sRGB),
+              let context = CGContext(
+                data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: 0, space: space,
+                bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue),
+              let data = context.data
+        else { return nil }
+        var source = vImage_Buffer(
+            data: base, height: vImagePixelCount(sourceHeight), width: vImagePixelCount(sourceWidth),
+            rowBytes: CVPixelBufferGetBytesPerRow(buffer))
+        var target = vImage_Buffer(
+            data: data, height: vImagePixelCount(h), width: vImagePixelCount(w), rowBytes: context.bytesPerRow)
+        guard vImageScale_ARGB8888(&source, &target, nil, vImage_Flags(kvImageHighQualityResampling)) == kvImageNoError
+        else { return nil }
+        return context.makeImage()
     }
 }
 

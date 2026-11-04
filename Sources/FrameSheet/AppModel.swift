@@ -98,9 +98,11 @@ final class AppModel {
     /// fills it.
     var mainAreaSize: CGSize = .zero
 
-    /// Width thumbs are decoded at; enough for a 4-column grid on a
-    /// Retina display.
-    static let thumbWidth = 640
+    /// The cache key of window thumbs, and the widest they are decoded at
+    /// (enough for a 4-column grid on a Retina display). A grid's thumbs are
+    /// decoded at the size they are drawn (`thumbDecodeWidth`), so a sheet
+    /// of hundreds of small thumbs fits the cache (`ThumbnailWidth`).
+    static let thumbWidth = ThumbnailWidth.maximum
     static let posterWidth = 320
 
     let cache: ThumbnailCache
@@ -155,6 +157,35 @@ final class AppModel {
     /// retry's), with the frame they show; turning the ffmpeg fallback on
     /// drops just these.
     @ObservationIgnored private var inexactImages: [ImageKey: Int] = [:]
+
+    /// The width each window thumb (cached under `thumbWidth`) was decoded
+    /// or made for, by loading key; a missing entry means `thumbWidth`. A
+    /// thumb drawn wider than that is decoded again, once.
+    @ObservationIgnored private var thumbWidths: [String: Int] = [:]
+    /// Thumb misses waiting to be decoded together, by movie and width.
+    @ObservationIgnored private var pendingReloads: [ReloadGroup: Set<Int>] = [:]
+    @ObservationIgnored private var reloadFlush: Task<Void, Never>?
+    /// The last `thumbDecodeWidth` result and what it was computed from.
+    @ObservationIgnored private var decodeWidthMemo: (key: DecodeWidthKey, width: Int)?
+    /// The movie a face scan runs on and the frames it will analyze: a
+    /// faces sheet of that movie does not decode them meanwhile, since the
+    /// scan gives the thumbnails of those with faces (each decode would
+    /// also make the scan pause).
+    @ObservationIgnored var faceScanFrames: (fileId: UUID, frames: Set<Int>)?
+
+    private struct ReloadGroup: Hashable {
+        var file: UUID
+        var width: Int
+    }
+
+    private struct DecodeWidthKey: Equatable {
+        var sheet: UUID
+        var columns: Int
+        var cells: Int
+        var area: CGSize
+        var zoom: Double
+        var scale: Double
+    }
 
     struct ImageKey: Hashable {
         var file: UUID
@@ -214,25 +245,50 @@ final class AppModel {
 
     func image(file: UUID, frame: Int, width: Int) -> CGImage? {
         _ = imageGeneration
-        if let image = cachedImage(file: file, frame: frame, width: width) { return image }
+        if let image = cachedImage(file: file, frame: frame, width: width) {
+            // Drawn wider than it was decoded (zoom, fewer columns): shown
+            // as it is until the wider one arrives.
+            if width == Self.thumbWidth, file == library.currentFileId, !isStreamingSheetShown,
+               let target = currentThumbDecodeWidth, decodedWidth(file, frame) < target {
+                requestReload(file: file, frame: frame, width: width)
+            }
+            return image
+        }
         // The sheet a scan fills shows mean colors until the scan ends: each
         // thumb decoded meanwhile would make the scan reopen its reader.
         if isStreamingSheetShown, file == library.currentFileId, width == Self.thumbWidth { return nil }
-        // NSCache may have evicted it (cost limit or memory pressure): decode
-        // it again, outside the view update that asked for it.
+        if width == Self.thumbWidth, awaitsFaceScan(file, frame) { return nil }
+        // Evicted from the cache (or never decoded): decode it again, outside
+        // the view update that asked for it.
+        requestReload(file: file, frame: frame, width: width)
+        return nil
+    }
+
+    /// Queues a frame for decoding with the other misses of this moment,
+    /// in one batch: one wait at the DecodeGate (and at most one pause of a
+    /// running scan) instead of one per thumb.
+    private func requestReload(file: UUID, frame: Int, width: Int) {
         let key = Self.loadingKey(file, frame, width)
         let now = Date()
         // At most one reload per image every 2 s, so a frame that never lands
         // under this key cannot turn redraws into a decode loop.
-        if !loading.contains(key) && !failed.contains(key)
-            && now.timeIntervalSince(lastReload[key] ?? .distantPast) > 2 {
-            lastReload[key] = now
-            Task { [weak self] in
-                guard let self, let movie = library.file(file) else { return }
-                load(frames: [frame], of: movie, width: width, sheetId: nil)
+        guard !loading.contains(key), !failed.contains(key),
+              now.timeIntervalSince(lastReload[key] ?? .distantPast) > 2
+        else { return }
+        lastReload[key] = now
+        pendingReloads[ReloadGroup(file: file, width: width), default: []].insert(frame)
+        guard reloadFlush == nil else { return }
+        reloadFlush = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(30))
+            guard let self else { return }
+            reloadFlush = nil
+            let groups = pendingReloads
+            pendingReloads = [:]
+            for (group, frames) in groups {
+                guard let movie = library.file(group.file) else { continue }
+                load(frames: Array(frames), of: movie, width: group.width, sheetId: nil)
             }
         }
-        return nil
     }
 
     // MARK: - Edits
@@ -479,6 +535,7 @@ final class AppModel {
         pinned.removeAll()
         failed.removeAll()
         inexactImages.removeAll()
+        thumbWidths.removeAll()
         imageGeneration += 1
     }
 
@@ -1290,27 +1347,94 @@ final class AppModel {
         pinned[Self.loadingKey(file, frame, width)] ?? cache.image(file: file, frame: frame, width: width)
     }
 
-    /// Caches a decoded image, and pins it when it is on screen.
-    private func store(_ image: CGImage, file: UUID, frame: Int, width: Int) {
+    /// Caches a decoded image, and pins it when it is on screen. A window
+    /// thumb records the width it was decoded for (`decodedFor`).
+    private func store(_ image: CGImage, file: UUID, frame: Int, width: Int, decodedFor: Int? = nil) {
         cache.insert(image, file: file, frame: frame, width: width)
+        if width == Self.thumbWidth { thumbWidths[Self.loadingKey(file, frame, width)] = decodedFor ?? width }
         let onScreen = width == Self.posterWidth
             || (width == Self.thumbWidth && file == library.currentFileId)
         if onScreen { pinned[Self.loadingKey(file, frame, width)] = image }
     }
 
-    /// Keeps only the posters and the current sheet's thumbs pinned.
+    /// Keeps only the posters and the current sheet's thumbs pinned, and
+    /// pins the current sheet's thumbs that are cached (also those a face
+    /// scan made), so the cache's limit cannot drop what is on screen.
     private func prunePinned() {
         var keep = Set(library.files.map { Self.loadingKey($0.id, $0.posterFrame, Self.posterWidth) })
         if let file = currentFile, let sheet = currentSheet {
-            for thumb in sheet.thumbs { keep.insert(Self.loadingKey(file.id, thumb.frameNumber, Self.thumbWidth)) }
+            for thumb in sheet.thumbs {
+                let key = Self.loadingKey(file.id, thumb.frameNumber, Self.thumbWidth)
+                keep.insert(key)
+                if pinned[key] == nil,
+                   let image = cache.image(file: file.id, frame: thumb.frameNumber, width: Self.thumbWidth) {
+                    pinned[key] = image
+                }
+            }
         }
         pinned = pinned.filter { keep.contains($0.key) }
     }
 
     func loadCurrentSheet() {
+        decodeWidthMemo = nil
         prunePinned()
         guard let file = currentFile, let sheet = currentSheet, !isStreamingSheetShown else { return }
         load(frames: sheet.thumbs.map(\.frameNumber), of: file, width: Self.thumbWidth, sheetId: sheet.id)
+    }
+
+    /// Pixel width the current sheet's thumbs are decoded at: their size
+    /// in the grid at the current zoom, rounded up to a step
+    /// (`ThumbnailWidth`); the widest in timeline view (a selected scene
+    /// widens) and before the main area is laid out. Nil without a sheet.
+    var currentThumbDecodeWidth: Int? {
+        guard let file = currentFile, let sheet = currentSheet else { return nil }
+        guard !isTimeline(sheet), mainAreaSize.width > 0, mainAreaSize.height > 0 else {
+            return min(Self.thumbWidth, max(1, file.width))
+        }
+        let scale = NSScreen.main?.backingScaleFactor ?? 2
+        let key = DecodeWidthKey(
+            sheet: sheet.id, columns: sheet.columnCount, cells: sheet.thumbs.count, area: mainAreaSize, zoom: zoom,
+            scale: scale)
+        if let memo = decodeWidthMemo, memo.key == key { return memo.width }
+        let geometry = SheetGridView.geometry(
+            file: file, columns: sheet.columnCount, thumbCount: gridCellCount(of: sheet),
+            settings: library.settings, size: mainAreaSize, zoom: zoom)
+        let width = ThumbnailWidth.decodeWidth(points: geometry.thumbWidth, scale: scale, movieWidth: file.width)
+        decodeWidthMemo = (key, width)
+        return width
+    }
+
+    /// The width a cached window thumb was decoded or made for.
+    private func decodedWidth(_ file: UUID, _ frame: Int) -> Int {
+        thumbWidths[Self.loadingKey(file, frame, Self.thumbWidth)] ?? Self.thumbWidth
+    }
+
+    /// A frame a running face scan will analyze, asked for by a faces sheet
+    /// of the movie it scans: it waits for the scan's thumbnail.
+    private func awaitsFaceScan(_ file: UUID, _ frame: Int) -> Bool {
+        guard let scan = faceScanFrames, scan.fileId == file, file == library.currentFileId,
+              currentSheet?.type == .faces
+        else { return false }
+        return scan.frames.contains(frame)
+    }
+
+    /// A thumbnail the face scan made from the frame it analyzed (exact),
+    /// cached like a decoded thumb at the width it was made for; a wider one
+    /// already cached is kept. Views are told once the scan ends.
+    func storeScanThumbnail(_ image: CGImage, file: UUID, frame: Int, width: Int) {
+        let key = Self.loadingKey(file, frame, Self.thumbWidth)
+        if cachedImage(file: file, frame: frame, width: Self.thumbWidth) != nil, decodedWidth(file, frame) >= width {
+            return
+        }
+        cache.insert(image, file: file, frame: frame, width: Self.thumbWidth)
+        thumbWidths[key] = width
+        inexactImages[ImageKey(file: file, frame: frame, width: Self.thumbWidth)] = nil
+        if pinned[key] != nil { pinned[key] = image }
+    }
+
+    /// Images landed in the cache outside `load`: views read them again.
+    func thumbnailsChanged() {
+        imageGeneration += 1
     }
 
     private func loadPoster(_ file: MovieFile) {
@@ -1320,9 +1444,14 @@ final class AppModel {
     /// Decodes the frames not yet cached. When the ±0.5 s retry returns
     /// another frame, the thumb takes that frame number (decision 11).
     private func load(frames: [Int], of file: MovieFile, width: Int, sheetId: UUID?) {
+        // Window thumbs of the current movie at the current sheet's size.
+        let decodeWidth = width == Self.thumbWidth && file.id == library.currentFileId
+            ? currentThumbDecodeWidth ?? width : width
         let wanted = Array(Set(frames)).filter {
-            cachedImage(file: file.id, frame: $0, width: width) == nil
-                && !loading.contains(Self.loadingKey(file.id, $0, width))
+            guard !loading.contains(Self.loadingKey(file.id, $0, width)) else { return false }
+            if width == Self.thumbWidth, awaitsFaceScan(file.id, $0) { return false }
+            guard cachedImage(file: file.id, frame: $0, width: width) != nil else { return true }
+            return width == Self.thumbWidth && decodedWidth(file.id, $0) < decodeWidth
         }
         guard !wanted.isEmpty, !missing.contains(file.id) else { return }
         for frame in wanted { loading.insert(Self.loadingKey(file.id, frame, width)) }
@@ -1337,14 +1466,16 @@ final class AppModel {
                 return
             }
             var failures = 0
-            for await result in backend.frames(wanted, maxWidth: width) {
+            for await result in backend.frames(wanted, maxWidth: decodeWidth) {
                 switch result.result {
                 case .success(let frame):
-                    store(frame.image, file: file.id, frame: frame.actualFrame, width: width)
+                    store(frame.image, file: file.id, frame: frame.actualFrame, width: width, decodedFor: decodeWidth)
                     // Also under the requested frame, so a view asking for it
                     // finds it even before the thumb is retargeted (otherwise
                     // the reload-on-miss in `image` would loop).
-                    store(frame.image, file: file.id, frame: frame.requestedFrame, width: width)
+                    store(
+                        frame.image, file: file.id, frame: frame.requestedFrame, width: width,
+                        decodedFor: decodeWidth)
                     inexactImages[ImageKey(file: file.id, frame: frame.actualFrame, width: width)] = nil
                     if !frame.isExact {
                         inexactImages[ImageKey(file: file.id, frame: frame.requestedFrame, width: width)] = frame.actualFrame

@@ -13,8 +13,12 @@ import Synchronization
 // The scan holds the DecodeGate for its whole pass, so no other decoder
 // session runs beside it (known issue 4). Thumb requests that arrive meanwhile
 // are served in turns: every `yieldCheckFrames` frames the scan looks for
-// waiters at the gate and, at most once per `minimumRunBeforeYield`, lets
-// them go first. On the AVFoundation path it closes its reader before
+// waiters at the gate and, at most once per `minimumRunBeforeYield` (3 s),
+// lets all of them go first in one pause (it queues again behind every
+// request waiting then). Pausing more often made a face scan of an open-GOP
+// film take minutes instead of 18 s when thumb requests kept arriving: each
+// pause reopens the reader with a pre-roll from a closed GOP, and the
+// waiting decodes themselves took 0.1–0.4 s each there. On the AVFoundation path it closes its reader before
 // releasing the gate (an idle reader still holds a decoder session and reads
 // ahead) and opens a new one at the last frame read (from a closed GOP before
 // it in open-GOP files, `ClosedGOPStart`), and it runs at least a few times as
@@ -71,7 +75,8 @@ public struct ScanRequest: Sendable {
 
     /// Tuning, changed by tests.
     var yieldCheckFrames = 30
-    var minimumRunBeforeYield: Duration = .seconds(1)
+    /// The scan runs at least this long between pauses for thumb requests.
+    var minimumRunBeforeYield: Duration = .seconds(3)
     /// After a pause the scan runs at least this many times as long as the
     /// last reopen took (reader start and pre-roll), so pausing never costs
     /// more than about a quarter of the scan, whatever the GOP length.

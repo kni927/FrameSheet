@@ -95,3 +95,52 @@ public final class ThumbnailCache: Sendable {
 
     static func cost(of image: CGImage) -> Int { image.bytesPerRow * image.height }
 }
+
+/// Pixel width window thumbs are decoded and cached at: the size they are
+/// drawn at, not always the largest. A faces sheet of 400 thumbs at 640 px
+/// (1920 × 800 film: 640 × 267 × 4 bytes each) needed 273 MB and did not fit
+/// the default 256 MB cache, so going back to it redrew it; drawn at its
+/// grid size (about 256 px wide in a 20-column grid) it takes 44 MB.
+public enum ThumbnailWidth {
+    /// Widths go up in steps, so nearby sizes share cache entries.
+    public static let step = 128
+    /// The widest thumb: enough for a 4-column grid on a Retina display.
+    public static let maximum = 640
+
+    /// The width for a thumb drawn `points` wide at `scale` pixels per
+    /// point: rounded up to a step, at least one step, at most `maximum`,
+    /// and no wider than the movie (decoders never enlarge).
+    public static func decodeWidth(points: Double, scale: Double, movieWidth: Int) -> Int {
+        let pixels = max(0, points) * max(1, scale)
+        let stepped = max(1, Int((pixels / Double(step)).rounded(.up))) * step
+        let width = min(maximum, stepped)
+        return movieWidth > 0 ? min(width, movieWidth) : width
+    }
+
+    /// The width for the thumbs of a grid of `thumbCount` cells in
+    /// `columns` columns laid out in a container of the given size (points)
+    /// at `zoom`.
+    public static func gridDecodeWidth(
+        file: MovieFile, columns: Int, thumbCount: Int, settings: Settings, containerWidth: Double,
+        containerHeight: Double, zoom: Double, scale: Double
+    ) -> Int {
+        guard containerWidth > 0, containerHeight > 0 else { return min(maximum, max(1, file.width)) }
+        let geometry = GridGeometry(.init(
+            file: file, columnCount: columns, thumbCount: thumbCount, settings: settings,
+            containerWidth: containerWidth, containerHeight: containerHeight, zoom: zoom))
+        return decodeWidth(points: geometry.thumbWidth, scale: scale, movieWidth: file.width)
+    }
+
+    /// The width for a faces sheet of `thumbCount` thumbs in an optimized
+    /// grid (as Add faces sheet lays it out) at zoom 1.
+    public static func facesSheetDecodeWidth(
+        file: MovieFile, thumbCount: Int, settings: Settings, containerWidth: Double, containerHeight: Double,
+        scale: Double
+    ) -> Int {
+        let count = max(1, thumbCount)
+        return gridDecodeWidth(
+            file: file, columns: GridLayout.optimizedColumns(thumbCount: count), thumbCount: count,
+            settings: settings, containerWidth: containerWidth, containerHeight: containerHeight, zoom: 1,
+            scale: scale)
+    }
+}

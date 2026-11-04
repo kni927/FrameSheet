@@ -365,6 +365,34 @@ private extension Library {
         #expect(collector.analyzedNow == frames.count && collector.facesFound == frames.count / 2)
     }
 
+    /// Frames with faces give thumbnails from the scan frame: only those,
+    /// in order, at the width asked for the n-th of them (counting frames
+    /// found before), never enlarged.
+    @Test func framesWithFacesGiveThumbnails() async throws {
+        let frames = Self.frames
+        let delivered = Mutex<[(frame: Int, width: Int, size: CGSize)]>([])
+        let asked = Mutex<[Int]>([])
+        let thumbnails = FaceScanThumbnails(
+            width: { n in
+                asked.withLock { $0.append(n) }
+                return n == 3 ? 640 : 32
+            },
+            deliver: { frame, image, width in
+                delivered.withLock { $0.append((frame, width, CGSize(width: image.width, height: image.height))) }
+            })
+        let collector = FaceCollector(
+            data: FaceData(thresholds: FaceThresholds()), wanted: Set(frames),
+            analyzer: SlowAnalyzer(delay: .zero), backlog: 4, thumbnails: thumbnails, facesFramesBefore: 2)
+        _ = await collector.analyzing { await feed(collector, frames) }
+        let withFaces = frames.filter { $0 % 20 == 0 }
+        let got = delivered.withLock { $0 }
+        #expect(got.map(\.frame) == withFaces)
+        #expect(asked.withLock { $0 } == Array(3..<(3 + withFaces.count)))
+        // The first (the third in the scope) asked for more than the frame has.
+        #expect(got.first?.width == 64 && got.first?.size == CGSize(width: 64, height: 36))
+        #expect(got.dropFirst().allSatisfy { $0.width == 32 && $0.size == CGSize(width: 32, height: 18) })
+    }
+
     /// Cancel part way: what was analyzed is a prefix of the frames, and a
     /// resumed scan analyzes only the rest.
     @Test func cancelLeavesAConsistentPrefixAndResumes() async throws {
@@ -614,5 +642,61 @@ private extension Library {
         let faces = try await VisionFaceAnalyzer.shared.detect(in: blank)
         withExtendedLifetime(owner) {}
         #expect(faces.isEmpty)
+    }
+}
+
+/// Window thumbs are decoded at the size they are drawn (T07 follow-up).
+@Suite struct ThumbnailWidthTests {
+    private let file = MovieFile(
+        url: URL(fileURLWithPath: "/movies/film.mov"), duration: 734, frameCount: 17620, fps: 24,
+        width: 1920, height: 800, size: 1, fourCC: "avc1")
+
+    @Test func roundsUpToSteps() {
+        #expect(ThumbnailWidth.decodeWidth(points: 50, scale: 2, movieWidth: 1920) == 128)
+        #expect(ThumbnailWidth.decodeWidth(points: 108, scale: 2, movieWidth: 1920) == 256)
+        #expect(ThumbnailWidth.decodeWidth(points: 400, scale: 2, movieWidth: 1920) == 640)
+        #expect(ThumbnailWidth.decodeWidth(points: 0, scale: 2, movieWidth: 1920) == 128)
+        // Never wider than the movie.
+        #expect(ThumbnailWidth.decodeWidth(points: 300, scale: 2, movieWidth: 320) == 320)
+    }
+
+    /// The owner's case: a faces sheet of 400 thumbs (20 columns) of a
+    /// 1920 × 800 film fits the default cache at its grid size, in a window
+    /// and on a large display; at 640 px it did not.
+    @Test func fourHundredThumbFacesSheetFitsTheDefaultCache() throws {
+        func image(width: Int) throws -> CGImage {
+            let height = Int((Double(width) * 800 / 1920).rounded())
+            let context = try #require(CGContext(
+                data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: width * 4,
+                space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue))
+            return try #require(context.makeImage())
+        }
+        func fits(width: Int) throws -> Bool {
+            let cache = ThumbnailCache()
+            let id = UUID()
+            let thumb = try image(width: width)
+            for frame in 0..<400 { cache.insert(thumb, file: id, frame: frame * 10, width: 640) }
+            return (0..<400).allSatisfy { cache.image(file: id, frame: $0 * 10, width: 640) != nil }
+        }
+        #expect(ThumbnailCache().limitBytes == Defaults.thumbnailCacheMB * 1024 * 1024)
+        #expect(try !fits(width: 640))
+        for (width, height) in [(1100.0, 700.0), (1600.0, 1000.0), (3000.0, 1900.0)] {
+            let decode = ThumbnailWidth.facesSheetDecodeWidth(
+                file: file, thumbCount: 400, settings: Settings(), containerWidth: width, containerHeight: height,
+                scale: 2)
+            #expect(decode < 640, "\(width) × \(height): \(decode)")
+            #expect(try fits(width: decode), "\(width) × \(height): \(decode)")
+        }
+    }
+
+    /// The scan's thumbnails shrink as the faces found grow, so each is at
+    /// least as wide as the finished sheet needs.
+    @Test func facesSheetWidthShrinksWithTheCount() {
+        let widths = [1, 4, 16, 50, 100, 400, 1000].map {
+            ThumbnailWidth.facesSheetDecodeWidth(
+                file: file, thumbCount: $0, settings: Settings(), containerWidth: 1400, containerHeight: 900, scale: 2)
+        }
+        #expect(widths == widths.sorted(by: >), "\(widths)")
+        #expect(widths.first == 640)
     }
 }
