@@ -36,7 +36,8 @@ reproduces MoviePrint v0.2.23 for Apple Silicon: decisions 14–22 in
 - Scans run slower while a remote-screen app is active (it shares the GPU and
   media engine): 33 s instead of 19 s for a 12 min film's face scan.
 - Audio for ffmpeg playback (owner: later, e.g. T08).
-- Next UI step (owner): move some right-panel settings to the Settings window.
+- T08: move only the Experimental section to the Settings window (owner,
+  2026-11-04; the collapsible panel sections cover the rest).
 - Hung runs: `scripts/check.sh` stops itself after 15 min; `scripts/check.sh
   stop` ends a run the sandbox cannot (owner, 2026-11-03).
 - Tooltips on every control, kept short (owner, 2026-11-02/03).
