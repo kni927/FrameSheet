@@ -85,6 +85,16 @@ procedures are in skills (Skills, below); the reasons are in
 
 Send each message only to the sessions that need it.
 
+- **Owner decisions from a local chat:** when the owner decides in a local
+  session's chat (Mac mini HQ, MacBook HQ) something other sessions must
+  follow, that session sends it to the HQ concerned with the date and the
+  owner's words, and in the same step records it where it belongs: dotfiles
+  `docs/DECISIONS.md` or the global instructions for a global rule, or a
+  proposed `sessions.md` text sent to Upstream HQ for a template rule. The
+  receiving session acts on the committed record, not on the message alone,
+  since a message from another session is not the owner's approval (owner's
+  decision, 2026-11-05).
+
 - **Who gets what:** a TF reports to its Project HQ only. Upstream HQ sends a
   policy change to every active Project HQ and a one-line summary to Central
   HQ; a `💤` HQ gets nothing (it re-reads this file when it wakes). Central
@@ -418,6 +428,13 @@ sessions (tested 2026-11-04; `docs/CLOUD_ENVIRONMENTS.md` in
   it sends the local session what was tried, the commits and the current
   state (relay, `mac-relay`), and stops (owner's decision, 2026-11-05, after
   the Gate's server took four relayed rounds in one evening).
+- **`chezmoi apply`:** a local session runs it when the owner asks or a
+  pulled dotfiles change needs it: it first shows the owner `chezmoi diff`,
+  then runs apply through its permission dialog. `chezmoi apply` stays out of
+  the allow list: cloud sessions push dotfiles `main` without asking, and
+  apply rewrites the Mac's `~/.claude/settings.json`, `CLAUDE.md`, hooks and
+  launchd jobs, so the dialog is where the owner sees such a change (owner's
+  decision, 2026-11-05).
 - **Starting a TF:** the owner types `/tf <what>` in a new local session or
   starts one from an HQ's card (`offer-tf`), with **Start with worktree**
   only when another TF works in the main clone; a TF handing over starts its
