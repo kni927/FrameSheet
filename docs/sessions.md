@@ -331,8 +331,8 @@ sessions (tested 2026-11-04; `docs/CLOUD_ENVIRONMENTS.md` in
   ends one reply with one English line asking the owner to type `/compact`,
   and does not repeat it until usage crosses the threshold again. A
   `/compact` is no reason to hand over or wrap up.
-- Hand over (cloud HQ) or wrap up (local TF) before an automatic compaction
-  comes: at the first natural break past 76% (cloud HQ) or 94% (local TF),
+- Hand over (cloud HQ; a local session with `local-handover`) or wrap up
+  (local TF) before an automatic compaction comes: at the first natural break past 76% (cloud HQ) or 94% (local TF),
   when the owner has not compacted. After an automatic compaction (a
   `compact_boundary` whose `trigger` is not `manual`), at the next natural
   break. The owner may say "handover" or "wrap up" at any time. Gateway and
@@ -414,7 +414,14 @@ sessions (tested 2026-11-04; `docs/CLOUD_ENVIRONMENTS.md` in
   starts one from an HQ's card (`offer-tf`), with **Start with worktree**
   only when another TF works in the main clone; a TF handing over starts its
   successor itself (`start_session`, then `detach_session`), and the
-  successor archives it (dotfiles `/tf`). Server mode (`rc-server`)
+  successor archives it (dotfiles `/tf`, `local-handover`).
+- **Handing over a local session:** a TF or a base session past its
+  threshold, after an automatic compaction, or when the owner says so, hands
+  over with the global skill `local-handover` (dotfiles): handover file,
+  `start_session`, `detach_session`, `✅ … (handover YYYY-MM-DD)`; the
+  successor takes over the role (Mac mini HQ tells Central HQ its ID) and
+  archives the predecessor. The Gate has no desktop tools; the owner
+  replaces it. Server mode (`rc-server`)
   is the owner's option.
 - **One TF per working directory:** sessions there share `TASK.md`, changes,
   and build output. A TF that finds `TASK.md` or uncommitted changes takes no
