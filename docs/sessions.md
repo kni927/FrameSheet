@@ -410,6 +410,14 @@ sessions (tested 2026-11-04; `docs/CLOUD_ENVIRONMENTS.md` in
 
 ## Local sessions on the Mac
 
+- **Mac work stays on the Mac:** work done mainly on a Mac (a launchd job,
+  local logs, a fix that has to be tried there) goes to a local session on
+  that Mac: Mac mini HQ, MacBook HQ, or a Workspace session. A cloud HQ does
+  not run it by relaying commands and logs, which leaves the owner to carry
+  every step. When a cloud HQ finds itself doing so, it hands the work over:
+  it sends the local session what was tried, the commits and the current
+  state (relay, `mac-relay`), and stops (owner's decision, 2026-11-05, after
+  the Gate's server took four relayed rounds in one evening).
 - **Starting a TF:** the owner types `/tf <what>` in a new local session or
   starts one from an HQ's card (`offer-tf`), with **Start with worktree**
   only when another TF works in the main clone; a TF handing over starts its
