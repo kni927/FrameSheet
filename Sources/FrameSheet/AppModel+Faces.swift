@@ -92,6 +92,13 @@ extension AppModel {
         return library.faceSheetNeedsRescan(ref, thresholds: library.settings.faceThresholds)
     }
 
+    /// The current sheet is a faces sheet whose faces were found with
+    /// another rotation or crop (the banner and Apply's caption say so).
+    var facesSheetTransformChanged: Bool {
+        guard let ref = currentRef else { return false }
+        return library.faceSheetTransformChanged(ref)
+    }
+
     /// The current sheet is a faces sheet.
     var isFacesSheetShown: Bool { currentSheet?.type == .faces }
 
@@ -108,6 +115,8 @@ extension AppModel {
     /// Scans `source`'s frames of `file` for faces, then adds a faces sheet
     /// or, with `target`, replaces that sheet's thumbs.
     private func runFaceScan(_ file: MovieFile, source: FaceSheetSource, target: SheetRef?) {
+        var source = source
+        source.transform = library.file(file.id)?.transform ?? file.transform
         checkMovieFile(file.id)
         guard !missing.contains(file.id) else {
             toast = "\(file.name): the movie is missing."

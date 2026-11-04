@@ -908,7 +908,8 @@ private struct FaceDetectionSection: View {
                 title: "Size", value: model.setting(\.faceSizeThreshold), range: 0...100, unit: " %",
                 help: "Faces smaller than this share of the frame height are ignored")
             HStack {
-                Text(model.isFacesSheetShown ? "Apply rescans this faces sheet" : "Takes effect on the next scan")
+                Text(model.facesSheetTransformChanged ? "Transform changed: Apply rescans this sheet"
+                    : model.isFacesSheetShown ? "Apply rescans this faces sheet" : "Takes effect on the next scan")
                     .font(Theme.panelCaption)
                     .foregroundStyle(Theme.textMuted)
                 Spacer(minLength: 0)
@@ -917,7 +918,8 @@ private struct FaceDetectionSection: View {
                 Button("Apply") { model.applyFaceThresholds() }
                     .controlSize(.small)
                     .disabled(!canApply)
-                    .help(applied ? "These thresholds are already applied" : "Rescan this faces sheet with these thresholds")
+                    .help(applied ? "These thresholds are already applied"
+                        : "Rescan this faces sheet with these thresholds and the movie's current transform")
             }
         }
     }

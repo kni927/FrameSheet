@@ -13,7 +13,8 @@ import Foundation
 /// stored scans are cleared, as Clear Stored Scans does, and the next scan
 /// reads the new frames. Sheets keep their thumbs and scenes; face boxes
 /// already on a faces sheet keep the old frame's coordinates until it is
-/// scanned again.
+/// scanned again; such a sheet says so and Apply rescans it
+/// (`Library.faceSheetTransformChanged`).
 extension AppModel {
     /// Movie menu: opens the dialog (not while a scan runs: it reads the
     /// movie with the current transform).
@@ -54,7 +55,7 @@ extension AppModel {
             guard old != file.transform else { continue }
             appliedTransforms[file.id] = file.transform
             guard let old else { continue }
-            if !Self.sameImage(old, file.transform) { changed.append(file.id) }
+            if !old.sameImage(as: file.transform) { changed.append(file.id) }
         }
         guard !changed.isEmpty else { return }
         cancelScrub()
@@ -64,11 +65,6 @@ extension AppModel {
             player.transformChanged(id)
             dropStoredScans(id)
         }
-    }
-
-    private static func sameImage(_ a: MovieTransform, _ b: MovieTransform) -> Bool {
-        a.rotation == b.rotation && a.cropTop == b.cropTop && a.cropBottom == b.cropBottom
-            && a.cropLeft == b.cropLeft && a.cropRight == b.cropRight
     }
 
     /// Clears a movie's stored shot and face scans (as Clear Stored Scans).

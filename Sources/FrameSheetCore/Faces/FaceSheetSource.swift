@@ -18,6 +18,9 @@ public struct FaceSheetSource: Sendable, Equatable {
     public var thumbFrames: [Int]?
     /// Nil when not known (sheets made before Apply).
     public var thresholds: FaceThresholds?
+    /// The movie's transform when the faces were found (§3); nil on sheets
+    /// made before transforms existed, which had none.
+    public var transform: MovieTransform?
 
     /// The source of a scan of `scope` over `thumbFrames` (the shown thumbs
     /// of the sheet Add faces sheet was used on).
@@ -45,7 +48,7 @@ public struct FaceSheetSource: Sendable, Equatable {
 
 extension FaceSheetSource: Codable {
     private enum CodingKeys: String, CodingKey {
-        case scope, lowFrame, highFrame, thumbFrames, thresholds
+        case scope, lowFrame, highFrame, thumbFrames, thresholds, transform
     }
 
     public init(from decoder: any Decoder) throws {
@@ -56,6 +59,7 @@ extension FaceSheetSource: Codable {
         lowFrame = (try? c.decodeIfPresent(Int.self, forKey: .lowFrame)) ?? frames?.min() ?? 0
         highFrame = (try? c.decodeIfPresent(Int.self, forKey: .highFrame)) ?? frames?.max() ?? lowFrame
         thresholds = (try? c.decodeIfPresent(FaceThresholds.self, forKey: .thresholds)) ?? nil
+        transform = (try? c.decodeIfPresent(MovieTransform.self, forKey: .transform)) ?? nil
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -65,6 +69,7 @@ extension FaceSheetSource: Codable {
         try c.encode(highFrame, forKey: .highFrame)
         try c.encodeIfPresent(thumbFrames, forKey: .thumbFrames)
         try c.encodeIfPresent(thresholds, forKey: .thresholds)
+        try c.encodeIfPresent(transform, forKey: .transform)
     }
 }
 
@@ -122,7 +127,16 @@ extension Library {
     /// from `thresholds` (or are not known).
     public func faceSheetNeedsRescan(_ ref: SheetRef, thresholds: FaceThresholds) -> Bool {
         guard let source = faceSheetSource(ref) else { return false }
-        return source.thresholds != thresholds
+        return source.thresholds != thresholds || faceSheetTransformChanged(ref)
+    }
+
+    /// A faces sheet whose face boxes were found with another rotation or
+    /// crop than the movie has now (decision 26): its boxes are off until
+    /// Apply rescans it.
+    public func faceSheetTransformChanged(_ ref: SheetRef) -> Bool {
+        guard let file = file(ref.fileId), let sheet = sheet(ref.sheetId, of: ref.fileId), sheet.type == .faces
+        else { return false }
+        return !(sheet.faceSource?.transform ?? MovieTransform()).sameImage(as: file.transform)
     }
 
     /// Apply: replaces a faces sheet's thumbs with the scanned frames of

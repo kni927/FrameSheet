@@ -435,7 +435,9 @@ scan caches hold values computed from the frames as they were scanned.
   player frames and stored shot and face scans, as Clear Stored Scans does;
   the dialog says so when the movie has stored scans, and it cannot be opened
   while a scan runs. Sheets keep their thumbs and scenes; face boxes already
-  on a faces sheet keep the old coordinates until it is scanned again.
+  on a faces sheet keep the old coordinates until it is scanned again: a
+  faces sheet records the transform its faces were found with, says so in a
+  banner when the movie's rotation or crop differs, and Apply rescans it.
 - MoviePrint's 2.21:1 preset value 0.5525 (1.81:1) is corrected to 0.4525.
 
 #### Rationale

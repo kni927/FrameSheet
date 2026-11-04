@@ -133,6 +133,17 @@ struct MainArea: View {
                 EmptyState()
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
+            if model.facesSheetTransformChanged, !model.player.isShown {
+                Text("Transform changed: face boxes are from the old frames. Rescan with Apply (settings, Face detection).")
+                    .font(Theme.caption)
+                    .foregroundStyle(Theme.warning)
+                    .padding(.horizontal, Theme.space3)
+                    .padding(.vertical, Theme.space1)
+                    .background(Theme.crust.opacity(0.85), in: RoundedRectangle(cornerRadius: Theme.radiusSm))
+                    .padding(.top, Theme.space2)
+                    .allowsHitTesting(false)
+                    .accessibilityLabel("Transform changed; rescan faces with Apply")
+            }
             if let scrub = model.scrub, let file = model.currentFile {
                 ScrubOverlay(session: scrub, file: file)
             }

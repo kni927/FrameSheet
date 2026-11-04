@@ -415,6 +415,23 @@ private extension Library {
         #expect(!library.faceSheetNeedsRescan(ref, thresholds: thresholds))
         #expect(library.faceSheetNeedsRescan(ref, thresholds: FaceThresholds(confidence: 50, size: 10)))
 
+        // A rotation or crop since (decision 26): the boxes are off, Apply
+        // rescans; an aspect ratio alone changes nothing. No stored
+        // transform means none (sheets from before transforms).
+        #expect(!library.faceSheetTransformChanged(ref))
+        library.files[0].transform.aspectRatioInv = 0.75
+        #expect(!library.faceSheetTransformChanged(ref))
+        library.files[0].transform.cropTop = 10
+        #expect(library.faceSheetTransformChanged(ref))
+        #expect(library.faceSheetNeedsRescan(ref, thresholds: thresholds))
+        library.sheets[file.id]![0].faceSource?.transform = library.files[0].transform
+        #expect(!library.faceSheetTransformChanged(ref))
+        let coded = try JSONDecoder().decode(
+            FaceSheetSource.self, from: JSONEncoder().encode(library.sheets[file.id]![0].faceSource))
+        #expect(coded.transform?.cropTop == 10)
+        library.files[0].transform = MovieTransform()
+        library.sheets[file.id]![0].faceSource?.transform = nil
+
         // Made before Apply: every 10th frame over its own frames, thresholds unknown.
         library.sheets[file.id]![0].faceSource = nil
         let fallback = try #require(library.faceSheetSource(ref))

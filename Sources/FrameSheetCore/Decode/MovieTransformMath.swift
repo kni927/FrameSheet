@@ -15,6 +15,13 @@ extension MovieTransform {
         rotation == 0 && cropTop == 0 && cropBottom == 0 && cropLeft == 0 && cropRight == 0
     }
 
+    /// The same rotation and crop (the aspect ratio aside): frames decoded
+    /// with either look the same.
+    public func sameImage(as other: MovieTransform) -> Bool {
+        rotation == other.rotation && cropTop == other.cropTop && cropBottom == other.cropBottom
+            && cropLeft == other.cropLeft && cropRight == other.cropRight
+    }
+
     /// Width and height swap (90° and 270°).
     public var swapsAxes: Bool { rotation == 90 || rotation == 270 }
 
