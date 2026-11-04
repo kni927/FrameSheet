@@ -305,7 +305,7 @@ extension TimelineGeometry.Input {
         containerHeight: Double, zoom: Double = 1, expandedIndex: Int? = nil
     ) {
         self.init(
-            movieWidth: Double(file.width), movieHeight: Double(file.height),
+            movieWidth: Double(file.frameSize.width), movieHeight: Double(file.frameSize.height),
             aspectRatioInv: file.transform.aspectRatioInv, sceneLengths: scenes.map(\.length),
             firstStart: scenes.first?.start ?? 0, fps: file.fps, secondsPerRow: sheet.secondsPerRow,
             sceneWidthRatio: settings.timelineSceneWidthRatio, minSceneLength: settings.timelineMinSceneLength,

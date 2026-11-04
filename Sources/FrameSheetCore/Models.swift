@@ -21,7 +21,7 @@ public enum SheetView: String, Codable, Sendable {
 }
 
 /// Rotation, crop and aspect ratio applied to a movie (MoviePrint's
-/// `transformObject`). Not editable yet; carried so the model is complete.
+/// `transformObject`); the math is in `MovieTransformMath.swift`.
 public struct MovieTransform: Codable, Sendable, Equatable {
     /// Clockwise rotation in degrees: 0, 90, 180 or 270.
     public var rotation: Int = 0

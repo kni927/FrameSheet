@@ -84,6 +84,9 @@ private struct MovieRow: View {
         .onTapGesture { model.select(file: file.id) }
         .help(file.url.path)
         .contextMenu {
+            Button("Edit Rotation, Cropping and Aspect Ratio…") { model.editTransform(file.id) }
+                .disabled(missing || model.isScanning)
+                .help("Rotate, crop or set the aspect ratio of this movie's frames")
             Button("Open File Location") { model.revealInFinder(file) }
                 .disabled(missing)
             if missing {
@@ -120,7 +123,7 @@ private struct Poster: View {
 
     var body: some View {
         let width: CGFloat = 80
-        let ratio = file.width > 0 ? CGFloat(file.height) / CGFloat(file.width) : 9 / 16
+        let ratio = CGFloat(file.displayAspectRatioInv)
         Group {
             if let image = model.image(file: file.id, frame: file.posterFrame, width: AppModel.posterWidth) {
                 Image(decorative: image, scale: 1).resizable()

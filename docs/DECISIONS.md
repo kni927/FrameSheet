@@ -407,3 +407,40 @@ at about 93 ms (640 px) to 387 ms (1920 px). Step 2 keeps hardware decoding
 and needs no ffmpeg, so it goes first; ffmpeg covers the rest. Frames the
 generator decodes exactly never reach step 2, so normal files cost nothing
 extra (owner approved the three steps in TF #01's chat).
+
+### 26. Movie transforms: applied once in the decode path; a change clears stored scans (2026-11-04)
+
+#### Context
+v3.0.0 includes MoviePrint's per-movie rotation, cropping and aspect ratio
+(0.2.18–0.2.19, decision 21). Every consumer must show the same image:
+thumbs, scrub, player, scans, saved prints and frames. The shot and face
+scan caches hold values computed from the frames as they were scanned.
+
+#### Decision
+- Rotation (0/90/180/270, clockwise) is applied to the upright frame first,
+  then the crop, in the rotated frame's pixels, as MoviePrint does. The math
+  is in `FrameSheetCore` (`MovieTransformMath.swift`); `TransformedBackend`
+  wraps each movie's backend in `AppModel.backend(for:)`, so every decoded
+  image is transformed in one place. Scans apply the same transform in
+  `ScanFrameConverter` (vImage rotation and a view into the crop).
+- The aspect ratio does not change the decoded image: thumbs, scrub and the
+  player are drawn to it (stretched, as MoviePrint does), and saved
+  individual thumbs and frames are scaled to it.
+- Player video (AVPlayer's layer and ffmpeg playback's frames) stays
+  untransformed and is turned, moved and clipped in the view
+  (`MovieTransform.playbackPlacement`); paused stills are decoded through
+  the transformed backend.
+- A stored scan does not record the transform. When a movie's rotation or
+  crop changes (the dialog, undo or redo), the app clears its cached images,
+  player frames and stored shot and face scans, as Clear Stored Scans does;
+  the dialog says so when the movie has stored scans, and it cannot be opened
+  while a scan runs. Sheets keep their thumbs and scenes; face boxes already
+  on a faces sheet keep the old coordinates until it is scanned again.
+- MoviePrint's 2.21:1 preset value 0.5525 (1.81:1) is corrected to 0.4525.
+
+#### Rationale
+One wrapper in the decode path keeps every consumer consistent without
+touching each one. Clearing scans on a change is simpler than versioning the
+cache by transform and cannot show scenes or faces from other frames; a
+rescan of a 2 h film takes minutes, and transforms are set rarely, usually
+before scanning.

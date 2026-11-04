@@ -94,6 +94,11 @@ which you can edit:
   A movie's stored shot and face scans can be deleted with **Clear Stored
   Scans** in its menu. Each scan writes timings to
   `~/Library/Logs/FrameSheet/scan.log`.
+- **Edit Rotation, Cropping and Aspect Ratio…** in a movie's menu turns the
+  frames by 90° steps, crops them (presets or pixels per edge, with a
+  preview) and sets the ratio thumbs are shown and saved at, for the grid,
+  scrub, player, scans and saved images alike; undoable. Changing the
+  rotation or crop clears the movie's stored scans.
 - ⌘Z / ⇧⌘Z undo and redo up to 50 edits.
 
 ## Requirements

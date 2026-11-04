@@ -155,6 +155,7 @@ extension AppModel {
                 fileId: fileId, url: file.url, method: settings.shotDetectionMethod,
                 threshold: settings.shotDetectionThreshold, ffmpeg: await ffmpegTools(), store: store,
                 rescan: rescan)
+            request.transform = file.transform
             request.log = log.sink
             let clock = ContinuousClock()
             var lastApplied: ContinuousClock.Instant?

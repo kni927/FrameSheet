@@ -83,6 +83,10 @@ public struct ScanRequest: Sendable {
     /// Scan again although the cache holds a complete scan.
     public var rescan: Bool
     public var observer: (any ScanFrameObserver)?
+    /// The movie's rotation and crop (§3): metrics and the observer read the
+    /// transformed frames. A stored scan does not record it; the app clears
+    /// a movie's stored scans when its transform changes.
+    public var transform = MovieTransform()
     /// The scan timing log; nil logs nothing.
     public var log: ScanLogSink?
 
@@ -370,7 +374,9 @@ private final class ScanSession {
         frameList = request.frameList
         calculator = ShotMetricCalculator(method: request.method)
         let size = source.uprightSize
-        converter = ScanFrameConverter(uprightWidth: size.width, uprightHeight: size.height, orientation: source.orientation)
+        converter = ScanFrameConverter(
+            uprightWidth: size.width, uprightHeight: size.height, orientation: source.orientation,
+            transform: request.transform, sourceWidth: source.info.width, sourceHeight: source.info.height)
         let now = ContinuousClock.now
         lastEvent = now
         lastScenes = now
@@ -481,13 +487,13 @@ private final class ScanSession {
             guard nextListed < frameList.count, frameList[nextListed] == frame else { return }
             nextListed += 1
             if let observer = request.observer {
-                await observer.scanned(ScanFrame(frameNumber: frame, image: converter.upright(decoded)))
+                await observer.scanned(ScanFrame(frameNumber: frame, image: converter.transformed(converter.upright(decoded))))
             }
             if let stop = request.stopAfterFrames, nextListed >= stop { throw CancellationError() }
             try Task.checkCancellation()
             return
         }
-        let upright = converter.upright(decoded)
+        let upright = converter.transformed(converter.upright(decoded))
         let metricFrame = converter.metricFrame(upright)
         if seedFrame != nil {
             seedFrame = nil

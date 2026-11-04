@@ -160,6 +160,7 @@ extension AppModel {
                 ffmpeg: await ffmpegTools(), singleFrames: single, faceStore: store, scanStore: scans,
                 method: settings.shotDetectionMethod, shotThreshold: settings.shotDetectionThreshold,
                 thumbnails: thumbnails)
+            request.transform = library.file(file.id)?.transform ?? file.transform
             request.log = log.sink
             let clock = ContinuousClock()
             var how = "stream ended by Cancel"

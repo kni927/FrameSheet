@@ -93,6 +93,14 @@ struct ContentView: View {
                 .environment(model)
                 .preferredColorScheme(.dark)
         }
+        .sheet(item: Binding(
+            get: { model.transformDialogFile.flatMap { model.library.file($0) } },
+            set: { if $0 == nil { model.transformDialogFile = nil } }
+        )) { file in
+            TransformDialog(file: file)
+                .environment(model)
+                .preferredColorScheme(.dark)
+        }
         .alert("Clear the movie list?", isPresented: $confirmingClear) {
             Button("Clear", role: .destructive) { model.clearList() }
                 .help("Remove all movies and their sheets")

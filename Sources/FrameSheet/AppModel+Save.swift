@@ -289,8 +289,9 @@ extension AppModel {
         }
     }
 
-    /// Writes one thumb in the thumb format and quality; " edit N" unless
-    /// overwriting.
+    /// Writes one thumb in the thumb format and quality, scaled to the
+    /// movie's aspect ratio if one is set (MoviePrint's `useAspectRatio`);
+    /// " edit N" unless overwriting.
     private func writeThumb(
         _ image: CGImage, frameNumber: Int, template: String, folder: URL, file: MovieFile, sheet: Sheet,
         settings: FrameSheetCore.Settings
@@ -301,8 +302,9 @@ extension AppModel {
         let url = FileNaming.outputURL(
             folder: folder, baseName: baseName, fileExtension: settings.thumbFormat.fileExtension,
             overwrite: settings.overwrite, exists: { FileManager.default.fileExists(atPath: $0.path) })
+        let shaped = file.transform.applyAspectRatio(to: image)
         try await Self.encodeAndWrite(
-            image, format: settings.thumbFormat, quality: settings.thumbQuality, embedding: nil, to: url)
+            shaped, format: settings.thumbFormat, quality: settings.thumbQuality, embedding: nil, to: url)
         return url
     }
 

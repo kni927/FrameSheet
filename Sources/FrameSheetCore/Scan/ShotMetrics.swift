@@ -344,11 +344,36 @@ final class ScanFrameConverter {
     private let metric: OwnedBGRA
     private var scaleTemp: UnsafeMutableRawPointer?
 
-    init(uprightWidth: Int, uprightHeight: Int, orientation: FrameOrientation) {
+    /// The movie's transform (rotation and crop, §3), applied after the
+    /// frame is upright, and the crop in the upright frame's pixels.
+    let transform: MovieTransform
+    private let crop: (x: Int, y: Int, width: Int, height: Int)
+    private var turned: OwnedBGRA?
+
+    /// `sourceWidth` × `sourceHeight` is the movie's upright size, which the
+    /// transform's crop refers to.
+    init(
+        uprightWidth: Int, uprightHeight: Int, orientation: FrameOrientation, transform: MovieTransform = MovieTransform(),
+        sourceWidth: Int = 0, sourceHeight: Int = 0
+    ) {
         self.uprightWidth = uprightWidth
         self.uprightHeight = uprightHeight
         self.orientation = orientation
-        let size = ScanGeometry.fit(width: uprightWidth, height: uprightHeight, maxSide: ScanGeometry.metricSide)
+        self.transform = transform
+        let (rw, rh) = transform.rotatedSize(width: uprightWidth, height: uprightHeight)
+        if transform.keepsImage || sourceWidth <= 0 || sourceHeight <= 0 {
+            crop = (0, 0, rw, rh)
+        } else {
+            let rect = transform.cropRect(width: sourceWidth, height: sourceHeight)
+            let (sw, sh) = transform.rotatedSize(width: sourceWidth, height: sourceHeight)
+            let sx = Double(rw) / Double(sw), sy = Double(rh) / Double(sh)
+            let x = min(rw - 1, Int((Double(rect.x) * sx).rounded()))
+            let y = min(rh - 1, Int((Double(rect.y) * sy).rounded()))
+            crop = (
+                x, y, max(1, min(rw - x, Int((Double(rect.width) * sx).rounded()))),
+                max(1, min(rh - y, Int((Double(rect.height) * sy).rounded()))))
+        }
+        let size = ScanGeometry.fit(width: crop.width, height: crop.height, maxSide: ScanGeometry.metricSide)
         metric = OwnedBGRA(width: size.width, height: size.height)
     }
 
@@ -376,6 +401,33 @@ final class ScanFrameConverter {
         var mirrorBuffer = mirrored.vImage
         vImageHorizontalReflect_ARGB8888(&dst, &mirrorBuffer, vImage_Flags(kvImageNoFlags))
         return mirrored.frame
+    }
+
+    /// The upright frame rotated and cropped by the movie's transform: a
+    /// view into `upright` when only cropped (valid until the next call).
+    func transformed(_ upright: BGRAFrame) -> BGRAFrame {
+        guard !transform.keepsImage else { return upright }
+        var frame = upright
+        if transform.rotation != 0 {
+            var src = vImage_Buffer(
+                data: UnsafeMutableRawPointer(mutating: upright.base), height: vImagePixelCount(upright.height),
+                width: vImagePixelCount(upright.width), rowBytes: upright.bytesPerRow)
+            let (rw, rh) = transform.rotatedSize(width: upright.width, height: upright.height)
+            let target = turned ?? OwnedBGRA(width: rw, height: rh)
+            turned = target
+            var dst = target.vImage
+            let constant = switch transform.rotation {
+            case 90: kRotate90DegreesClockwise
+            case 180: kRotate180DegreesClockwise
+            default: kRotate90DegreesCounterClockwise
+            }
+            vImageRotate90_ARGB8888(&src, &dst, UInt8(constant), [0, 0, 0, 255], vImage_Flags(kvImageNoFlags))
+            frame = target.frame
+        }
+        let x = min(crop.x, frame.width - 1), y = min(crop.y, frame.height - 1)
+        return BGRAFrame(
+            base: frame.base + y * frame.bytesPerRow + x * 4, width: min(crop.width, frame.width - x),
+            height: min(crop.height, frame.height - y), bytesPerRow: frame.bytesPerRow)
     }
 
     /// The upright frame scaled to the metric size (valid until the next call).

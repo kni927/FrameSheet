@@ -124,6 +124,9 @@ public struct FaceScanRequest: Sendable {
     public var thumbnails: FaceScanThumbnails?
     /// The scan timing log (also given to the passes); nil logs nothing.
     public var log: ScanLogSink?
+    /// The movie's rotation and crop (§3), for the sequential passes; a
+    /// `singleFrames` backend applies it itself (`TransformedBackend`).
+    public var transform = MovieTransform()
 
     /// Tuning, changed by tests and the probe.
     var checkpointInterval: Duration = .seconds(30)
@@ -274,6 +277,7 @@ public enum FaceScanner {
                 fileId: request.fileId, url: request.url, method: request.method, threshold: request.shotThreshold,
                 ffmpeg: request.ffmpeg, store: nil, observer: collector)
             pass.frameList = facesOnly
+            pass.transform = request.transform
             request.tune(&pass)
             outcome = await consume(ShotScanner.scan(pass), saver: saver) { scanned, count in
                 continuation.yield(.progress(facesOnlyWork * Double(scanned) / Double(max(1, count)) / totalWork))
@@ -286,6 +290,7 @@ public enum FaceScanner {
             let last = combined.last!
             // Up to the last sampled frame, unless that is the movie's end.
             pass.endFrame = last >= source.info.frameCount - 1 ? nil : last
+            pass.transform = request.transform
             request.tune(&pass)
             let base = facesOnlyWork
             outcome = await consume(ShotScanner.scan(pass), saver: saver) { scanned, _ in

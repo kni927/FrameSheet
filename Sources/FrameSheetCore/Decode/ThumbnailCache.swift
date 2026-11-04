@@ -124,11 +124,11 @@ public enum ThumbnailWidth {
         file: MovieFile, columns: Int, thumbCount: Int, settings: Settings, containerWidth: Double,
         containerHeight: Double, zoom: Double, scale: Double
     ) -> Int {
-        guard containerWidth > 0, containerHeight > 0 else { return min(maximum, max(1, file.width)) }
+        guard containerWidth > 0, containerHeight > 0 else { return min(maximum, max(1, file.frameSize.width)) }
         let geometry = GridGeometry(.init(
             file: file, columnCount: columns, thumbCount: thumbCount, settings: settings,
             containerWidth: containerWidth, containerHeight: containerHeight, zoom: zoom))
-        return decodeWidth(points: geometry.thumbWidth, scale: scale, movieWidth: file.width)
+        return decodeWidth(points: geometry.thumbWidth, scale: scale, movieWidth: file.frameSize.width)
     }
 
     /// The width for a faces sheet of `thumbCount` thumbs in an optimized

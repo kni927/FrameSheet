@@ -13,7 +13,7 @@ extension GridGeometry.Input {
         containerHeight: Double = 99999, zoom: Double = 1
     ) {
         self.init(
-            movieWidth: Double(file.width), movieHeight: Double(file.height),
+            movieWidth: Double(file.frameSize.width), movieHeight: Double(file.frameSize.height),
             aspectRatioInv: file.transform.aspectRatioInv, columnCount: columnCount,
             thumbCount: thumbCount, containerWidth: containerWidth, containerHeight: containerHeight,
             zoom: zoom, marginRatioHorizontal: settings.marginRatioHorizontal,
@@ -154,7 +154,7 @@ public enum PrintOutput {
                     containerWidth: .greatestFiniteMagnitude, containerHeight: Double(height)))
                 width = max(1, Int(geometry.printWidth.rounded()))
                 layout = .timeline(geometry, scenes: scenes)
-                decodeWidth = PrintOutput.decodeWidth(thumbWidth: geometry.fullWidth, movieWidth: file.width)
+                decodeWidth = PrintOutput.decodeWidth(thumbWidth: geometry.fullWidth, movieWidth: file.frameSize.width)
                 return
             }
             thumbs = PrintOutput.printThumbs(of: sheet, settings: settings)
@@ -167,7 +167,7 @@ public enum PrintOutput {
             height = PrintOutput.height(width: width, printAspectRatioInv: ratio)
             let geometry = PrintOutput.geometry(input, width: width)
             layout = .grid(geometry)
-            decodeWidth = PrintOutput.decodeWidth(thumbWidth: geometry.thumbWidth, movieWidth: file.width)
+            decodeWidth = PrintOutput.decodeWidth(thumbWidth: geometry.thumbWidth, movieWidth: file.frameSize.width)
         }
     }
 }

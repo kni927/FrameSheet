@@ -67,7 +67,7 @@ private struct PlayerVideo: View {
             ZStack {
                 if player.decoder == .avFoundation {
                     PlayerLayerView(player: player.player)
-                        .frame(width: fit.width, height: fit.height)
+                        .transformedVideo(file, fit: fit)
                         .opacity(player.showsLayer ? 1 : 0)
                 }
                 if let still = player.coveringStill {
@@ -94,7 +94,7 @@ private struct PlayerVideo: View {
                 }
                 if player.isFFmpegPlaying {
                     PlaybackLayerView(layer: player.playbackLayer)
-                        .frame(width: fit.width, height: fit.height)
+                        .transformedVideo(file, fit: fit)
                         .opacity(player.showsPlaybackFrame ? 1 : 0)
                         .overlay(alignment: .topLeading) {
                             Text("Playback using ffmpeg · no audio")
@@ -123,6 +123,21 @@ private struct PlayerVideo: View {
         guard size.width > 0, size.height > 0, ratio > 0 else { return .zero }
         let width = min(size.width, size.height / ratio)
         return CGSize(width: width, height: width * ratio)
+    }
+}
+
+extension View {
+    /// Untransformed video (AVPlayer's layer, ffmpeg playback's frames)
+    /// turned and cropped by the movie's transform into the fitted box
+    /// (`MovieTransform.playbackPlacement`).
+    fileprivate func transformedVideo(_ file: MovieFile, fit: CGSize) -> some View {
+        let p = file.transform.playbackPlacement(
+            fitWidth: fit.width, fitHeight: fit.height, width: file.width, height: file.height)
+        return frame(width: max(0, p.width), height: max(0, p.height))
+            .rotationEffect(.degrees(Double(p.rotation)))
+            .offset(x: p.offsetX, y: p.offsetY)
+            .frame(width: fit.width, height: fit.height)
+            .clipped()
     }
 }
 
@@ -182,7 +197,9 @@ private final class PlayerLayerNSView: NSView {
     init() {
         super.init(frame: .zero)
         wantsLayer = true
-        playerLayer.videoGravity = .resizeAspect
+        // Stretched to the view, which `transformedVideo` sizes to the
+        // movie's aspect ratio (the thumbs are stretched the same way).
+        playerLayer.videoGravity = .resize
         layer?.addSublayer(playerLayer)
     }
 

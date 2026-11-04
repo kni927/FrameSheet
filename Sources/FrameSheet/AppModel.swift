@@ -183,6 +183,11 @@ final class AppModel {
     /// scan gives the thumbnails of those with faces (each decode would
     /// also make the scan pause).
     @ObservationIgnored var faceScanFrames: (fileId: UUID, frames: Set<Int>)?
+    /// The movie whose transform dialog is open (movie menu, §4).
+    var transformDialogFile: UUID?
+    /// Each movie's transform as the cached images and stored scans have
+    /// it; a change (the dialog, undo, redo) drops them (`AppModel+Transform`).
+    @ObservationIgnored var appliedTransforms: [UUID: MovieTransform] = [:]
 
     private struct ReloadGroup: Hashable {
         var file: UUID
@@ -222,6 +227,7 @@ final class AppModel {
         faceStore = (try? ScanCacheStore.defaultDirectory()).map(FaceCacheStore.init)
         self.missing = missing
         document = EditableLibrary(loaded)
+        appliedTransforms = Dictionary(loaded.files.map { ($0.id, $0.transform) }, uniquingKeysWith: { a, _ in a })
         cache = ThumbnailCache(limitMB: loaded.settings.thumbnailCacheMB)
         toast = loadError
         findFFmpeg()
@@ -391,6 +397,7 @@ final class AppModel {
     }
 
     private func didChange() {
+        applyTransformChanges()
         if let id = selectedThumbId, currentSheet?.thumbs.contains(where: { $0.id == id }) != true {
             selectedThumbId = nil
         }
@@ -542,7 +549,7 @@ final class AppModel {
     }
 
     /// Empties the cache and what is pinned or marked failed.
-    private func forgetImages() {
+    func forgetImages() {
         cache.removeAll()
         pinned.removeAll()
         failed.removeAll()
@@ -1184,8 +1191,7 @@ final class AppModel {
     }
 
     func scrubLayout(for file: MovieFile) -> ScrubLayout {
-        let ratio = file.transform.aspectRatioInv
-            ?? (file.width > 0 ? Double(file.height) / Double(file.width) : 9.0 / 16.0)
+        let ratio = file.displayAspectRatioInv
         return ScrubLayout(
             containerWidth: mainAreaSize.width, containerHeight: mainAreaSize.height, aspectRatioInv: ratio)
     }
@@ -1298,7 +1304,7 @@ final class AppModel {
         let scale = NSScreen.main?.backingScaleFactor ?? 2
         let pixels = scrubLayout(for: file).live.width * scale
         let stepped = Int((pixels / 128).rounded(.up)) * 128
-        return max(Self.thumbWidth, min(stepped, max(Self.thumbWidth, file.width)))
+        return max(Self.thumbWidth, min(stepped, max(Self.thumbWidth, file.frameSize.width)))
     }
 
     private func showScrub(_ image: CGImage, requested: Int, actual: Int) {
@@ -1346,13 +1352,20 @@ final class AppModel {
     /// The movie's backend if it is open (no probe).
     func openBackend(_ fileId: UUID) -> (any DecodeBackend)? { backends[fileId] }
 
+    /// The movie's backend, opened on first use, with the movie's current
+    /// rotation and crop applied (`TransformedBackend`), so every consumer
+    /// gets the same image.
     func backend(for file: MovieFile) async throws -> any DecodeBackend {
-        if let backend = backends[file.id] { return backend }
-        guard !missing.contains(file.id) else { throw DecodeError("Movie is missing") }
-        let backend = try await openMovie(file.url)
-        backends[file.id] = backend
-        linkedURLs[file.id] = file.url
-        return backend
+        let base: any DecodeBackend
+        if let open = backends[file.id] {
+            base = open
+        } else {
+            guard !missing.contains(file.id) else { throw DecodeError("Movie is missing") }
+            base = try await openMovie(file.url)
+            backends[file.id] = base
+            linkedURLs[file.id] = file.url
+        }
+        return TransformedBackend.wrap(base, transform: library.file(file.id)?.transform ?? file.transform)
     }
 
     func cachedImage(file: UUID, frame: Int, width: Int) -> CGImage? {
@@ -1401,7 +1414,7 @@ final class AppModel {
     var currentThumbDecodeWidth: Int? {
         guard let file = currentFile, let sheet = currentSheet else { return nil }
         guard !isTimeline(sheet), mainAreaSize.width > 0, mainAreaSize.height > 0 else {
-            return min(Self.thumbWidth, max(1, file.width))
+            return min(Self.thumbWidth, max(1, file.frameSize.width))
         }
         let scale = NSScreen.main?.backingScaleFactor ?? 2
         let key = DecodeWidthKey(
@@ -1411,7 +1424,7 @@ final class AppModel {
         let geometry = SheetGridView.geometry(
             file: file, columns: sheet.columnCount, thumbCount: gridCellCount(of: sheet),
             settings: library.settings, size: mainAreaSize, zoom: zoom)
-        let width = ThumbnailWidth.decodeWidth(points: geometry.thumbWidth, scale: scale, movieWidth: file.width)
+        let width = ThumbnailWidth.decodeWidth(points: geometry.thumbWidth, scale: scale, movieWidth: file.frameSize.width)
         decodeWidthMemo = (key, width)
         return width
     }
@@ -1449,7 +1462,7 @@ final class AppModel {
         imageGeneration += 1
     }
 
-    private func loadPoster(_ file: MovieFile) {
+    func loadPoster(_ file: MovieFile) {
         load(frames: [file.posterFrame], of: file, width: Self.posterWidth, sheetId: nil)
     }
 

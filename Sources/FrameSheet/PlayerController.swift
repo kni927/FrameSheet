@@ -107,7 +107,7 @@ final class PlayerController {
 
     init() {
         player.actionAtItemEnd = .pause
-        playbackLayer.contentsGravity = .resizeAspect
+        playbackLayer.contentsGravity = .resize
     }
 
     // MARK: - Showing
@@ -179,6 +179,19 @@ final class PlayerController {
             decoder = backend.kind
         }
         scheduleDecodes()
+    }
+
+    /// The shown movie's rotation or crop changed (§3): its stills and
+    /// strip slices are decoded again.
+    func transformChanged(_ fileId: UUID) {
+        guard fileId == self.fileId else { return }
+        still = nil
+        stripFrames.removeAll()
+        stripCacheKey = nil
+        stills.removeAll()
+        stillCacheKey = nil
+        stripGeneration += 1
+        if isShown, playback == .paused { scheduleDecodes() }
     }
 
     /// Space on a shot sheet: cut/merge mode ↔ change-thumb mode.
@@ -457,7 +470,9 @@ final class PlayerController {
         let start = frame
         playStart = start
         playableFrom = start
-        let width = stillWidth(file)
+        // The pipe decodes untransformed frames: wide enough that the crop
+        // is shown at the still's width.
+        let width = file.transform.sourceMaxWidth(forOutput: stillWidth(file), width: file.width, height: file.height)
         let previousStop = ffmpegStop
         Task {
             await previousStop?.value
@@ -555,7 +570,10 @@ final class PlayerController {
         task?.cancel()
         if let last = ffmpegLastFrame {
             frame = last.frameNumber
-            let image = PlayerFrame(image: last.image, requested: last.frameNumber, shown: last.frameNumber)
+            // The pipe's frames are untransformed (the view turns and crops
+            // them); the still is the transformed frame, as decoded stills are.
+            let shown = file.flatMap { $0.transform.apply(to: last.image, width: $0.width, height: $0.height) }
+            let image = PlayerFrame(image: shown ?? last.image, requested: last.frameNumber, shown: last.frameNumber)
             still = image
             if let file, let key = stillCacheKey, key.file == file.id, key.width == ffmpegWidth {
                 stills.removeAll { $0.frame == last.frameNumber }
@@ -611,12 +629,12 @@ final class PlayerController {
         let scale = NSScreen.main?.backingScaleFactor ?? 2
         let pixels = Double(videoSize.width) * scale
         let stepped = Int((pixels / 128).rounded(.up)) * 128
-        return max(256, min(stepped, max(256, file.width)))
+        return max(256, min(stepped, max(256, file.frameSize.width)))
     }
 
     /// The movie's height / width.
     func aspectRatioInv(_ file: MovieFile) -> Double {
-        file.transform.aspectRatioInv ?? (file.width > 0 ? Double(file.height) / Double(file.width) : 9.0 / 16.0)
+        file.displayAspectRatioInv
     }
 
     /// Width of a whole frame at the strip's height, in points.
@@ -629,7 +647,7 @@ final class PlayerController {
     private func stripWidth(_ file: MovieFile) -> Int {
         let scale = NSScreen.main?.backingScaleFactor ?? 2
         let stepped = Int((stripFrameWidth(file, height: stripSize.height) * scale / 32).rounded(.up)) * 32
-        return max(32, min(stepped, max(32, file.width)))
+        return max(32, min(stepped, max(32, file.frameSize.width)))
     }
 
     /// The strip's layout at the current frame for a strip of `size`.
