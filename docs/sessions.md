@@ -109,6 +109,10 @@ Send each message only to the sessions that need it.
   `~/.local/bin/claude-hooks/` on a Mac). An HQ writes the estimate in
   `TASK.md`, and a TF that passes twice it tells the HQ and the owner
   (owner, 2026-11-03; figures, not bands, 2026-11-04).
+  Base the figure on the session's measured pace (the `work-timer` log),
+  not on a person's: a few files with a test and docs take one to two
+  minutes, research a few; `Took:` comes from `work-timer`, not shell
+  timestamps (owner, 2026-11-04).
 - **How to send:** from a cloud session, `send_message` (claude-code-remote)
   to the session ID, local ones too, replying to `from-session`. From a
   local session, `SendMessage` to the name in `ListAgents` (its "one-way"
