@@ -24,11 +24,6 @@ reproduces MoviePrint v0.2.23 for Apple Silicon: decisions 14–22 in
   → T05 shot scan, timeline, cut/merge, EDL (done) → T06 player view (done)
   → T07 faces Lv1 (done) → T08 transforms, Save All, polish → version and
   release TASK.
-- Spec gaps for the HQ from T07: face scopes use the lowest to highest thumb
-  (§4 says IN–OUT); faceCount counts only faces that pass the thresholds;
-  no empty faces sheets; the filter keeps the current order; Apply rescans a
-  faces sheet in place; Clear Stored Scans; face rectangles in prints are an
-  Output option (off).
 - Face follow-ups (owner, 2026-11-04): a "per shot" scope (the middle frame of
   each scene); more Vision workers on chips with two Neural Engines (measure
   first); a faces sheet opened after a relaunch decodes its thumbs one by one

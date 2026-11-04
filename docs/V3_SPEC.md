@@ -61,7 +61,7 @@ builds them.
 - **Left sidebar — movie list** (key 1): per movie poster frame ("S" badge once
   shot-scanned), name, folder, duration (timecode), size, W×H. Movie menu:
   Edit rotation/cropping/aspect ratio, Open file location (Finder), Replace
-  movie, Remove. Missing file → "Movie is missing" and Locate.
+  movie, Clear Stored Scans (T07), Remove. Missing file → "Movie is missing" and Locate.
   Under each movie its sheets: icon (grid or barcode), name, type label. Sheet
   menu: Rename (inline), Switch grid/timeline view (timeline disabled for
   faces), Convert to interval, Duplicate, Export JSON, Export EDL (shot sheets),
@@ -74,8 +74,9 @@ builds them.
   Accepts any file AVFoundation or ffmpeg can open as video.
 - **Sheet toolbar** (in the window toolbar, next to the title; owner,
   2026-11-03): Back to parent; Add shot-detection sheet; Add interval
-  sheet (presets 2×2 … 6×6); Add faces sheet (every 100th frame in IN–OUT /
-  every 10th / these thumbs); Sort (Reverse, Frame number, Face count, Face
+  sheet (presets 2×2 … 6×6); Add faces sheet (click: default scope; hold:
+  every 10th / every 100th frame between the lowest and highest thumb, or
+  these thumbs; T07); Sort (Reverse, Frame number, Face count, Face
   size, Confidence; disabled for shot sheets); Filter (faces); Duplicate;
   Grid/timeline; Player view (key 2); Zoom out / Fit / Zoom in (0.25, 0.33,
   0.5, 0.75, 1, 2 … 8; default 1); Show hidden thumbs; Show header; cycle frame
@@ -93,8 +94,9 @@ builds them.
 - **Shot:** built from the stored scan; one thumb per scene at
   `start + floor(length / 2)`; opens in timeline view; the threshold can change
   without rescanning.
-- **Faces:** grid only; frames that contain faces; initial sort by face size,
-  then optimized grid.
+- **Faces:** grid only; frames that contain faces (no sheet is made when none
+  do); thumbs come from the scanned frames; initial sort by face size, then
+  optimized grid.
 - **Timeline view** for interval sheets: artificial scenes split at the
   midpoints between visible thumbs.
 - **Expand** (thumb or scene): child interval sheet of 16 thumbs inside that
@@ -270,12 +272,15 @@ Alt and Ctrl become Option and Control.
 - **Faces (Lv1):** Vision face rectangles (Swift API, default revision) on
   the scan pass's 720 px frames; warm the request up when a movie opens. Per face: confidence, size (box height as % of frame height),
   relative box. Per frame: `{frameNumber, faceCount, largestSize, faces}` in
-  the scan cache. Scope: every 10th (default) / every 100th frame between
+  the scan cache, counting only faces that pass the thresholds. Scope: every 10th (default) / every 100th frame between
   the lowest and highest visible thumb, or exactly the current thumbs. When the
   shot scan has not run, a face scan runs the same combined pass. On the
   ffmpeg path, every 100th frame is the default. Sort by face
   count, size, confidence; filters (each toggleable): face count 1–10
-  (default 1–3), size (default 50–100). Face rectangles overlay.
+  (default 1–3), size (default 50–100); filtering keeps the current order.
+  Face rectangles overlay on thumbs and the player still; in prints an Output
+  option (off). The Face detection settings have Apply, which rescans the
+  current faces sheet in place (owner, T07).
 - **Routing:** check the HEVC sample entry on open; `hev1` and codecs
   AVFoundation lacks (WMV3, VP9/AV1 in MKV/WebM, …) go to the ffmpeg path,
   which decodes in software (no `-hwaccel videotoolbox`) to a BGRA pipe.
