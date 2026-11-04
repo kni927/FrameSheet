@@ -97,6 +97,9 @@ private struct MovieRow: View {
             Button("Rescan for Shots") { model.rescan(file.id) }
                 .disabled(missing || model.isScanning || model.scanCacheState(file.id) == .none)
                 .help("Scan for shots again from the first frame")
+            Button("Clear Stored Scans") { model.clearStoredScans(file.id) }
+                .disabled(model.isScanning || !model.hasStoredScans(file.id))
+                .help("Delete this movie's stored shot and face scans")
             Divider()
             Button("Remove", role: .destructive) { model.removeMovie(file.id) }
         }

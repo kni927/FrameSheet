@@ -57,8 +57,19 @@ final class AppModel {
     /// Cancel; its scenes stream into `scanJob.sheetId`.
     var scanJob: ScanJob?
     /// The face scan in progress (T07), shown in the toast with Cancel; it
-    /// shares `scanTask` with the shot scan (one scan at a time).
-    var faceScanJob: FaceScanJob?
+    /// shares `scanTask` with the shot scan (one scan at a time). Only the
+    /// toast reads it: its progress changes several times a second.
+    var faceScanJob: FaceScanJob? {
+        didSet {
+            if (faceScanJob != nil) != isFaceScanning { isFaceScanning = faceScanJob != nil }
+        }
+    }
+    /// A face scan runs; what the toolbar, the movie list and the settings
+    /// read (as they read `streamingSheet` for the shot scan), so the
+    /// progress updates redraw only the toast.
+    private(set) var isFaceScanning = false
+    /// The running scan's timing log (`ScanLog`).
+    @ObservationIgnored var scanLog: ScanLog?
     /// Movies whose scan stopped before the end in this session. The partial
     /// cache is written after the stream ends, so the toolbar reads this
     /// instead of waiting for the file.
@@ -217,6 +228,7 @@ final class AppModel {
         for file in library.files { loadPoster(file) }
         loadCurrentSheet()
         player.model = self
+        if store != nil, loadError == nil { removeStaleScans() }
     }
 
     // MARK: - Library access
@@ -318,12 +330,12 @@ final class AppModel {
 
     func undo() {
         cancelScrub()
-        if document.undo() { refreshLinks(); didChange() }
+        if document.undo() { refreshLinks(); reconcileScanStates(); didChange() }
     }
 
     func redo() {
         cancelScrub()
-        if document.redo() { refreshLinks(); didChange() }
+        if document.redo() { refreshLinks(); reconcileScanStates(); didChange() }
     }
 
     /// Undo and Redo in the Edit menu and the window toolbar: the typing
@@ -1455,8 +1467,15 @@ final class AppModel {
         }
         guard !wanted.isEmpty, !missing.contains(file.id) else { return }
         for frame in wanted { loading.insert(Self.loadingKey(file.id, frame, width)) }
+        let log = scanLog
+        let requested = ContinuousClock.now
         Task {
             defer { for frame in wanted { loading.remove(Self.loadingKey(file.id, frame, width)) } }
+            var failures = 0
+            defer {
+                log?.thumbDecode(
+                    frames: wanted.count, width: decodeWidth, took: ContinuousClock.now - requested, failures: failures)
+            }
             let backend: any DecodeBackend
             do {
                 backend = try await self.backend(for: file)
@@ -1465,7 +1484,6 @@ final class AppModel {
                 if checkMovieFile(file.id) { toast = "\(file.name): \(error.localizedDescription)" }
                 return
             }
-            var failures = 0
             for await result in backend.frames(wanted, maxWidth: decodeWidth) {
                 switch result.result {
                 case .success(let frame):

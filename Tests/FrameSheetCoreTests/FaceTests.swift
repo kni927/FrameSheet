@@ -151,6 +151,27 @@ private extension Library {
         #expect(try store.load(id) == nil)
     }
 
+    @Test func staleScansOfRemovedMoviesGo() throws {
+        let dir = FileManager.default.temporaryDirectory.appending(path: "FrameSheetFaces-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let faces = FaceCacheStore(directory: dir)
+        let scans = ScanCacheStore(directory: dir)
+        let kept = UUID()
+        let gone = UUID()
+        for id in [kept, gone] {
+            try faces.save(FaceData(thresholds: FaceThresholds()), for: id)
+            try scans.save(ScanData(method: .mean, expectedFrameCount: 10), for: id)
+        }
+        let other = dir.appending(path: "notes.txt")
+        try Data("x".utf8).write(to: other)
+        #expect(StoredScans.removeStale(in: dir, keeping: [kept]) == [gone])
+        #expect(try faces.load(kept) != nil && scans.load(kept) != nil)
+        #expect(try faces.load(gone) == nil && scans.load(gone) == nil)
+        #expect(FileManager.default.fileExists(atPath: other.path))
+        // A missing folder is no error.
+        #expect(StoredScans.removeStale(in: dir.appending(path: "none"), keeping: []).isEmpty)
+    }
+
     @Test func unknownVersionThrows() throws {
         let dir = FileManager.default.temporaryDirectory.appending(path: "FrameSheetFaces-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: dir) }

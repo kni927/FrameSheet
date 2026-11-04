@@ -59,6 +59,17 @@ public protocol ScanFrameObserver: AnyObject, Sendable {
     func scanned(_ frame: ScanFrame) async
 }
 
+/// Receives one line of text per notable scan event (pass start, pauses
+/// for thumb requests, reopens, checkpoints, the end), for the app's scan
+/// timing log. Called on the scan's tasks; keep it cheap.
+public typealias ScanLogSink = @Sendable (String) -> Void
+
+/// Seconds with millisecond precision, for log lines.
+func logSeconds(_ duration: Duration) -> String {
+    let (seconds, attoseconds) = duration.components
+    return String(format: "%.3f s", Double(seconds) + Double(attoseconds) / 1e18)
+}
+
 public struct ScanRequest: Sendable {
     public var fileId: UUID
     public var url: URL
@@ -72,6 +83,8 @@ public struct ScanRequest: Sendable {
     /// Scan again although the cache holds a complete scan.
     public var rescan: Bool
     public var observer: (any ScanFrameObserver)?
+    /// The scan timing log; nil logs nothing.
+    public var log: ScanLogSink?
 
     /// Tuning, changed by tests.
     var yieldCheckFrames = 30
@@ -342,6 +355,12 @@ private final class ScanSession {
     /// A `frameList` pass: the listed frames and the next one to read.
     let frameList: [Int]?
     var nextListed = 0
+    /// For the log: pauses, their total time and the frames thrown away.
+    var pauses = 0
+    var pausedTime: Duration = .zero
+    var readers = 0
+    var discarded = 0
+    let started = ContinuousClock.now
 
     init(request: ScanRequest, source: ScanSource, data: ScanData, continuation: AsyncStream<ScanEvent>.Continuation) {
         self.request = request
@@ -376,7 +395,17 @@ private final class ScanSession {
     }
 
     func run() async {
+        let kind = frameList != nil ? "faces-only pass over \(frameList!.count) listed frames"
+            : request.observer != nil ? "combined pass" : "shot pass"
+        let end = request.endFrame.map { ", to frame \($0)" } ?? ""
+        let from = frameList?.first ?? data.frameCount
+        request.log?("scan: \(kind), decoder \(source.decoder.rawValue), \(source.info.frameCount) frames, "
+            + "\(source.info.width)x\(source.info.height) at \(String(format: "%.3f", source.fps)) fps, from frame \(from)\(end)")
+        let gateAsked = clock.now
         await DecodeGate.shared.acquire()
+        if clock.now - gateAsked > .milliseconds(5) {
+            request.log?("scan: waited \(logSeconds(clock.now - gateAsked)) for the decode gate before starting")
+        }
         if let frameList {
             continuation.yield(.started(decoder: source.decoder, frameCount: frameList.count, resumedAt: 0))
         } else {
@@ -390,6 +419,7 @@ private final class ScanSession {
                 try await runFFmpeg(tools: tools)
             }
             await DecodeGate.shared.release()
+            logEnd("finished")
             if frameList != nil {
                 continuation.yield(progressEvent)
                 continuation.yield(.finished(data))
@@ -403,6 +433,8 @@ private final class ScanSession {
         } catch {
             await DecodeGate.shared.release()
             if frameList == nil { try? request.store?.save(data, for: request.fileId) }
+            logEnd(error is ReachedEndFrame ? "stopped at its end frame"
+                : error is CancellationError || Task.isCancelled ? "cancelled" : "failed: \(error.localizedDescription)")
             if error is ReachedEndFrame {
                 continuation.yield(.progress(framesScanned: data.frameCount, frameCount: expected))
                 continuation.yield(.stopped(data))
@@ -412,6 +444,13 @@ private final class ScanSession {
                 continuation.yield(.failed(error.localizedDescription))
             }
         }
+    }
+
+    private func logEnd(_ how: String) {
+        guard let log = request.log else { return }
+        let read = frameList != nil ? "\(nextListed) of \(frameList!.count) listed frames seen" : "\(data.frameCount) frames stored"
+        log("scan: pass \(how) after \(logSeconds(clock.now - started)): \(read), \(readers) reader(s), "
+            + "\(pauses) pause(s) for thumb requests (\(logSeconds(pausedTime)) paused), \(discarded) frames decoded and skipped")
     }
 
     /// Sets up the seed for a pass that starts at the last stored frame.
@@ -486,7 +525,10 @@ private final class ScanSession {
         }
         if frameList == nil, now - lastCheckpoint >= request.checkpointInterval {
             lastCheckpoint = now
-            try? request.store?.save(data, for: request.fileId)
+            if let store = request.store {
+                try? store.save(data, for: request.fileId)
+                request.log?("scan: shot cache checkpoint, \(data.frameCount) frames, \(logSeconds(clock.now - now))")
+            }
         }
         let run = max(request.minimumRunBeforeYield, lastReopenCost * request.reopenCostFactor)
         guard request.yieldsToWaiters, yieldsAllowed, now - resumedAt >= run else { return false }
@@ -495,14 +537,20 @@ private final class ScanSession {
 
     /// Lets the waiting decodes run, then takes the gate back.
     func yieldGate() async {
+        let waiting = request.log != nil ? await DecodeGate.shared.waiterCount : 0
         let released = clock.now
         await DecodeGate.shared.release()
         await DecodeGate.shared.acquire()
         resumedAt = clock.now
+        pauses += 1
+        pausedTime += resumedAt - released
         request.diagnostics?.update {
             $0.pauses += 1
             $0.gateWait += resumedAt - released
         }
+        let at = frameList != nil ? "listed frame \(nextListed)" : "frame \(data.frameCount)"
+        request.log?("scan: pause \(pauses) at \(at): \(waiting) waiting request(s) served, "
+            + "paused \(logSeconds(resumedAt - released))")
     }
 
     // MARK: AVFoundation
@@ -520,6 +568,7 @@ private final class ScanSession {
                 // files (known issue 5); read from the start instead, without
                 // further pauses.
                 request.diagnostics?.update { $0.fallbacksToStart += 1 }
+                request.log?("scan: reader at frame \(first) failed (\(error.localizedDescription)); reading from the start")
                 fromStart = true
                 yieldsAllowed = false
                 continue
@@ -540,6 +589,8 @@ private final class ScanSession {
         let reader = try AVAssetReader(asset: asset)
         let diagnostics = request.diagnostics
         diagnostics?.update { $0.readers += 1 }
+        readers += 1
+        var skipped = 0
         var reachedResumePoint = false
         if first > 0 {
             let resume = CMTime(seconds: startTime + (Double(first) - 0.25) / fps, preferredTimescale: 600_000)
@@ -570,6 +621,8 @@ private final class ScanSession {
             let frame = max(0, Int(((pts - startTime) * fps).rounded()))
             guard wants(frame) else {
                 diagnostics?.update { $0.discardedFrames += 1 }
+                discarded += 1
+                skipped += 1
                 // A `frameList` pass skips most frames: it still lets
                 // waiting thumb requests go first in turns.
                 if frameList != nil {
@@ -585,6 +638,8 @@ private final class ScanSession {
                 diagnostics?.update {
                     if $0.readers == 1 { $0.startTime += elapsed } else { $0.reopenTime += elapsed }
                 }
+                request.log?("scan: reader \(readers) \(first > 0 ? "reopened at frame \(first)" : "opened"): "
+                    + "first wanted frame after \(logSeconds(elapsed)), \(skipped) frames decoded before it")
             }
             guard let buffer = sample.withUnsafeSampleBuffer({ PixelBufferBox($0) })?.buffer else { continue }
             CVPixelBufferLockBaseAddress(buffer, .readOnly)
@@ -633,6 +688,8 @@ private final class ScanSession {
         ]
         let pipe = RawVideoPipe(executable: tools.ffmpeg, arguments: arguments)
         try pipe.start()
+        readers += 1
+        request.log?("scan: ffmpeg started at frame \(first), \(width)x\(height) BGRA")
         let frameBytes = width * 4 * height
         let packed = UnsafeMutableRawPointer.allocate(byteCount: frameBytes, alignment: 64)
         defer { packed.deallocate() }

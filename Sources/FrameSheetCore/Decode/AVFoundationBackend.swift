@@ -520,6 +520,9 @@ actor DecodeGate {
     /// them go first).
     var hasWaiters: Bool { !waiters.isEmpty }
 
+    /// Decodes waiting for the gate (the scan timing log).
+    var waiterCount: Int { waiters.count }
+
     /// For reports of a stuck decode (tests).
     var stateDescription: String { "\(busy ? "held" : "free"), \(waiters.count) waiting" }
 

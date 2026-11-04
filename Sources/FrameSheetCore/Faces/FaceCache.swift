@@ -99,3 +99,27 @@ public struct FaceCacheStore: Sendable {
         try? FileManager.default.removeItem(at: url(for: fileId))
     }
 }
+
+/// The stored scans of movies no longer in the library.
+public enum StoredScans {
+    static let extensions: Set<String> = ["fsscan", "fsfaces"]
+
+    /// Deletes the shot and face scan files (`<movie id>.fsscan`,
+    /// `<movie id>.fsfaces`) in `directory` whose movie id is not in `keep`;
+    /// other files are left alone. Returns the ids whose files went.
+    @discardableResult
+    public static func removeStale(in directory: URL, keeping keep: Set<UUID>) -> Set<UUID> {
+        let manager = FileManager.default
+        guard let urls = try? manager.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil) else {
+            return []
+        }
+        var removed = Set<UUID>()
+        for url in urls where extensions.contains(url.pathExtension) {
+            guard let id = UUID(uuidString: url.deletingPathExtension().lastPathComponent), !keep.contains(id) else {
+                continue
+            }
+            if (try? manager.removeItem(at: url)) != nil { removed.insert(id) }
+        }
+        return removed
+    }
+}

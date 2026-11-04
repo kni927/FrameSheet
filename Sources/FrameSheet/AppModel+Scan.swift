@@ -39,7 +39,7 @@ enum ScanCacheState {
 /// is not made to reopen its reader for each new scene's thumb.
 extension AppModel {
     /// A shot scan or a face scan runs.
-    var isScanning: Bool { streamingSheet != nil || faceScanJob != nil }
+    var isScanning: Bool { streamingSheet != nil || isFaceScanning }
 
     /// The current sheet is the one a scan streams into.
     var isStreamingSheetShown: Bool {
@@ -52,6 +52,56 @@ extension AppModel {
         if stoppedScans.contains(fileId) { return .partial }
         guard let store = scanStore else { return .none }
         return FileManager.default.fileExists(atPath: store.url(for: fileId).path) ? .partial : .none
+    }
+
+    /// The movie has a stored shot or face scan (or one in memory).
+    func hasStoredScans(_ fileId: UUID) -> Bool {
+        if scanCacheState(fileId) != .none { return true }
+        guard let faceStore else { return false }
+        return FileManager.default.fileExists(atPath: faceStore.url(for: fileId).path)
+    }
+
+    /// Movie menu: Clear Stored Scans deletes the movie's shot and face scan
+    /// files and what is held of them in memory; the next scan starts from
+    /// the first frame. Sheets stay. Not undoable.
+    func clearStoredScans(_ fileId: UUID) {
+        guard !isScanning else { return }
+        scanStore?.delete(fileId)
+        faceStore?.delete(fileId)
+        scanData[fileId] = nil
+        stoppedScans.remove(fileId)
+        update { library in
+            if let i = library.files.firstIndex(where: { $0.id == fileId }) { library.files[i].scanState = .none }
+        }
+    }
+
+    /// Removing a movie (Remove, Clear movie list) keeps its stored scans
+    /// while undo can bring it back; the undo history is not kept across
+    /// launches, so at launch the scans of movies no longer in the library
+    /// are deleted. Only after the library was read, so a library that
+    /// could not be read does not take every scan with it.
+    func removeStaleScans() {
+        guard let directory = scanStore?.directory else { return }
+        let keep = Set(library.files.map(\.id))
+        Task.detached(priority: .utility) {
+            StoredScans.removeStale(in: directory, keeping: keep)
+        }
+    }
+
+    /// After undo or redo: an older library may mark a movie scanned whose
+    /// scan was cleared or replaced since; it is shown as not scanned.
+    func reconcileScanStates() {
+        guard let scanStore else { return }
+        let stale = library.files.filter { file in
+            file.scanState == .scanned && scanData[file.id]?.complete != true
+                && !FileManager.default.fileExists(atPath: scanStore.url(for: file.id).path)
+        }.map(\.id)
+        guard !stale.isEmpty else { return }
+        updateWithoutSaving { library in
+            for i in library.files.indices where stale.contains(library.files[i].id) {
+                library.files[i].scanState = .none
+            }
+        }
     }
 
     /// Toolbar: Add shot-detection sheet for the current movie.
@@ -95,17 +145,28 @@ extension AppModel {
         scanJob = ScanJob(fileId: fileId, fileName: file.name, sheetId: sheetId)
         streamingSheet = ref
         let store = scanStore
+        let log = ScanLog("shot scan")
+        scanLog = log
+        log.write("app: shot scan of \(file.name), whole movie (\(file.frameCount) frames), "
+            + "method \(settings.shotDetectionMethod.rawValue), \(rescan ? "rescan from the start" : "resume or use the cache"), "
+            + "thumbnail backend \(openBackend(fileId)?.kind.rawValue ?? "not open yet")")
         scanTask = Task {
-            let request = ScanRequest(
+            var request = ScanRequest(
                 fileId: fileId, url: file.url, method: settings.shotDetectionMethod,
                 threshold: settings.shotDetectionThreshold, ffmpeg: await ffmpegTools(), store: store,
                 rescan: rescan)
+            request.log = log.sink
             let clock = ContinuousClock()
             var lastApplied: ContinuousClock.Instant?
+            var how = "stream ended by Cancel"
             var ended = false
             for await event in ShotScanner.scan(request) {
+                let handling = clock.now
+                var kind = "progress"
                 switch event {
-                case .started(_, let frameCount, let resumedAt):
+                case .started(let decoder, let frameCount, let resumedAt):
+                    kind = "started"
+                    log.write("app: started, decoder \(decoder.rawValue), \(frameCount) frames, from frame \(resumedAt)")
                     scanJob?.started = true
                     scanJob?.frameCount = frameCount
                     scanJob?.resumedAt = resumedAt
@@ -113,28 +174,44 @@ extension AppModel {
                 case .progress(let scanned, let frameCount):
                     scanJob?.framesScanned = scanned
                     scanJob?.frameCount = frameCount
+                    log.write("app: progress \(scanned) of \(frameCount) frames, main \(ScanLog.ms(clock.now - handling))")
                 case .scenes(let spans):
+                    kind = "scenes"
                     // At most once a second: each update rebuilds the sheet
                     // (scenes keep their ids, so the views mostly stay).
                     let now = clock.now
                     if lastApplied.map({ now - $0 >= .seconds(1) }) ?? true {
                         lastApplied = now
                         updateWithoutSaving { $0.replaceScenes(ref, with: spans) }
+                        log.write("app: \(spans.count) scenes applied, main \(ScanLog.ms(clock.now - handling))")
                     }
                 case .finished(let data):
+                    kind = "end"
                     ended = true
+                    how = "finished, \(data.frameCount) frames"
                     finishScan(ref, data: data, threshold: settings.shotDetectionThreshold)
                 case .cancelled, .stopped:
+                    kind = "end"
                     ended = true
+                    how = "cancelled"
                     endScan(ref, cancelled: true)
                 case .failed(let message):
+                    kind = "end"
                     ended = true
+                    how = "failed: \(message)"
                     endScan(ref, cancelled: false)
                     toast = "\(file.name): shot detection failed: \(message)"
                 }
+                log.mainActor(kind, clock.now - handling)
             }
             // Cancel ends the stream before the scanner's last event.
-            if !ended { endScan(ref, cancelled: true) }
+            if !ended {
+                let handling = clock.now
+                endScan(ref, cancelled: true)
+                log.mainActor("end", clock.now - handling)
+            }
+            log.end(how)
+            if scanLog === log { scanLog = nil }
             scanTask = nil
         }
     }
