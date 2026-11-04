@@ -51,7 +51,8 @@ struct PlayerView: View {
 
 // MARK: - Video
 
-/// The full frame: AVPlayer's layer while playing, and over it the exact
+/// The full frame: AVPlayer's layer while playing (ffmpeg's frames for
+/// ffmpeg-routed files, with a label saying so), and over it the exact
 /// still of the current frame while paused (decision 25's steps), with the
 /// nearest-frame marker when the frame could not be decoded exactly.
 private struct PlayerVideo: View {
@@ -64,7 +65,7 @@ private struct PlayerVideo: View {
         GeometryReader { proxy in
             let fit = Self.fitted(proxy.size, ratio: ratio)
             ZStack {
-                if player.canPlay {
+                if player.decoder == .avFoundation {
                     PlayerLayerView(player: player.player)
                         .frame(width: fit.width, height: fit.height)
                         .opacity(player.showsLayer ? 1 : 0)
@@ -84,17 +85,21 @@ private struct PlayerVideo: View {
                     // AVPlayer cannot show: covered until the keyframe.
                     Theme.crust.frame(width: fit.width, height: fit.height)
                 }
-                if player.decoder == .ffmpeg {
-                    VStack {
-                        Spacer()
-                        Text("Playback unavailable for this file (ffmpeg)")
-                            .font(Theme.caption)
-                            .foregroundStyle(Theme.textMuted)
-                            .padding(.horizontal, Theme.space2)
-                            .padding(.vertical, Theme.space1)
-                            .background(Theme.crust.opacity(0.8), in: RoundedRectangle(cornerRadius: Theme.radiusSm))
-                            .padding(.bottom, Theme.space2)
-                    }
+                if player.isFFmpegPlaying {
+                    PlaybackLayerView(layer: player.playbackLayer)
+                        .frame(width: fit.width, height: fit.height)
+                        .opacity(player.showsPlaybackFrame ? 1 : 0)
+                        .overlay(alignment: .topLeading) {
+                            Text("Playback using ffmpeg · no audio")
+                                .font(Theme.caption)
+                                .foregroundStyle(Theme.textMuted)
+                                .padding(.horizontal, Theme.space2)
+                                .padding(.vertical, Theme.space1)
+                                .background(
+                                    Theme.crust.opacity(0.7), in: RoundedRectangle(cornerRadius: Theme.radiusSm))
+                                .padding(Theme.space2)
+                                .allowsHitTesting(false)
+                        }
                 }
             }
             .frame(width: proxy.size.width, height: proxy.size.height)
@@ -127,6 +132,40 @@ private struct PlayerLayerView: NSViewRepresentable {
 
     func updateNSView(_ view: PlayerLayerNSView, context: Context) {
         if view.playerLayer.player !== player { view.playerLayer.player = player }
+    }
+}
+
+/// The layer ffmpeg playback draws its frames into.
+private struct PlaybackLayerView: NSViewRepresentable {
+    let layer: CALayer
+
+    func makeNSView(context: Context) -> HostedLayerNSView {
+        HostedLayerNSView(hosted: layer)
+    }
+
+    func updateNSView(_ view: HostedLayerNSView, context: Context) {}
+}
+
+private final class HostedLayerNSView: NSView {
+    let hosted: CALayer
+
+    init(hosted: CALayer) {
+        self.hosted = hosted
+        super.init(frame: .zero)
+        wantsLayer = true
+        hosted.removeFromSuperlayer()
+        layer?.addSublayer(hosted)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { nil }
+
+    override func layout() {
+        super.layout()
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        hosted.frame = bounds
+        CATransaction.commit()
     }
 }
 
@@ -282,8 +321,12 @@ private struct PlayerTimeline: View {
 
 // MARK: - Controls
 
-/// Mode (shot sheets), previous, −100, −10, −1, Play/Pause with the frame
-/// number and timecode, +1, +10, +100, next (§9; MoviePrint's buttons).
+/// The step buttons with the edit at the current frame in the middle
+/// (§9; MoviePrint's buttons): previous, −100, −10, −1, CUT / MERGE (cut
+/// mode) or CHANGE (shot sheets in thumb mode) or CHANGE / ADD BEFORE /
+/// ADD AFTER (interval sheets), +1, +10, +100, next. At the left the mode
+/// (shot sheets), Play/Pause and the frame number with its timecode; at the
+/// right Save frame.
 private struct PlayerControls: View {
     @Environment(AppModel.self) private var model
     let file: MovieFile
@@ -293,34 +336,74 @@ private struct PlayerControls: View {
         let player = model.player
         let cut = player.mode == .cut
         let unit = cut ? "cut" : "thumb"
-        ZStack {
+        HStack(spacing: Theme.space2) {
+            HStack(spacing: Theme.space1) {
+                if sheet.type == .shot {
+                    button(cut ? "CUT MODE" : "THUMB MODE", help: "Switch between cut/merge and change-thumb mode (Space)") {
+                        player.toggleMode()
+                    }
+                }
+                button(
+                    systemImage: player.isPlaying ? "pause.fill" : "play.fill",
+                    help: player.isPlaying ? "Pause (P)"
+                        : player.decoder == .ffmpeg ? "Play, video only (P)" : "Play (P)"
+                ) { player.togglePlayback() }
+                .disabled(!player.canPlay)
+                FrameLabel(file: file)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
             HStack(spacing: Theme.space1) {
                 button(systemImage: "backward.end", help: "Previous \(unit) (⇧⌥←)") { player.jump(.previous) }
                 button("−100", help: "100 frames back (⌥←)") { player.step(-100) }
                 button("−10", help: "10 frames back (←)") { player.step(-10) }
                 button("−1", help: "1 frame back (⇧←)") { player.step(-1) }
-                button(
-                    systemImage: player.isPlaying ? "pause.fill" : "play.fill",
-                    help: player.canPlay ? (player.isPlaying ? "Pause (P)" : "Play (P)")
-                        : "Playback unavailable for this file (ffmpeg)"
-                ) { player.togglePlayback() }
-                .disabled(!player.canPlay)
-                FrameLabel(file: file)
-                    .frame(minWidth: 180)
+                editButtons
                 button("+1", help: "1 frame forward (⇧→)") { player.step(1) }
                 button("+10", help: "10 frames forward (→)") { player.step(10) }
                 button("+100", help: "100 frames forward (⌥→)") { player.step(100) }
                 button(systemImage: "forward.end", help: "Next \(unit) (⇧⌥→)") { player.jump(.next) }
             }
-            if sheet.type == .shot {
-                HStack {
-                    button(cut ? "CUT MODE" : "THUMB MODE", help: "Switch between cut/merge and change-thumb mode (Space)") {
-                        player.toggleMode()
-                    }
-                    Spacer()
-                }
-                .padding(.horizontal, Theme.space4)
+            .fixedSize()
+            HStack(spacing: Theme.space1) {
+                button(systemImage: "square.and.arrow.down", help: "Save frame (S)") { model.saveCurrentFrame() }
             }
+            .frame(maxWidth: .infinity, alignment: .trailing)
+        }
+        .padding(.horizontal, Theme.space4)
+    }
+
+    /// The edit at the current frame for the sheet and mode.
+    @ViewBuilder private var editButtons: some View {
+        let player = model.player
+        let blocked = model.isStreamingSheetShown
+        switch (sheet.type, player.mode) {
+        case (.shot, .cut):
+            let merge = model.playerCutAction == .merge
+            button(merge ? "MERGE" : "CUT", help: merge ? "Merge scenes at this cut (Return)" : "Cut scene here (Return)") {
+                model.cutOrMergeAtPlayerFrame()
+            }
+            .disabled(blocked || (!merge && player.frame == 0))
+        case (.shot, .thumb):
+            button("CHANGE", help: "Change the scene's thumb to this frame (Return)") {
+                model.playerThumbAction(.change)
+            }
+            .disabled(blocked)
+        case (.interval, _):
+            let noSelection = !sheet.thumbs.contains { $0.id == model.selectedThumbId }
+            button("ADD BEFORE", help: "Add a thumb at this frame before the selected one (⇧Return)") {
+                model.playerThumbAction(.add(.before))
+            }
+            .disabled(blocked || noSelection)
+            button("CHANGE", help: "Change the selected thumb to this frame (Return)") {
+                model.playerThumbAction(.change)
+            }
+            .disabled(blocked || noSelection)
+            button("ADD AFTER", help: "Add a thumb at this frame after the selected one (⌥Return)") {
+                model.playerThumbAction(.add(.after))
+            }
+            .disabled(blocked || noSelection)
+        case (.faces, _):
+            EmptyView()
         }
     }
 

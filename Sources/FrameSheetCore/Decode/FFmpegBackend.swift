@@ -347,12 +347,49 @@ public final class FFmpegBackend: DecodeBackend {
 
     /// The timestamps `showinfo` reports, in output order.
     static func showinfoTimes(_ text: String) -> [Double] {
-        text.split(whereSeparator: \.isNewline).compactMap { line -> Double? in
-            guard line.contains("Parsed_showinfo"), line.contains(" n:"),
-                  let range = line.range(of: "pts_time:")
-            else { return nil }
-            return Double(line[range.upperBound...].prefix { !$0.isWhitespace })
-        }
+        text.split(whereSeparator: \.isNewline).compactMap(showinfoTime)
+    }
+
+    /// The timestamp of one frame's `showinfo` line, nil for other lines.
+    static func showinfoTime(_ line: Substring) -> Double? {
+        guard line.contains("Parsed_showinfo"), line.contains(" n:"),
+              let range = line.range(of: "pts_time:")
+        else { return nil }
+        return Double(line[range.upperBound...].prefix { !$0.isWhitespace })
+    }
+
+    // MARK: - Playback (the player view, §9)
+
+    /// Video-only playback from `frame` (ffmpeg-routed files have no
+    /// AVPlayer): one rawvideo pipe in software decode, set up as
+    /// `runFrames` (input seek a little before the frame, original
+    /// timestamps, `select` from half a frame before it, `showinfo` naming
+    /// each frame), BGRA at most `maxWidth` pixels wide, no audio. ffmpeg
+    /// decodes only as far ahead as the pipe holds; the caller paces the
+    /// frames (`PlaybackPacer`). Call `start()`, then `next()` until nil,
+    /// and `close()` once.
+    public func playbackSource(from frame: Int, maxWidth: Int) -> FFmpegPlaybackSource {
+        let fps = frameRate
+        let movieWidth = info.width > 0 ? info.width : maxWidth
+        let width = max(2, min(maxWidth, movieWidth) / 2 * 2)
+        let ratio = info.width > 0 && info.height > 0 ? Double(info.height) / Double(info.width) : 9.0 / 16.0
+        let height = max(2, Int((Double(width) * ratio / 2).rounded()) * 2)
+        let lowerBound = startTime + (Double(frame) - 0.5) / fps
+        let seek = max(0, Double(frame) / fps - seekMargins[0])
+        let arguments = [
+            "-hide_banner", "-nostdin", "-nostats", "-loglevel", "level+info",
+            "-copyts",
+            "-ss", String(format: "%.6f", seek),
+            "-i", path,
+            "-map", "0:v:0", "-an", "-sn", "-dn",
+            "-vf", "select='gte(t,\(String(format: "%.6f", lowerBound)))',showinfo,scale=\(width):\(height)",
+            "-pix_fmt", "bgra", "-f", "rawvideo", "-",
+        ]
+        let startTime = startTime
+        return FFmpegPlaybackSource(
+            executable: tools.ffmpeg, arguments: arguments, width: width, height: height, fps: fps,
+            firstFrame: frame, frameCount: info.frameCount
+        ) { pts in max(0, Int(((pts - startTime) * fps).rounded())) }
     }
 
     /// A CGImage over a copy of packed BGRA bytes (opaque).

@@ -254,14 +254,21 @@ extension AppModel {
     /// through the movie's backend, as the window does, so with the exact-
     /// frame fallback on the saved frame is the window's.
     func saveThumb(_ thumbId: UUID) {
-        guard let file = currentFile, let sheet = currentSheet,
-              let thumb = sheet.thumbs.first(where: { $0.id == thumbId })
-        else { return }
+        guard let thumb = currentSheet?.thumbs.first(where: { $0.id == thumbId }) else { return }
+        saveFrame(thumb.frameNumber)
+    }
+
+    /// Save thumb and the player's Save frame: one frame of the current
+    /// movie at its own size (the backends apply the track's preferred
+    /// transform), named by the single-thumb template with the frame
+    /// actually decoded.
+    func saveFrame(_ frameNumber: Int) {
+        guard let file = currentFile, let sheet = currentSheet else { return }
         let settings = library.settings
         Task {
             do {
                 let backend = try await backend(for: file)
-                let frame = try await backend.frame(thumb.frameNumber, maxWidth: max(1, backend.info.width))
+                let frame = try await backend.frame(frameNumber, maxWidth: max(1, backend.info.width))
                 let folder = outputFolder(for: file)
                 try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
                 let url = try await writeThumb(
@@ -272,7 +279,7 @@ extension AppModel {
             } catch {
                 toast = !checkMovieFile(file.id) && missing.contains(file.id)
                     ? "\(file.name): the movie is missing."
-                    : "Frame \(thumb.frameNumber) could not be saved: \(error.localizedDescription)"
+                    : "Frame \(frameNumber) could not be saved: \(error.localizedDescription)"
             }
         }
     }

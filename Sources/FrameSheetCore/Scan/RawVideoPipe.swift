@@ -5,7 +5,9 @@ import Foundation
 /// (the ffmpeg scan path, §10). Reads block on a private queue, so the
 /// calling task only waits; ffmpeg pauses while nobody reads (the pipe
 /// fills). Stderr is drained in the background and kept for errors.
-/// Terminating (or cancelling the reading task) stops the process.
+/// Terminating (or cancelling the reading task) stops the process. With
+/// `onErrorLine`, each stderr line is also handed over as it arrives (the
+/// player's ffmpeg playback reads `showinfo` timestamps while it plays).
 final class RawVideoPipe: @unchecked Sendable {
     private let process = Process()
     private let output = Pipe()
@@ -16,11 +18,13 @@ final class RawVideoPipe: @unchecked Sendable {
     private let errorsDone = DispatchGroup()
     /// Left when the process has exited (its termination handler).
     private let exited = DispatchGroup()
+    private let onErrorLine: (@Sendable (Substring) -> Void)?
 
     /// How long `finish` waits after closing the pipe before killing ffmpeg.
     static let exitGrace: DispatchTimeInterval = .seconds(5)
 
-    init(executable: URL, arguments: [String]) {
+    init(executable: URL, arguments: [String], onErrorLine: (@Sendable (Substring) -> Void)? = nil) {
+        self.onErrorLine = onErrorLine
         process.executableURL = executable
         process.arguments = arguments
         process.standardInput = FileHandle.nullDevice
@@ -40,8 +44,26 @@ final class RawVideoPipe: @unchecked Sendable {
         errorsDone.enter()
         let handle = errors.fileHandleForReading
         DispatchQueue.global(qos: .utility).async { [self] in
-            let data = handle.readDataToEndOfFile()
-            lock.withLock { errorData = data }
+            guard let onErrorLine else {
+                let data = handle.readDataToEndOfFile()
+                lock.withLock { errorData = data }
+                errorsDone.leave()
+                return
+            }
+            // Line by line as it arrives; the whole text is kept as well.
+            var pending = Data()
+            while true {
+                let chunk = handle.availableData
+                if chunk.isEmpty { break }
+                lock.withLock { errorData.append(chunk) }
+                pending.append(chunk)
+                while let newline = pending.firstIndex(of: UInt8(ascii: "\n")) {
+                    let line = String(decoding: pending[pending.startIndex..<newline], as: UTF8.self)
+                    pending.removeSubrange(pending.startIndex...newline)
+                    onErrorLine(Substring(line))
+                }
+            }
+            if !pending.isEmpty { onErrorLine(Substring(String(decoding: pending, as: UTF8.self))) }
             errorsDone.leave()
         }
     }

@@ -36,7 +36,12 @@ extension AppModel {
 
     /// Cut: splits the selected scene at its thumb's frame (scrub the thumb
     /// first to cut elsewhere), one undo step; the first part stays selected.
+    /// With the player view open it cuts at the player's frame instead.
     func cutSelectedScene() {
+        if player.isShown {
+            cutAtPlayerFrame()
+            return
+        }
         guard let ref = currentRef, let scene = selectedScene else { return }
         cancelScrub()
         guard let thumb = currentSheet?.thumbs.first(where: { $0.id == scene.id }) else { return }
@@ -64,8 +69,8 @@ extension AppModel {
     /// Jump to cut at the start (previous) or end (next) of a scene, as
     /// MoviePrint's `onJumpToCutSceneClick`: the scene that starts at the
     /// cut is selected. From the grid the sheet switches to the timeline
-    /// first (`onJumpToCutThumbClick`). MoviePrint also opens the player at
-    /// the cut; the player view comes with T06.
+    /// first (`onJumpToCutThumbClick`). In the player view the player moves
+    /// to the cut (MoviePrint also opens the player view from the sheet).
     func jumpToCut(_ neighbor: SceneNeighbor, of scene: UUID) {
         guard let ref = currentRef, let sheet = currentSheet, sheet.type == .shot else { return }
         cancelScrub()
@@ -75,6 +80,7 @@ extension AppModel {
         }
         if !isTimeline(sheet) { edit { $0.setView(ref, .timeline) } }
         selectedThumbId = target.scene
+        if player.isShown { player.move(to: target.frame, followSelection: false) }
     }
 
     /// Hide all before / after a scene of the timeline (IN and OUT of its

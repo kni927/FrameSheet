@@ -205,8 +205,9 @@ struct SheetToolbar: ToolbarContent {
                         Label("Cut scene", systemImage: "scissors")
                     }
                     .buttonStyle(ToolbarIconStyle(grouped: true))
-                    .toolbarHelp("Cut scene at its thumb")
-                    .disabled(scene == nil || model.isStreamingSheetShown)
+                    .toolbarHelp(model.player.isShown ? "Cut scene at the player's frame" : "Cut scene at its thumb")
+                    .disabled(
+                        (model.player.isShown ? sheet?.type != .shot : scene == nil) || model.isStreamingSheetShown)
                     Button {
                         model.mergeSelectedScene(.previous)
                     } label: {

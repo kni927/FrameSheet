@@ -25,6 +25,14 @@ struct PlayerFrame {
 /// when it starts. While paused, the player item stays but is not seeked or
 /// played, so it does not decode; still and strip frames are decoded through
 /// the gate. Leaving the player view (or another movie) drops the item.
+///
+/// ffmpeg-routed files play video only, from one ffmpeg rawvideo pipe at
+/// the video area's pixel width (`FFmpegBackend.playbackSource`), paced in
+/// real time by `PlaybackLoop` and drawn into `playbackLayer`. It holds the
+/// DecodeGate as AVPlayer does; pausing stops ffmpeg and waits for it to
+/// exit before the still and the strip decode again, so no two decoder
+/// sessions overlap. The last frame shown (named by its timestamp, so
+/// exact) becomes the still.
 @MainActor @Observable
 final class PlayerController {
     enum Playback: Equatable {
@@ -63,6 +71,17 @@ final class PlayerController {
     @ObservationIgnored var stripSize: CGSize = .zero
 
     let player = AVPlayer()
+    /// The frames of ffmpeg playback.
+    let playbackLayer = CALayer()
+    /// ffmpeg playback has shown a frame (its layer covers the still).
+    private(set) var showsPlaybackFrame = false
+    @ObservationIgnored private var ffmpegSource: FFmpegPlaybackSource?
+    @ObservationIgnored private var ffmpegTask: Task<Void, Never>?
+    /// The last ffmpeg stop, which the next decode waits for.
+    @ObservationIgnored private var ffmpegStop: Task<Void, Never>?
+    @ObservationIgnored private var ffmpegLastFrame: PlaybackFrame?
+    /// The pixel width ffmpeg playback decodes at (the still's width).
+    @ObservationIgnored private var ffmpegWidth = 0
     @ObservationIgnored private var fileId: UUID?
     @ObservationIgnored private var itemURL: URL?
     @ObservationIgnored private var timeObserver: Any?
@@ -88,6 +107,7 @@ final class PlayerController {
 
     init() {
         player.actionAtItemEnd = .pause
+        playbackLayer.contentsGravity = .resizeAspect
     }
 
     // MARK: - Showing
@@ -195,6 +215,8 @@ final class PlayerController {
             model.selectedThumbId = id
         }
         switch playback {
+        case .playing where decoder == .ffmpeg:
+            restartFFmpeg(at: frame)
         case .playing:
             if let backend = currentAVBackend {
                 playableFrom = frame
@@ -252,15 +274,22 @@ final class PlayerController {
         return model.openBackend(file.id) as? AVFoundationBackend
     }
 
-    /// AVPlayer plays files AVFoundation decodes; ffmpeg-routed files show
-    /// their frames through the ffmpeg path only.
-    var canPlay: Bool { decoder == .avFoundation }
+    /// AVPlayer plays files AVFoundation decodes, with audio; ffmpeg-routed
+    /// files play video only through an ffmpeg pipe.
+    var canPlay: Bool { decoder == .avFoundation || decoder == .ffmpeg }
+
+    /// ffmpeg playback runs (the video area says so).
+    var isFFmpegPlaying: Bool { playback != .paused && decoder == .ffmpeg }
 
     var isPlaying: Bool { playback != .paused }
 
     /// The still covers AVPlayer's image while paused, while playback
-    /// starts, and while it plays through leading frames it cannot show.
-    var showsStill: Bool { playback != .playing || frame < playableFrom }
+    /// starts, and while it plays through leading frames it cannot show;
+    /// ffmpeg playback's until its first frame is drawn.
+    var showsStill: Bool {
+        guard playback == .playing else { return true }
+        return decoder == .ffmpeg ? !showsPlaybackFrame : frame < playableFrom
+    }
 
     /// AVPlayer's image is shown while playing, and while paused only on
     /// the frame it paused at (stepping does not seek it).
@@ -287,6 +316,10 @@ final class PlayerController {
     }
 
     func play() {
+        if decoder == .ffmpeg {
+            playFFmpeg()
+            return
+        }
         guard playback == .paused, canPlay, let file, let backend = currentAVBackend else { return }
         // No still or strip decode while AVPlayer decodes.
         decodeTask?.cancel()
@@ -324,13 +357,20 @@ final class PlayerController {
     }
 
     /// Pauses on the frame AVPlayer shows, then decodes that frame exactly.
+    /// ffmpeg playback stops on the last frame it showed.
     func pause() {
         switch playback {
         case .paused:
             return
+        case .starting where decoder == .ffmpeg:
+            stopFFmpeg()
+            scheduleDecodes()
         case .starting:
             // The start task gives the gate back when it sees this.
             playback = .paused
+        case .playing where decoder == .ffmpeg:
+            stopFFmpeg()
+            scheduleDecodes()
         case .playing:
             stopPlayback(dropItem: false)
             scheduleDecodes()
@@ -340,6 +380,10 @@ final class PlayerController {
     /// Stops playing at the frame shown and gives the gate back; drops the
     /// player item too with `dropItem`, so its decoder session goes.
     private func stopPlayback(dropItem: Bool) {
+        if ffmpegTask != nil || ffmpegSource != nil {
+            stopFFmpeg()
+            return
+        }
         let wasPlaying = playback == .playing
         playback = .paused
         if wasPlaying {
@@ -395,6 +439,168 @@ final class PlayerController {
         if let id = PlayerNavigation.selection(at: frame, scenes: scenes()), model.selectedThumbId != id {
             model.selectedThumbId = id
         }
+    }
+
+    // MARK: - ffmpeg playback (video only)
+
+    /// Starts ffmpeg playback at the current frame once the DecodeGate is
+    /// free (after the last stop has exited).
+    private func playFFmpeg() {
+        guard playback == .paused, isShown, let model, let file, videoSize.width > 0,
+              let backend = model.openBackend(file.id) as? FFmpegBackend
+        else { return }
+        decodeTask?.cancel()
+        decodeTask = nil
+        playback = .starting
+        playToken += 1
+        let token = playToken
+        let start = frame
+        playStart = start
+        playableFrom = start
+        let width = stillWidth(file)
+        let previousStop = ffmpegStop
+        Task {
+            await previousStop?.value
+            await DecoderSessionGate.acquire()
+            guard playToken == token, playback == .starting, fileId == file.id else {
+                await DecoderSessionGate.release()
+                if playback == .paused { scheduleDecodes() }
+                return
+            }
+            holdsGate = true
+            startFFmpeg(backend, at: start, width: width)
+        }
+    }
+
+    /// One pipe from `start`, shown in real time until it ends (the movie's
+    /// end pauses there) or is stopped. Callers hold the gate.
+    private func startFFmpeg(_ backend: FFmpegBackend, at start: Int, width: Int) {
+        let source = backend.playbackSource(from: start, maxWidth: width)
+        do {
+            try source.start()
+        } catch {
+            model?.toast = "ffmpeg playback could not start: \(error.localizedDescription)"
+            stopFFmpeg()
+            scheduleDecodes()
+            return
+        }
+        ffmpegSource = source
+        ffmpegWidth = width
+        playback = .playing
+        let fps = backend.info.fps
+        ffmpegTask = Task {
+            _ = try? await PlaybackLoop.run(
+                fps: fps, clock: ContinuousPlaybackClock(), next: { try await source.next() }
+            ) { [weak self] frame in
+                self?.showPlaybackFrame(frame)
+            }
+            // The end of the stream, not a stop or a restart: pause there.
+            guard !Task.isCancelled, ffmpegSource === source else { return }
+            pause()
+        }
+    }
+
+    private func showPlaybackFrame(_ shown: PlaybackFrame) {
+        guard playback == .playing, let model else { return }
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        playbackLayer.contents = shown.image
+        CATransaction.commit()
+        ffmpegLastFrame = shown
+        if !showsPlaybackFrame { showsPlaybackFrame = true }
+        frame = shown.frameNumber
+        if let id = PlayerNavigation.selection(at: frame, scenes: scenes()), model.selectedThumbId != id {
+            model.selectedThumbId = id
+        }
+    }
+
+    /// A move while ffmpeg plays: the pipe stops and a new one starts at
+    /// `target` once the old one has exited; the gate stays held.
+    private func restartFFmpeg(at target: Int) {
+        guard let model, let file, let backend = model.openBackend(file.id) as? FFmpegBackend else { return }
+        let task = ffmpegTask
+        let source = ffmpegSource
+        ffmpegTask = nil
+        ffmpegSource = nil
+        ffmpegLastFrame = nil
+        task?.cancel()
+        playStart = target
+        playToken += 1
+        let token = playToken
+        let width = ffmpegWidth
+        let previous = ffmpegStop
+        let stop = Task {
+            await previous?.value
+            await task?.value
+            await source?.close()
+        }
+        ffmpegStop = stop
+        Task {
+            await stop.value
+            guard playToken == token, playback == .playing, fileId == file.id else { return }
+            startFFmpeg(backend, at: target, width: width)
+        }
+    }
+
+    /// Stops ffmpeg playback: pauses on the last frame shown, which becomes
+    /// the still; ffmpeg is stopped and awaited (`RawVideoPipe.finish`), then
+    /// the gate goes back. The next decode or start waits for that.
+    private func stopFFmpeg() {
+        playToken += 1
+        playback = .paused
+        let task = ffmpegTask
+        let source = ffmpegSource
+        ffmpegTask = nil
+        ffmpegSource = nil
+        task?.cancel()
+        if let last = ffmpegLastFrame {
+            frame = last.frameNumber
+            let image = PlayerFrame(image: last.image, requested: last.frameNumber, shown: last.frameNumber)
+            still = image
+            if let file, let key = stillCacheKey, key.file == file.id, key.width == ffmpegWidth {
+                stills.removeAll { $0.frame == last.frameNumber }
+                stills.append((last.frameNumber, image))
+                if stills.count > Self.stillCacheLimit { stills.removeFirst() }
+            }
+        }
+        ffmpegLastFrame = nil
+        showsPlaybackFrame = false
+        playbackLayer.contents = nil
+        let releases = holdsGate
+        holdsGate = false
+        let previous = ffmpegStop
+        ffmpegStop = Task {
+            await previous?.value
+            await task?.value
+            await source?.close()
+            if releases { await DecoderSessionGate.release() }
+        }
+    }
+
+    // MARK: - Editing at the current frame
+
+    /// Waits until ffmpeg playback has exited and the decode in flight is
+    /// done, so a save or check decodes after them, not beside them.
+    func waitForDecodes() async {
+        await ffmpegStop?.value
+        await decodeTask?.value
+    }
+
+    /// The current frame for an edit there, after pausing, and whether it
+    /// decodes exactly (decision 25: an inexact frame is not stored). Uses
+    /// the still when it is the frame's, else decodes the frame. A frame
+    /// that does not decode at all counts as exact, as the scrub stores it.
+    func exactCurrentFrame() async -> (frame: Int, exact: Bool)? {
+        guard isShown, let model, let file else { return nil }
+        if playback != .paused { pause() }
+        let target = frame
+        await waitForDecodes()
+        if let still, still.requested == target { return (target, still.isExact) }
+        if let cached = stills.first(where: { $0.frame == target }) { return (target, cached.image.isExact) }
+        guard let backend = try? await model.backend(for: file),
+              let decoded = try? await backend.frame(target, maxWidth: stillWidth(file))
+        else { return (target, true) }
+        return (target, decoded.isExact)
     }
 
     // MARK: - Still and frame strip
@@ -472,8 +678,11 @@ final class PlayerController {
         let missing = wanted.filter { stripFrames[$0] == nil }
         let needsStill = still?.requested != target
         guard needsStill || !missing.isEmpty else { return }
+        let stopping = ffmpegStop
         decodeTask = Task {
             try? await Task.sleep(for: Self.decodeDelay)
+            // ffmpeg playback has exited before anything decodes.
+            await stopping?.value
             guard !Task.isCancelled, let backend = try? await model.backend(for: file) else { return }
             if needsStill, let decoded = try? await backend.frame(target, maxWidth: stillWidth) {
                 guard !Task.isCancelled else { return }

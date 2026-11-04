@@ -188,8 +188,9 @@ extension AppDelegate {
     /// ±10, with ⇧ ±1, with ⌥ ±100, with ⇧⌥ the previous / next cut (cut
     /// mode) or thumb (thumb mode); Space switches a shot sheet between cut
     /// and thumb mode, elsewhere it closes the player view; P plays and
-    /// pauses (§8 names no key for it). Return is reserved for cutting and
-    /// changing at the frame, so it does not start a keyboard scrub here.
+    /// pauses (§8 names no key for it). Return cuts or merges (cut mode) or
+    /// changes the thumb, ⇧ / ⌥ Return add one before / after (interval
+    /// sheets); it does not start a keyboard scrub here. S saves the frame.
     /// Returns nil for keys the player does not take.
     fileprivate func handlePlayerKey(_ event: NSEvent, flags: NSEvent.ModifierFlags, model: AppModel) -> Bool? {
         let player = model.player
@@ -210,12 +211,19 @@ extension AppDelegate {
             model.spacePressed()
             return true
         case KeyCode.returnKey, KeyCode.enter:
+            if flags.subtracting([.shift, .option]).isEmpty, flags != [.shift, .option] {
+                model.playerReturn(shift: flags.contains(.shift), option: flags.contains(.option))
+            }
             return true
         default:
             break
         }
-        guard flags.isEmpty, event.charactersIgnoringModifiers?.lowercased() == "p" else { return nil }
-        player.togglePlayback()
+        guard flags.isEmpty else { return nil }
+        switch event.charactersIgnoringModifiers?.lowercased() {
+        case "p": player.togglePlayback()
+        case "s": model.saveCurrentFrame()
+        default: return nil
+        }
         return true
     }
 }

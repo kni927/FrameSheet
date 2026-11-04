@@ -629,6 +629,71 @@ import VideoToolbox
         }
     }
 
+    // MARK: ffmpeg playback (the player's ffmpeg-routed files, §9)
+
+    /// About a second of a synthetic MKV through the playback pipe and the
+    /// pacing loop on a virtual clock: the frames from the start frame on,
+    /// in order, each the frame its stripes show, at their times; none
+    /// dropped (the virtual clock does not move while ffmpeg decodes).
+    @Test(.enabled(if: DecodeIntegrationTests.tools != nil)) func ffmpegPlaybackIsInOrderAndPaced() async throws {
+        let clip = try await Self.makeClip("play.mkv", ["-c:v", "libx264", "-qp", "0", "-pix_fmt", "yuv420p"])
+        let backend = try #require(try await DecoderRouter.open(clip, ffmpeg: Self.tools) as? FFmpegBackend)
+        let source = backend.playbackSource(from: 10, maxWidth: 320)
+        #expect(source.frameSize.width == 320)
+        try source.start()
+        let clock = SteppedClock()
+        var shown: [(frame: Int, time: Double, at: Double, stripes: Int)] = []
+        let started = ContinuousClock.now
+        let stats = try await withDeadline("ffmpeg playback") {
+            try await PlaybackLoop.run(fps: backend.info.fps, clock: clock, next: {
+                guard shown.count < 25 else { return nil }
+                return try await source.next()
+            }) { frame in
+                shown.append((frame.frameNumber, frame.time, clock.now(), Self.frameNumber(in: frame.image)))
+            }
+        }
+        let elapsed = ContinuousClock.now - started
+        await source.close()
+        print("ffmpeg playback: \(stats.shown) frames shown, \(stats.dropped) dropped, decoded in \(elapsed)")
+        #expect(stats.dropped == 0)
+        #expect(shown.map(\.frame) == Array(10..<35))
+        for entry in shown {
+            #expect(entry.stripes == entry.frame, "frame \(entry.frame)")
+            #expect(abs(entry.at - (shown[0].at + entry.time - shown[0].time)) < 1e-9)
+            #expect(abs(entry.time - Double(entry.frame) / 25) < 1e-3)
+        }
+        let afterClose = try await source.next()
+        #expect(afterClose == nil)
+    }
+
+    /// The same in real time for about a second: frames in order and never
+    /// shown before their time; reports the drops seen.
+    @Test(.enabled(if: DecodeIntegrationTests.tools != nil)) func ffmpegPlaybackInRealTime() async throws {
+        let clip = try await Self.makeClip("play.mkv", ["-c:v", "libx264", "-crf", "18", "-pix_fmt", "yuv420p"])
+        let backend = try #require(try await DecoderRouter.open(clip, ffmpeg: Self.tools) as? FFmpegBackend)
+        let source = backend.playbackSource(from: 5, maxWidth: 320)
+        try source.start()
+        let clock = ContinuousPlaybackClock()
+        var shown: [(frame: Int, time: Double, at: Double)] = []
+        let stats = try await withDeadline("ffmpeg playback, real time") {
+            try await PlaybackLoop.run(fps: backend.info.fps, clock: clock, next: {
+                try await source.next()
+            }) { frame in
+                shown.append((frame.frameNumber, frame.time, clock.now()))
+            }
+        }
+        await source.close()
+        print("ffmpeg playback, real time: \(stats.shown) shown, \(stats.dropped) dropped, "
+            + "largest delay \(String(format: "%.1f", stats.maxLateness * 1000)) ms")
+        #expect(stats.shown + stats.dropped == Self.frameCount - 5)
+        #expect(shown.first?.frame == 5)
+        #expect(shown.map(\.frame) == shown.map(\.frame).sorted())
+        let first = try #require(shown.first)
+        for entry in shown {
+            #expect(entry.at >= first.at + (entry.time - first.time) - 0.002, "frame \(entry.frame) ahead")
+        }
+    }
+
     /// Playback that starts on a leading frame of an open GOP shows frames
     /// from its keyframe on; elsewhere, and in closed-GOP movies, from the
     /// frame itself.
@@ -703,5 +768,18 @@ import VideoToolbox
         // Re-inserting a key replaces its cost instead of adding to it.
         cache.insert(image, file: id, frame: 3, width: 256)
         #expect(cache.totalBytes == 768 * 1024)
+    }
+}
+
+/// A clock that moves only when slept on.
+private final class SteppedClock: PlaybackClock, @unchecked Sendable {
+    private let lock = NSLock()
+    private var time: Double = 0
+
+    func now() -> Double { lock.withLock { time } }
+
+    func sleep(until target: Double) async throws {
+        try Task.checkCancellation()
+        lock.withLock { time = max(time, target) }
     }
 }
