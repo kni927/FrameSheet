@@ -101,6 +101,11 @@ Send each message only to the sessions that need it.
   buttons (in the Claude desktop app, `wrap_up`'s `ask`/`actions`: pass the
   recap only); a skipped or unanswered question is not a decision (owner,
   2026-11-03, 2026-11-04).
+- **Earlier results:** before a test or an investigation, a session
+  searches the records (`docs/` and `docs/archives/` in the repositories,
+  `git log --grep`) for an earlier result and cites it; it tests again only
+  what that does not settle (owner, 2026-11-04: `/compact` by message was
+  re-tested after the 2026-10-08 result).
 - **Causes:** a session measures or checks before it states a cause and
   marks each one 確認済み / `Checked:` with the numbers, or 推測 / 未確認 /
   `Guess:` with the check that would settle it. An HQ that receives a TF's
