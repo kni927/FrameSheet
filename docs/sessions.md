@@ -54,7 +54,8 @@ procedures are in skills (Skills, below); the reasons are in
 ## Names
 
 - `Central HQ`, `Upstream HQ`, `<repo> HQ`, `Mac mini HQ`, `MacBook HQ`,
-  `<repo> TF #NN <what>` (`cooViewer TF #03 v1.6.5`), `Workspace <topic>`.
+  `<repo> TF #NN <what>` (`cooViewer TF #03 v1.6.5-release`; `#NN` two
+  digits, `<what>` a few words joined by hyphens), `Workspace <topic>`.
   The current session of a role carries the plain name; a finished one
   `✅ <name>`, one that handed over `✅ <name> (handover YYYY-MM-DD)`, a cloud
   HQ on stand-by `💤 <name>`.
