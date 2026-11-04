@@ -96,8 +96,15 @@ Send each message only to the sessions that need it.
   only that it is verified, unless the report and the state disagree, the TF
   is blocked without having said so, or a decision belongs in the HQ's chat.
 - **Asking the owner:** in the conversation, in prose with a recommendation,
-  not with the AskUserQuestion choice dialog; a skipped or unanswered
-  question is not a decision (owner, 2026-11-03).
+  not with the AskUserQuestion choice dialog or any tool that renders choice
+  buttons (in the Claude desktop app, `wrap_up`'s `ask`/`actions`: pass the
+  recap only); a skipped or unanswered question is not a decision (owner,
+  2026-11-03, 2026-11-04).
+- **Causes:** a session measures or checks before it states a cause and
+  marks each one 確認済み / `Checked:` with the numbers, or 推測 / 未確認 /
+  `Guess:` with the check that would settle it. An HQ that receives a TF's
+  cause without numbers has the TF check it before passing it to the owner
+  (owner, 2026-11-04).
 - **Time estimates:** before work expected to take over 10 minutes, one line
   `Estimate: <time> (<reason>)` with the session's own figure, not a range,
   counting only its own working time; name what each subagent, TF or
