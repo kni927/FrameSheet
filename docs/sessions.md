@@ -70,7 +70,11 @@ procedures are in skills (Skills, below); the reasons are in
   first reply: the mark, then its role name or a few English words naming
   the work. A cloud session finds its own ID with `get_session`.
 - **TF numbers:** per repository from `#01`: the highest `#NN` among its TF
-  titles, finished ones included, plus one. The HQ that offers a TF picks it.
+  titles, finished ones included, plus one. The HQ picks it and passes it in
+  the start prompt (`/tf #NN <what>`), unless there is a special reason; a TF
+  that must count itself counts across both Macs (`list_sessions`, where it
+  has it), since `ListAgents` sees only its own Mac, and tells the HQ the
+  number it took (owner's decision, 2026-11-05, in FrameSheet HQ's chat).
 - Names are unique (local sessions address messages by name); copy full
   titles from `ListAgents` or `list_sessions`. A repository's HQ is
   `<repo> HQ`, except Upstream HQ and Central HQ (`kni927/HQ`) as above;
