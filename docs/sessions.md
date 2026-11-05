@@ -218,9 +218,18 @@ Send each message only to the sessions that need it.
 - Slash commands do not travel in a message; ask the session to read the
   skill's `SKILL.md`, and leave built-in commands such as `/compact` to the
   owner.
-- **TASKs:** a TF takes TASKs only from its repository's HQ (or the HQ the
-  owner names), following `/tf`; a TASK's explicit instructions win, and the
-  TF says which step changed.
+- **TASKs:** a TF takes TASKs from its repository's HQ (or the HQ the owner
+  names), following `/tf`; a TASK's explicit instructions win, and the TF
+  says which step changed.
+- **TASKs from the TF's chat:** for work the owner defines in the TF's chat,
+  the TF may write its own `TASK.md`, new features included when they do not
+  conflict with existing ones. It tells its HQ in one line what the TASK
+  covers and its estimate, so the HQ can keep two TFs off the same files. Its
+  completion report lists every spec or design decision the owner made in
+  the chat; the HQ keeps the project's spec, `docs/DECISIONS.md` and
+  `docs/STATUS.md`, which the TF edits only as far as its TASK needs.
+  Releases and work spanning several TFs still come from the HQ (owner's
+  decision, 2026-11-05).
 - **Receiving:** an HQ starts its next reply to the owner with this block and
   a summary (the owner does not see the message; give it in full when
   asked). Keep each `---` between blank lines.
