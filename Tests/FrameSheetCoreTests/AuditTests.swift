@@ -276,3 +276,22 @@ private final class CountingAnalyzer: FaceAnalyzer, @unchecked Sendable {
         #expect(report.summary.hasPrefix("Saved 3 sheets (1 with frames missing) in "))
     }
 }
+
+// MARK: - 10. An aspect ratio override stretches the frame
+
+@Suite struct DisplayAspectTests {
+    @Test func gridThumbIsTheBoxItself() {
+        // A 4:3 frame shown at 16:9: drawn at the 16:9 box, stretched.
+        #expect(DisplayAspect.fillSize(box: CGSize(width: 160, height: 90), aspectInv: 9.0 / 16.0)
+            == CGSize(width: 160, height: 90))
+    }
+
+    @Test func timelineBoxesCropTheStretchedFrame() {
+        // Narrower than a frame: full height, frame width (centered, cropped).
+        #expect(DisplayAspect.fillSize(box: CGSize(width: 40, height: 90), aspectInv: 9.0 / 16.0)
+            == CGSize(width: 160, height: 90))
+        // Wider than a frame: full width, the height it then has.
+        #expect(DisplayAspect.fillSize(box: CGSize(width: 320, height: 90), aspectInv: 9.0 / 16.0)
+            == CGSize(width: 320, height: 180))
+    }
+}

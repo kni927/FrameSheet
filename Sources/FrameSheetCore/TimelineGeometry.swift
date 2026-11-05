@@ -64,7 +64,8 @@ public enum TimelineLayout {
                     inRow = [length]
                 }
             }
-            if index == lengths.count - 1 {
+            // A last scene longer than a row has its own row already.
+            if index == lengths.count - 1, !inRow.isEmpty {
                 rows.append(TimelineRow(lastIndex: index, sceneOutPoint: outPoint, sceneLengths: inRow))
             }
             previousOutPoint = outPoint

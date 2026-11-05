@@ -54,8 +54,10 @@ import Testing
                                      overwrite: true, exists: exists).path == "/out/p.png")
         #expect(FileNaming.outputURL(folder: folder, baseName: "q", fileExtension: "jpg",
                                      overwrite: false, exists: exists).path == "/out/q.jpg")
+        // Every name taken: one with a UUID, never an existing one.
         #expect(FileNaming.outputURL(folder: folder, baseName: "p", fileExtension: "png",
-                                     overwrite: false, exists: { _ in true }).path == "/out/p edit 999.png")
+                                     overwrite: false, exists: { _ in true }).path.count
+                == "/out/p edit .png".count + 36)
     }
 
     @Test func missingFrameTokenWarning() {

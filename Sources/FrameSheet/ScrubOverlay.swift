@@ -43,8 +43,7 @@ struct ScrubOverlay: View {
         let image = model.image(file: file.id, frame: frame, width: AppModel.thumbWidth)
         let shown = image == nil ? frame : model.shownFrame(file: file.id, frame: frame, width: AppModel.thumbWidth)
         return VStack(spacing: Theme.space1) {
-            FrameImage(image: image)
-                .frame(width: rect.width, height: rect.height)
+            FrameImage(image: image, aspectInv: file.displayAspectRatioInv, size: rect.size)
                 .clipShape(RoundedRectangle(cornerRadius: Theme.radiusSm))
                 .opacity(0.6)
                 .overlay(alignment: .bottomTrailing) {
@@ -64,8 +63,7 @@ struct ScrubOverlay: View {
     }
 
     private func live(in rect: CGRect) -> some View {
-        FrameImage(image: model.scrubImage)
-            .frame(width: rect.width, height: rect.height)
+        FrameImage(image: model.scrubImage, aspectInv: file.displayAspectRatioInv, size: rect.size)
             .clipShape(RoundedRectangle(cornerRadius: Theme.radiusSm))
             .overlay(RoundedRectangle(cornerRadius: Theme.radiusSm).strokeBorder(Theme.accent, lineWidth: 2))
             .overlay(alignment: .bottomTrailing) {
@@ -147,14 +145,14 @@ struct ScrubOverlay: View {
 
 private struct FrameImage: View {
     let image: CGImage?
+    let aspectInv: Double
+    let size: CGSize
 
     var body: some View {
         if let image {
-            Image(decorative: image, scale: 1)
-                .resizable()
-                .aspectRatio(contentMode: .fill)
+            DisplayAspectImage(image: image, aspectInv: aspectInv, size: size)
         } else {
-            Theme.surface
+            Theme.surface.frame(width: size.width, height: size.height)
         }
     }
 }

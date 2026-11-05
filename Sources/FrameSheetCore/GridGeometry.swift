@@ -221,3 +221,21 @@ public struct GridGeometry: Equatable, Sendable {
         return CGRect(x: (gapStart + gapEnd - width) / 2, y: frame.minY, width: width, height: frame.height)
     }
 }
+
+/// Drawing a frame at the movie's display aspect ratio (decision 26: an
+/// aspect ratio override stretches the decoded image, as MoviePrint does).
+public enum DisplayAspect {
+    /// The size to draw a frame at so it has the display aspect ratio
+    /// (`aspectInv` = height / width) and covers `box`; centered in the box
+    /// and clipped to it, a timeline scene narrower or wider than a frame
+    /// shows its middle part. For a box of the display aspect ratio (a grid
+    /// thumb) it is the box itself.
+    public static func fillSize(box: CGSize, aspectInv: Double) -> CGSize {
+        guard aspectInv.isFinite, aspectInv > 0, box.width > 0, box.height > 0 else { return box }
+        let widthForHeight = box.height / aspectInv
+        if widthForHeight >= box.width {
+            return CGSize(width: widthForHeight, height: box.height)
+        }
+        return CGSize(width: box.width, height: box.width * aspectInv)
+    }
+}

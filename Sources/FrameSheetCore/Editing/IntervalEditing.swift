@@ -245,7 +245,8 @@ extension Library {
     }
 
     /// A copy with new ids and the next `Sheet-N` name, placed after
-    /// the original.
+    /// the original. A shot sheet's scenes are copied with their thumbs'
+    /// new ids (a scene's id is its thumb's).
     @discardableResult
     public mutating func duplicateSheet(_ ref: SheetRef) -> SheetRef? {
         guard let i = sheetIndex(ref), let f = files.firstIndex(where: { $0.id == ref.fileId }) else { return nil }
@@ -253,8 +254,17 @@ extension Library {
         copy.id = UUID()
         copy.name = SheetNaming.newSheetName(sheetCount: files[f].sheetCounter)
         files[f].sheetCounter += 1
-        copy.thumbs = copy.thumbs.map { Thumb(frameNumber: $0.frameNumber, index: $0.index, hidden: $0.hidden, faces: $0.faces) }
-        copy.scenes = []
+        var newIds: [UUID: UUID] = [:]
+        copy.thumbs = copy.thumbs.map { thumb in
+            let new = Thumb(frameNumber: thumb.frameNumber, index: thumb.index, hidden: thumb.hidden, faces: thumb.faces)
+            newIds[thumb.id] = new.id
+            return new
+        }
+        copy.scenes = copy.scenes.map { scene in
+            var scene = scene
+            scene.id = newIds[scene.id] ?? UUID()
+            return scene
+        }
         sheets[ref.fileId]!.insert(copy, at: i + 1)
         return SheetRef(fileId: ref.fileId, sheetId: copy.id)
     }

@@ -557,7 +557,9 @@ private struct PlayerSheetStrip: View {
                 let selected = model.selectedThumbId == thumb.id
                 Group {
                     if let image = model.image(file: file.id, frame: thumb.frameNumber, width: AppModel.thumbWidth) {
-                        Image(decorative: image, scale: 1).resizable().aspectRatio(contentMode: .fill)
+                        DisplayAspectImage(
+                            image: image, aspectInv: model.player.aspectRatioInv(file),
+                            size: CGSize(width: width, height: height))
                     } else {
                         Theme.surface
                     }
@@ -599,7 +601,9 @@ private struct PlayerSheetStrip: View {
                 Group {
                     if selected, let thumb = sheet.thumbs.first(where: { $0.id == scene.id }),
                        let image = model.image(file: file.id, frame: thumb.frameNumber, width: AppModel.thumbWidth) {
-                        Image(decorative: image, scale: 1).resizable().aspectRatio(contentMode: .fill)
+                        DisplayAspectImage(
+                            image: image, aspectInv: model.player.aspectRatioInv(file),
+                            size: CGSize(width: width, height: height))
                     } else {
                         Self.color(scene)
                     }

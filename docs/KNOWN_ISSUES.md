@@ -71,7 +71,10 @@ history of this file up to tag v2.3.1.
 * **Reason**: Checked (2026-11-05): after the failing runs the load average
   was 8.6–9.1, with little free memory and active swapping. With apps closed
   (load average 3.8, no swap-outs), it passed at 1.13×. Which part of the load
-  slows the shared run most is not measured.
+  slows the shared run most is not measured. TF #03 (2026-11-05): 1 of 5
+  runs failed at 2.53× with the scan alone at 11.29 s (9.6–9.9 s in the
+  passing quiet runs, 1.08–1.10×); `top` is refused inside the sandbox, so
+  the load was not recorded.
 * **Workaround**: Close memory-heavy apps (browsers, a remote-screen app) and
   run again. Record the load (`top -l 2 -o cpu -n 8 -stats command,cpu`) as
   the `slowness-check` skill says when it recurs.

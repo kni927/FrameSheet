@@ -20,9 +20,10 @@ reproduces MoviePrint v0.2.23 for Apple Silicon: decisions 14–22 in
   with the macOS 27 `AVAssetReaderOutput.Provider` API.
 - v3.0.0 order (owner, 2026-11-02): T03 → T03b → T04 → T04b → T05 → T06 →
   T07 → T08 transforms, Save All, polish (all done) → v3.0.0 release with a
-  notarized zip on a GitHub Release (TF #02, on hold: a Codex pre-release audit found 1 blocker and
-  14 should-fix items; 💻 TF #03 audit-fixes verifies and fixes them first;
-  owner, 2026-11-05).
+  notarized zip on a GitHub Release (TF #02). The Codex pre-release audit's
+  findings are fixed on `main` (TF #03, 2026-11-05: 15 confirmed and fixed,
+  finding 12 refuted; `docs/tasks/2026-11-05-02-audit-fixes.md`), so the
+  release can be built from that commit after the owner's manual check.
 - Face follow-ups (owner, 2026-11-04): a "per shot" scope (the middle frame of
   each scene); more Vision workers on chips with two Neural Engines (measure
   first).
@@ -49,7 +50,8 @@ reproduces MoviePrint v0.2.23 for Apple Silicon: decisions 14–22 in
 
 ## Waiting on owner
 
-- None.
+- Manual check of the user-visible audit fixes (1, 5, 9, 10, 13, 14) in
+  `~/Applications/FrameSheet.app`; the steps are in the task archive.
 
 ## Notes
 

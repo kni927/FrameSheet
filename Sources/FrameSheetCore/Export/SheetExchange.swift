@@ -124,7 +124,7 @@ public struct ExchangeScene: Decodable, Sendable, Equatable {
         self.length = length
         frameNumber = c.flexibleInt(.frameNumber)
         // OpenCV means may be fractional.
-        colorArray = (try? c.decodeIfPresent([Double].self, forKey: .colorArray))?.map { Int($0.rounded()) }
+        colorArray = (try? c.decodeIfPresent([Double].self, forKey: .colorArray))?.compactMap(SheetExchange.wholeNumber)
     }
 }
 
@@ -236,7 +236,7 @@ public struct SheetExchange: Sendable, Equatable {
         filePath = value("filePath").map { $0.removingPercentEncoding ?? $0 }
         transform = json("transformObject", as: ExchangeTransform.self)
         columnCount = value("columnCount").flatMap(Self.parseInt)
-        frameNumbers = json("frameNumberArray", as: [Double].self)?.map { Int($0.rounded()) }
+        frameNumbers = json("frameNumberArray", as: [Double].self)?.compactMap(Self.wholeNumber)
         scenes = json("sceneArray", as: [ExchangeScene].self)
     }
 
@@ -308,7 +308,7 @@ public struct SheetExchange: Sendable, Equatable {
             // MoviePrint reads `Number(columnCount)`.
             columnCount = c.flexibleInt(.columnCount)
             frameNumberArray = (try? c.decodeIfPresent([Double].self, forKey: .frameNumberArray))?
-                .map { Int($0.rounded()) }
+                .compactMap(SheetExchange.wholeNumber)
             sceneArray = try? c.decodeIfPresent([ExchangeScene].self, forKey: .sceneArray)
         }
     }
@@ -326,9 +326,25 @@ public struct SheetExchange: Sendable, Equatable {
     /// JavaScript `Number(text)` for a whole number ("4", "4.0").
     static func parseInt(_ text: String) -> Int? {
         let trimmed = text.trimmingCharacters(in: .whitespaces)
-        if let i = Int(trimmed) { return i }
-        guard let d = Double(trimmed), d.isFinite else { return nil }
-        return Int(d.rounded())
+        if let i = Int(trimmed) { return wholeNumber(i) }
+        return Double(trimmed).flatMap(wholeNumber)
+    }
+
+    /// The largest magnitude an imported number may have. Frame numbers,
+    /// lengths, counts and crop values stay far below it, and sums of them
+    /// cannot overflow; a larger value (`1e100`) counts as left out instead
+    /// of crashing the conversion to `Int`.
+    static let maxImportedValue = Int(Int32.max)
+
+    /// A number from an imported file, rounded; nil when not finite or out
+    /// of range.
+    static func wholeNumber(_ value: Double) -> Int? {
+        guard value.isFinite, abs(value) <= Double(maxImportedValue) else { return nil }
+        return Int(value.rounded())
+    }
+
+    static func wholeNumber(_ value: Int) -> Int? {
+        (-maxImportedValue...maxImportedValue).contains(value) ? value : nil
     }
 }
 
@@ -391,8 +407,8 @@ indirect enum JSONText {
 extension KeyedDecodingContainer {
     /// An integer written as a number (whole or not) or a numeric string.
     func flexibleInt(_ key: Key) -> Int? {
-        if let i = try? decodeIfPresent(Int.self, forKey: key) { return i }
-        if let d = try? decodeIfPresent(Double.self, forKey: key), d.isFinite { return Int(d.rounded()) }
+        if let i = try? decodeIfPresent(Int.self, forKey: key) { return SheetExchange.wholeNumber(i) }
+        if let d = try? decodeIfPresent(Double.self, forKey: key) { return SheetExchange.wholeNumber(d) }
         if let s = try? decodeIfPresent(String.self, forKey: key) { return SheetExchange.parseInt(s) }
         return nil
     }
