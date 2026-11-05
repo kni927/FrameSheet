@@ -20,7 +20,9 @@ reproduces MoviePrint v0.2.23 for Apple Silicon: decisions 14–22 in
   with the macOS 27 `AVAssetReaderOutput.Provider` API.
 - v3.0.0 order (owner, 2026-11-02): T03 → T03b → T04 → T04b → T05 → T06 →
   T07 → T08 transforms, Save All, polish (all done) → v3.0.0 release with a
-  notarized zip on a GitHub Release (in progress, TF #02; owner, 2026-11-05).
+  notarized zip on a GitHub Release (TF #02, on hold: a Codex pre-release audit found 1 blocker and
+  14 should-fix items; 💻 TF #03 audit-fixes verifies and fixes them first;
+  owner, 2026-11-05).
 - Face follow-ups (owner, 2026-11-04): a "per shot" scope (the middle frame of
   each scene); more Vision workers on chips with two Neural Engines (measure
   first).
