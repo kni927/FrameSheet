@@ -85,7 +85,9 @@ builds them.
   overlay "ADD MOVIES TO LIST"; with Option held "CLEAR LIST AND ADD MOVIES".
   Accepts any file AVFoundation or ffmpeg can open as video.
 - **Sheet toolbar** (in the window toolbar, next to the title; owner,
-  2026-11-03): Back to parent; Add shot-detection sheet; Add interval
+  2026-11-03; customizable since 2026-11-05: one item per control, a short
+  default set, the rest in the customization palette; Fit height/width are
+  disabled, not hidden, when they do not apply): Back to parent; Add shot-detection sheet; Add interval
   sheet (presets 2×2 … 6×6); Add faces sheet (click: default scope; hold:
   every 10th / every 100th frame between the lowest and highest thumb, or
   these thumbs; T07); Sort (Reverse, Frame number, Face count, Face
@@ -95,8 +97,11 @@ builds them.
   info (frames → timecode → none); Toggle face rectangles; Toggle images (mean
   colors only); Optimize grid layout (columns = ceil(√n)).
 - Progress and errors as toasts; long scans show Cancel in the toast.
-- **Menus:** standard App, File, Edit (Undo/Redo), View (full screen, fit,
-  zoom), Window, Help; Settings… (⌘,) in the App menu.
+- **Menus:** App, File, Edit, View, Sheet, Window, Help; every toolbar
+  command is also in a menu, most with a ⌘ shortcut (⌘O, ⌘S, ⌘G, ⌘1/⌘2/⌘3,
+  ⇧⌘C detection chart, …); Import Sheet, Clear Movie List, Save All, Open
+  Output Location and the detection chart are menu-only; Settings… (⌘,) in
+  the App menu (owner, 2026-11-05).
 
 ## 5. Sheets
 
@@ -170,8 +175,9 @@ the 2026-11-01 app-icon choice).
   (6 digits), `[TC]` timecode `HH_MM_SS_FF`. Warn when a thumb template lacks
   `[FN]` and `[TC]`. Replace `/\?%*:|"<>` with `-`; when not overwriting,
   append " edit N".
-- **Face detection:** confidence threshold 0–100 (70); size threshold 0–100
-  (10, % of frame height); "takes effect on next scan".
+- **Face detection** (Sheet → Face Detection… window, not the panel; owner,
+  2026-11-05): confidence threshold 0–100 (70); size threshold 0–100 (10, % of
+  frame height); Apply (default button) rescans the current faces sheet.
 - **Thumbnail cache** (Settings window; replaces MoviePrint's frame cache, whose per-frame
   images do not fit: 50 GB for a 2 h film at 240 px): memory limit for decoded
   display-size thumbnails, default 256 MB, kept as an LRU cache with a strict
@@ -213,7 +219,7 @@ the 2026-11-01 app-icon choice).
 
 | Key | Action |
 |---|---|
-| 1 / 2 / 3 | Movie list / player view / settings |
+| 1 / 2 / 3 (also ⌘1 / ⌘2 / ⌘3) | Movie list / player view / settings |
 | A | Add movies |
 | F | Detection chart |
 | G | Grid ↔ timeline |
@@ -284,8 +290,10 @@ Alt and Ctrl become Option and Control.
 - **Faces (Lv1):** Vision face rectangles (Swift API, default revision) on
   the scan pass's 720 px frames; warm the request up when a movie opens. Per face: confidence, size (box height as % of frame height),
   relative box. Per frame: `{frameNumber, faceCount, largestSize, faces}` in
-  the scan cache, counting only faces that pass the thresholds. Scope: every 10th (default) / every 100th frame between
-  the lowest and highest visible thumb, or exactly the current thumbs. When the
+  the scan cache, counting only faces that pass the thresholds. Scope: the multiples of 10 (default) / of 100 between
+  the lowest and highest visible thumb (a fixed frame grid, so every sheet
+  of a movie shares analyzed frames; MoviePrint spreads them per sheet;
+  owner, 2026-11-05), or exactly the current thumbs. When the
   shot scan has not run, a face scan runs the same combined pass. On the
   ffmpeg path, every 100th frame is the default. Sort by face
   count, size, confidence; filters (each toggleable): face count 1–10
