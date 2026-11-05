@@ -25,8 +25,14 @@ procedures are in skills (Skills, below); the reasons are in
 - **Base local session** (one per Mac): `🖥️ Mac mini HQ` in
   `~/Projects/Local/MacMiniHQ`, `💻 MacBook HQ` in `~/Projects/Local/MacBookHQ`.
   Holds the Mac's Local Routines, answers cloud HQs about the Mac, and after
-  an app restart runs `wake-local` once the owner types `/rc`. Does not
-  implement. Mac mini HQ's session ID is the name of the one file
+  an app restart runs `wake-local` once the owner types `/rc`. It
+  implements, above all what needs the Mac (dotfiles and home-server
+  changes, launchd jobs, settings, tests there), moving work that grows large
+  to a TF; app projects always go to a TF. It may change rules and policy as
+  Upstream HQ does, telling Upstream HQ (Messages, Owner decisions from a
+  local chat). Its folder's `CLAUDE.md` and `.claude/settings.json` come
+  from dotfiles; the settings let it write to the dotfiles and home-server
+  clones without a dialog (owner's decision, 2026-11-05). Mac mini HQ's session ID is the name of the one file
   `mac-mini-hq.<session ID>` in Google Drive `AI/Status/Sessions/`; `/rc`
   keeps the ID. A new Mac mini HQ tells Central HQ, which renames the file
   (also when its morning check finds the file pointing at a finished one).
