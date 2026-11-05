@@ -451,11 +451,15 @@ sessions (tested 2026-11-04; `docs/CLOUD_ENVIRONMENTS.md` in
   apply rewrites the Mac's `~/.claude/settings.json`, `CLAUDE.md`, hooks and
   launchd jobs, so the dialog is where the owner sees such a change (owner's
   decision, 2026-11-05).
-- **Starting a TF:** the owner types `/tf <what>` in a new local session or
-  starts one from an HQ's card (`offer-tf`), with **Start with worktree**
-  only when another TF works in the main clone; a TF handing over starts its
-  successor itself (`start_session`, then `detach_session`), and the
-  successor archives it (dotfiles `/tf`, `local-handover`).
+- **Starting a TF:** a local session with `start_session` starts it with no
+  owner click: a cloud HQ asks that Mac's base local session (Mac relay, or
+  `SendMessage` between Macs), which calls `start_session` with the TF's
+  start prompt in the repository's folder, then `detach_session` (checked
+  2026-11-05: MacBook HQ started FrameSheet TF #03 this way). A TF handing
+  over starts its successor the same way, and the successor archives it
+  (dotfiles `/tf`, `local-handover`). An HQ's card (`offer-tf`) or the owner
+  typing `/tf <what>` is the fallback when no session there has the tool,
+  with **Start with worktree** only when another TF works in the main clone.
 - **Handing over a local session:** a TF or a base session past its
   threshold, after an automatic compaction, or when the owner says so, hands
   over with the global skill `local-handover` (dotfiles): handover file,
@@ -495,10 +499,11 @@ sessions (tested 2026-11-04; `docs/CLOUD_ENVIRONMENTS.md` in
   uncommitted). A child never archives itself; an HQ's successor archives its
   predecessor (Handover), and a local successor archives the session it
   replaced without asking the owner (owner-approved, 2026-11-04): once it
-  is detached and the predecessor is idle with its handover pushed, it calls
-  `archive_session`, and turns the predecessor's Remote Control off
-  (`set_remote_control` false) only when the archive is refused for live
-  work (`local-handover`). Archiving a parent never takes its
+  is detached and the predecessor is idle with its handover pushed, it turns
+  the predecessor's Remote Control off (`set_remote_control` false), then
+  `archive_session`; an idle session with Remote Control on is refused, and
+  turning off a link the owner set up asks the owner once
+  (`local-handover`). Archiving a parent never takes its
   children with it: a cloud parent is archived without a prompt and its
   cloud child moves to the top level (tested 2026-11-05); a local parent
   asks "Archive this session" or "Archive 2 sessions", and the first keeps
