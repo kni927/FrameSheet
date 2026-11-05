@@ -8,6 +8,13 @@ description: Offer the owner a new local TF on the Mac as a one-click spawn_task
 `docs/sessions.md` ("Local sessions on the Mac") is the rule; this is the
 procedure.
 
+0. **Prefer no card.** Ask the base local session of the Mac the TF should
+   run on (Mac mini HQ or MacBook HQ; Mac relay from the cloud) to start it
+   with `start_session` in the repository's folder, using the prompt of
+   step 4, then `detach_session`. Offer a card only when that session lacks
+   `start_session` (sessions created before about 2026-11-05) or does not
+   answer.
+
 1. **Get the tool.** `mcp__ccd_session__spawn_task` may be deferred; load it
    with ToolSearch. If it is not available, tell the owner to open a local
    session in the repository and type `/tf <what>`, and stop here.
