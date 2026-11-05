@@ -499,10 +499,11 @@ sessions (tested 2026-11-04; `docs/CLOUD_ENVIRONMENTS.md` in
   uncommitted). A child never archives itself; an HQ's successor archives its
   predecessor (Handover), and a local successor archives the session it
   replaced without asking the owner (owner-approved, 2026-11-04): once it
-  is detached and the predecessor is idle with its handover pushed, it calls
-  `archive_session`, and turns the predecessor's Remote Control off
-  (`set_remote_control` false) only when the archive is refused for live
-  work (`local-handover`). Archiving a parent never takes its
+  is detached and the predecessor is idle with its handover pushed, it turns
+  the predecessor's Remote Control off (`set_remote_control` false), then
+  `archive_session`; an idle session with Remote Control on is refused, and
+  turning off a link the owner set up asks the owner once
+  (`local-handover`). Archiving a parent never takes its
   children with it: a cloud parent is archived without a prompt and its
   cloud child moves to the top level (tested 2026-11-05); a local parent
   asks "Archive this session" or "Archive 2 sessions", and the first keeps
