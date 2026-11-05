@@ -24,8 +24,8 @@ reproduces MoviePrint v0.2.23 for Apple Silicon: decisions 14–22 in
   findings are fixed on `main` (TF #03, 2026-11-05: 15 confirmed and fixed,
   finding 12 refuted; `docs/tasks/2026-11-05-02-audit-fixes.md`), so the
   release waits: the owner first wants more UI adjustments (done in a TF's
-  chat) and a second audit (owner, 2026-11-05; manual check of items 1 and
-  5 OK).
+  chat) and a second audit (owner, 2026-11-05; manual check of items 1, 5
+  and 10 OK, 9, 13 and 14 skipped).
 - Face follow-ups (owner, 2026-11-04): a "per shot" scope (the middle frame of
   each scene); more Vision workers on chips with two Neural Engines (measure
   first).
@@ -52,8 +52,7 @@ reproduces MoviePrint v0.2.23 for Apple Silicon: decisions 14–22 in
 
 ## Waiting on owner
 
-- Manual check of the user-visible audit fixes (1, 5, 9, 10, 13, 14) in
-  `~/Applications/FrameSheet.app`; the steps are in the task archive.
+- The UI adjustments for TF #03 to take as its next TASK.
 
 ## Notes
 
