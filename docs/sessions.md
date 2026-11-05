@@ -154,7 +154,9 @@ Send each message only to the sessions that need it.
 - **How to send:** from a cloud session, `send_message` (claude-code-remote)
   to the session ID, local ones too, replying to `from-session`. From a
   local session, `SendMessage` to the name in `ListAgents` (its "one-way"
-  note is anthropics/claude-code#98897; the message arrives). `ListAgents`
+  note is anthropics/claude-code#98897; the message arrives), the other
+  Mac's local sessions included while they are on Remote Control (Mac mini
+  HQ to MacBook HQ and back arrived, 2026-11-05). `ListAgents`
   shows names, not session IDs, so a local session matches the sender's
   title and does not try to confirm the ID a message gives; only when two
   listed sessions share that title does it ask the owner. If that cannot
