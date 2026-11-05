@@ -22,6 +22,8 @@ final class RawVideoPipe: @unchecked Sendable {
 
     /// How long `finish` waits after closing the pipe before killing ffmpeg.
     static let exitGrace: DispatchTimeInterval = .seconds(5)
+    /// How long a terminated ffmpeg may take to exit before it is killed.
+    static let killGrace: DispatchTimeInterval = .seconds(2)
 
     init(executable: URL, arguments: [String], onErrorLine: (@Sendable (Substring) -> Void)? = nil) {
         self.onErrorLine = onErrorLine
@@ -102,8 +104,16 @@ final class RawVideoPipe: @unchecked Sendable {
         return filled == count
     }
 
+    /// SIGTERM, then SIGKILL after `killGrace` if ffmpeg still runs. The
+    /// kill is scheduled on its own queue: a read blocked on the pipe (an
+    /// ffmpeg that writes nothing and ignores SIGTERM) returns only once the
+    /// process is gone, and `finish` waits behind that read.
     func terminate() {
-        if process.isRunning { process.terminate() }
+        guard process.isRunning else { return }
+        process.terminate()
+        DispatchQueue.global().asyncAfter(deadline: .now() + Self.killGrace) { [self] in
+            if process.isRunning { kill(process.processIdentifier, SIGKILL) }
+        }
     }
 
     /// Waits for ffmpeg to exit; returns its status and the error lines.

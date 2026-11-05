@@ -14,8 +14,13 @@ public struct ProcessResult: Sendable {
 /// paths need no quoting) and collects stdout and stderr. Both pipes are
 /// drained while the process runs, so large output cannot block it. The
 /// process is terminated when the calling task is cancelled or the
-/// timeout passes.
+/// timeout passes, and killed when it still runs `killGrace` later (one that
+/// ignores SIGTERM would otherwise hold its caller, and the DecodeGate a
+/// caller holds, for as long as it runs).
 public enum ProcessRunner {
+    /// How long a terminated process may take to exit before it is killed.
+    static let killGrace: Double = 2
+
     public static func run(
         _ executable: URL, _ arguments: [String], timeout: Duration? = nil
     ) async throws -> ProcessResult {
@@ -81,6 +86,7 @@ public enum ProcessRunner {
                     if process.isRunning {
                         timedOut = true
                         process.terminate()
+                        killLater()
                     }
                     lock.unlock()
                 }
@@ -110,8 +116,21 @@ public enum ProcessRunner {
         func terminate() {
             lock.lock()
             cancelled = true
-            if started && process.isRunning { process.terminate() }
+            if started && process.isRunning {
+                process.terminate()
+                killLater()
+            }
             lock.unlock()
+        }
+
+        /// SIGKILL after `killGrace` if the process still runs; on its own
+        /// queue, not behind the blocked pipe reads. Called under `lock`.
+        private func killLater() {
+            DispatchQueue.global().asyncAfter(deadline: .now() + ProcessRunner.killGrace) { [self] in
+                lock.lock()
+                if process.isRunning { kill(process.processIdentifier, SIGKILL) }
+                lock.unlock()
+            }
         }
     }
 
