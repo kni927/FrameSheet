@@ -168,6 +168,8 @@ extension AppModel {
             showNotice(report.summary)
             if let first = report.failures.first {
                 toast = "Save All: \(report.failures.count) sheet(s) not saved; first: \(first.reason)"
+            } else if let first = report.incomplete.first {
+                toast = "Save All: \(report.incomplete.count) sheet(s) saved with frames missing; first: \(first.reason)"
             }
         }
     }
@@ -188,7 +190,11 @@ extension AppModel {
         let took = ContinuousClock.now - started
         log.write("app: saved sheet \(sheet.thumbs.count) thumbs, \(plan.width)x\(plan.height) px in \(took), "
             + "\(failures) frame(s) not decoded, \(fromWindow) from the window")
-        return .saved
+        // As Save Sheet's toast says it.
+        guard failures + fromWindow > 0 else { return .saved }
+        return .savedIncomplete(
+            "\(file.name) – \(sheet.name): \(failures + fromWindow) frame(s) could not be decoded for the print"
+                + (fromWindow > 0 ? "; \(fromWindow) use the window's thumb" : ""))
     }
 
     func cancelSaveAll() { saveJob?.cancel() }
@@ -233,6 +239,9 @@ extension AppModel {
         for frame in frames where images[frame] == nil {
             if let cached = cachedImage(file: file.id, frame: frame, width: Self.thumbWidth) {
                 images[frame] = cached
+                // The window's image may show the nearest decodable frame.
+                let shown = shownFrame(file: file.id, frame: frame, width: Self.thumbWidth)
+                if shown != frame { decodedFrame[frame] = shown }
                 fromWindow += 1
             } else {
                 failures += 1
@@ -248,6 +257,8 @@ extension AppModel {
                 thumbs[i].frameNumber = actual
             }
         }
+        // The embedded data names the same frames as the pixels.
+        let printedSheet = sheet.retargeted(decodedFrame)
 
         // 2. The print, by the view the window shows. ImageRenderer works on
         // the main actor, so the window waits for this stage.
@@ -284,7 +295,7 @@ extension AppModel {
         let exchange: SheetExchange? = settings.outputFormat == .png
             && (settings.embedFrameNumbers || settings.embedFilePath)
             ? SheetExchange(
-                file: file, sheet: sheet, includeHidden: settings.showHiddenThumbs,
+                file: file, sheet: printedSheet, includeHidden: settings.showHiddenThumbs,
                 embedFilePath: settings.embedFilePath, embedFrameData: settings.embedFrameNumbers,
                 appVersion: Self.appVersion)
             : nil

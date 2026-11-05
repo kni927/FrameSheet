@@ -607,18 +607,21 @@ final class PlayerController {
     /// The current frame for an edit there, after pausing, and whether it
     /// decodes exactly (decision 25: an inexact frame is not stored). Uses
     /// the still when it is the frame's, else decodes the frame. A frame
-    /// that does not decode at all counts as exact, as the scrub stores it.
-    func exactCurrentFrame() async -> (frame: Int, exact: Bool)? {
+    /// that does not decode at all is not exact either, with the error.
+    func exactCurrentFrame() async -> (frame: Int, exact: Bool, error: String?)? {
         guard isShown, let model, let file else { return nil }
         if playback != .paused { pause() }
         let target = frame
         await waitForDecodes()
-        if let still, still.requested == target { return (target, still.isExact) }
-        if let cached = stills.first(where: { $0.frame == target }) { return (target, cached.image.isExact) }
-        guard let backend = try? await model.backend(for: file),
-              let decoded = try? await backend.frame(target, maxWidth: stillWidth(file))
-        else { return (target, true) }
-        return (target, decoded.isExact)
+        if let still, still.requested == target { return (target, still.isExact, nil) }
+        if let cached = stills.first(where: { $0.frame == target }) { return (target, cached.image.isExact, nil) }
+        do {
+            let backend = try await model.backend(for: file)
+            let decoded = try await backend.frame(target, maxWidth: stillWidth(file))
+            return (target, decoded.isExact, nil)
+        } catch {
+            return (target, false, error.localizedDescription)
+        }
     }
 
     // MARK: - Still and frame strip

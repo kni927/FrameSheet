@@ -1262,8 +1262,9 @@ final class AppModel {
 
     /// Release (or Return, or a click in a sticky scrub) confirms with one
     /// undo step; over the Cancel bar it cancels. A frame that does not
-    /// decode exactly is not stored (the thumb keeps its frame) and the toast
-    /// says so; one the preview has not decoded yet is decoded first.
+    /// decode exactly, or not at all, is not stored (the thumb keeps its
+    /// frame) and the toast says so; one the preview has not decoded yet is
+    /// decoded first.
     func endScrub() {
         guard let session = scrub else { return }
         let exact = scrubExact[session.frame]
@@ -1277,20 +1278,22 @@ final class AppModel {
         case nil:
             Task {
                 guard let file = library.file(session.ref.fileId) else { return }
+                let epoch = imageEpoch
                 do {
                     let backend = try await backend(for: file)
                     let decoded = try await backend.frame(session.frame, maxWidth: Self.thumbWidth)
                     if decoded.isExact {
-                        store(decoded.image, file: file.id, frame: decoded.actualFrame, width: Self.thumbWidth)
-                        inexactImages[ImageKey(file: file.id, frame: decoded.actualFrame, width: Self.thumbWidth)] = nil
+                        if epoch == imageEpoch {
+                            store(decoded.image, file: file.id, frame: decoded.actualFrame, width: Self.thumbWidth)
+                            inexactImages[ImageKey(file: file.id, frame: decoded.actualFrame, width: Self.thumbWidth)] = nil
+                        }
                         applyScrub(session)
                     } else {
                         refuseScrub(session)
                     }
                 } catch {
-                    // Not decodable at all: stored as before; loading the
-                    // thumb reports the failure.
-                    applyScrub(session)
+                    // Not decodable at all: not stored either.
+                    refuseScrub(session, error: error)
                 }
             }
         }
@@ -1301,13 +1304,14 @@ final class AppModel {
         selectedThumbId = id ?? session.thumbId
     }
 
-    /// The confirmed frame did not decode exactly: nothing changes.
-    private func refuseScrub(_ session: ScrubSession) {
+    /// The confirmed frame did not decode exactly (or, with `error`, at
+    /// all): nothing changes.
+    private func refuseScrub(_ session: ScrubSession, error: (any Error)? = nil) {
         let kept = library.sheet(session.ref.sheetId, of: session.ref.fileId)?
             .thumbs.first { $0.id == session.thumbId }?.frameNumber
-        toast = "Frame \(session.frame) could not be decoded exactly"
+        toast = "Frame \(session.frame) could not be decoded\(error == nil ? " exactly" : "")"
             + (kept.map { ", so the thumb keeps frame \($0)" } ?? "")
-            + " (\(exactFrameHint))."
+            + (error.map { ": \($0.localizedDescription)" } ?? " (\(exactFrameHint))") + "."
     }
 
     func cancelScrub() {
@@ -1489,11 +1493,22 @@ final class AppModel {
     }
 
     /// Decodes the frames not yet cached. When the ±0.5 s retry returns
-    /// another frame, the thumb takes that frame number (decision 11).
+    /// another frame, the thumb takes that frame number (decision 11), also
+    /// when the image comes from the cache, so its label and marker name the
+    /// frame shown. Reloads (no `sheetId`) retarget the current sheet.
     private func load(frames: [Int], of file: MovieFile, width: Int, sheetId: UUID?) {
         // Window thumbs of the current movie at the current sheet's size.
         let decodeWidth = width == Self.thumbWidth && file.id == library.currentFileId
             ? currentThumbDecodeWidth ?? width : width
+        let sheetId = sheetId
+            ?? (width == Self.thumbWidth && file.id == library.currentFileId ? library.currentSheetId : nil)
+        if let sheetId {
+            for frame in Set(frames) {
+                if let shown = inexactImages[ImageKey(file: file.id, frame: frame, width: width)], shown != frame {
+                    retarget(file.id, sheet: sheetId, from: frame, to: shown)
+                }
+            }
+        }
         let wanted = Array(Set(frames)).filter {
             guard !loading.contains(Self.loadingKey(file.id, $0, width)) else { return false }
             if width == Self.thumbWidth, awaitsFaceScan(file.id, $0) { return false }
@@ -1608,7 +1623,9 @@ final class AppModel {
     /// Moves thumbs to the frame the retry decoded; a correction, not an
     /// edit, so it records no undo step. The moved thumbs get the marker.
     private func retarget(_ fileId: UUID, sheet sheetId: UUID, from: Int, to: Int) {
-        guard let s = library.sheets[fileId]?.firstIndex(where: { $0.id == sheetId }) else { return }
+        guard let s = library.sheets[fileId]?.firstIndex(where: { $0.id == sheetId }),
+              library.sheets[fileId]![s].thumbs.contains(where: { $0.frameNumber == from })
+        else { return }
         for thumb in library.sheets[fileId]![s].thumbs where thumb.frameNumber == from {
             // A thumb moved twice keeps the frame it first asked for.
             let requested = nearestFrame(of: thumb) ?? from

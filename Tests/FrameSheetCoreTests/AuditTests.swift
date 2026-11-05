@@ -241,3 +241,38 @@ private final class CountingAnalyzer: FaceAnalyzer, @unchecked Sendable {
         #expect(url.lastPathComponent == "film edit 1000.png")
     }
 }
+
+// MARK: - 7. A saved print's embedded data names the frames it shows
+
+@Suite struct PrintEmbeddedFramesTests {
+    @Test func retargetedSheetNamesTheDecodedFrames() {
+        let file = MovieFile(
+            url: URL(filePath: "/movies/a.mov"), duration: 40, frameCount: 1000, fps: 25, width: 64, height: 36,
+            size: 0, fourCC: "test")
+        let sheet = Sheet(name: "Sheet-1", type: .interval, thumbs: [
+            Thumb(frameNumber: 10, index: 0), Thumb(frameNumber: 500, index: 1), Thumb(frameNumber: 990, index: 2),
+        ])
+        // The print showed frame 512 for 500 (the retry's frame).
+        let printed = sheet.retargeted([500: 512])
+        #expect(printed.thumbs.map(\.frameNumber) == [10, 512, 990])
+        #expect(printed.thumbs.map(\.id) == sheet.thumbs.map(\.id))
+        let exchange = SheetExchange(file: file, sheet: printed, includeHidden: false)
+        #expect(exchange.frameNumbers == [10, 512, 990])
+        #expect(sheet.retargeted([:]) == sheet)
+    }
+}
+
+// MARK: - 14. Save All reports prints saved with frames missing
+
+@Suite struct SaveAllIncompleteTests {
+    @Test func incompletePrintsAreReported() async {
+        let items = (0..<3).map { _ in SheetRef(fileId: UUID(), sheetId: UUID()) }
+        let report = await SaveAllQueue.run(items) { item in
+            item == items[1] ? .savedIncomplete("a.mov – Sheet-1: 2 frame(s) could not be decoded") : .saved
+        }
+        #expect(report.saved == 3)
+        #expect(report.failures.isEmpty)
+        #expect(report.incomplete.map(\.item) == [items[1]])
+        #expect(report.summary.hasPrefix("Saved 3 sheets (1 with frames missing) in "))
+    }
+}

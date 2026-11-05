@@ -358,7 +358,10 @@ public enum FaceScanner {
                     // One at a time: each request takes the DecodeGate; the
                     // next frame decodes while the last one is analyzed.
                     let decoded = try await backend.frame(number, maxWidth: size.width)
-                    await collector.enqueue(number, image: decoded.image)
+                    // Only the frame itself: another one (the ±0.5 s retry's)
+                    // would be cached as this frame's faces. The frame stays
+                    // unanalyzed.
+                    if decoded.isExact { await collector.enqueue(number, image: decoded.image) }
                 } catch {
                     if Task.isCancelled { break }
                     failures += 1

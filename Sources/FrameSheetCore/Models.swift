@@ -187,6 +187,21 @@ public struct Sheet: Codable, Sendable, Identifiable, Equatable {
     public var visibleThumbs: [Thumb] { thumbs.filter { !$0.hidden } }
 }
 
+extension Sheet {
+    /// The sheet with each thumb on frame `requested` moved to
+    /// `actual[requested]`: the frames a print shows where the ±0.5 s retry
+    /// decoded another frame (decision 11), so a saved print's embedded data
+    /// names the frames its pixels show.
+    public func retargeted(_ actual: [Int: Int]) -> Sheet {
+        guard !actual.isEmpty else { return self }
+        var copy = self
+        for i in copy.thumbs.indices {
+            if let frame = actual[copy.thumbs[i].frameNumber] { copy.thumbs[i].frameNumber = frame }
+        }
+        return copy
+    }
+}
+
 /// Default values from MoviePrint 0.2.23 (`app/utils/constants.js`).
 public enum Defaults {
     public static let thumbCount = 16
