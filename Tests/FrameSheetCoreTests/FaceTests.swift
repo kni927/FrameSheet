@@ -195,12 +195,24 @@ private extension Library {
     @Test func everyTenthAndHundredthBetweenTheThumbs() {
         let thumbs = [600, 100, 1100, 350]
         let tenth = FaceScanScope.everyTenth.frames(thumbFrames: thumbs, frameCount: 2000)
-        // round(1000 × 0.1) = 100 frames from 100 to 1100.
-        #expect(tenth.count == 100)
-        #expect(tenth.first == 100 && tenth.last == 1100)
-        #expect(zip(tenth, tenth.dropFirst()).allSatisfy { (10...11).contains($1 - $0) })
+        // The multiples of 10 from 100 to 1100.
+        #expect(tenth == Array(stride(from: 100, through: 1100, by: 10)))
         let hundredth = FaceScanScope.everyHundredth.frames(thumbFrames: thumbs, frameCount: 2000)
-        #expect(hundredth == [100, 211, 322, 433, 544, 656, 767, 878, 989, 1100])
+        #expect(hundredth == Array(stride(from: 100, through: 1100, by: 100)))
+        // Not on the grid: from the first multiple after the lowest thumb.
+        #expect(FaceScanScope.everyHundredth.frames(thumbFrames: [37, 420], frameCount: 2000) == [100, 200, 300, 400])
+    }
+
+    /// An interval sheet (thumbs to the last frame) and the shot sheet of
+    /// the same movie (last thumb = the last scene's first frame) share the
+    /// frames of their common range, so a faces sheet from the second reads
+    /// only what the first did not (the owner's scan log, 2026-11-05: 195
+    /// frames, none shared, before).
+    @Test func sheetsShareTheirSampledFrames() {
+        let interval = FaceScanScope.everyHundredth.frames(thumbFrames: [0, 7000, 21312], frameCount: 21313)
+        let shots = FaceScanScope.everyHundredth.frames(thumbFrames: [0, 912, 19530], frameCount: 21313)
+        #expect(Set(shots).isSubset(of: Set(interval)))
+        #expect(shots.count == 196 && interval.count == 214)
     }
 
     @Test func theseThumbs() {

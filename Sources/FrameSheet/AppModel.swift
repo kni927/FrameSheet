@@ -191,6 +191,12 @@ final class AppModel {
     @ObservationIgnored var faceScanFrames: (fileId: UUID, frames: Set<Int>)?
     /// The movie whose transform dialog is open (movie menu, §4).
     var transformDialogFile: UUID?
+    /// File → Clear Movie List… asks first.
+    var confirmingClear = false
+    /// Sheet → Filter Faces… (the toolbar button has its own popover).
+    var faceFilterShown = false
+    /// Sheet → Face Detection…: the thresholds dialog.
+    var faceDetectionShown = false
     /// Each movie's transform as the cached images and stored scans have
     /// it; a change (the dialog, undo, redo) drops them (`AppModel+Transform`).
     @ObservationIgnored var appliedTransforms: [UUID: MovieTransform] = [:]

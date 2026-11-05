@@ -7,7 +7,6 @@ import SwiftUI
 /// footer, owner 2026-11-03).
 struct ContentView: View {
     @Environment(AppModel.self) private var model
-    @State private var confirmingClear = false
 
     var body: some View {
         @Bindable var model = model
@@ -32,10 +31,10 @@ struct ContentView: View {
         // The app name is a toolbar item at the far left instead (owner,
         // 2026-11-03), so the window title is not shown twice.
         .toolbar(removing: .title)
-        .toolbar {
+        .toolbar(id: "main") {
             // The app name, then the movie list toggle, then a gap before
-            // the icon groups (owner, 2026-11-03).
-            ToolbarItem(placement: .navigation) {
+            // the tools (owner, 2026-11-03); not part of customizing.
+            ToolbarItem(id: "title", placement: .navigation) {
                 HStack(spacing: Theme.space2) {
                     Text("FrameSheet")
                         .font(Theme.sans(15, medium: true))
@@ -55,32 +54,7 @@ struct ContentView: View {
                 .padding(.trailing, Theme.space4)
             }
             .sharedBackgroundVisibility(.hidden)
-            ToolbarItem(placement: .navigation) {
-                ToolbarIconGroup {
-                    Button {
-                        model.presentOpenPanel()
-                    } label: {
-                        Label("Add movies", systemImage: "plus")
-                    }
-                    .buttonStyle(ToolbarIconStyle(grouped: true))
-                    .toolbarHelp("Add movies (A)")
-                    Menu {
-                        Button("Import Sheet…") { model.presentImportPanel() }
-                            .help("Import a PNG or JSON saved by FrameSheet or MoviePrint")
-                        Divider()
-                        Button("Clear movie list…", role: .destructive) { confirmingClear = true }
-                            .disabled(model.library.files.isEmpty)
-                            .help("Remove all movies and their sheets")
-                    } label: {
-                        Label("More options", systemImage: "ellipsis.circle")
-                    }
-                    .menuStyle(.button)
-                    .menuIndicator(.hidden)
-                    .buttonStyle(ToolbarIconStyle(grouped: true))
-                    .toolbarHelp("More options")
-                }
-                }
-            .sharedBackgroundVisibility(.hidden)
+            .customizationBehavior(.disabled)
             SheetToolbar(model: model, sheet: model.currentSheet)
         }
         .tint(Theme.accent)
@@ -107,7 +81,18 @@ struct ContentView: View {
                 .preferredColorScheme(.dark)
                 .interactiveDismissDisabled()
         }
-        .alert("Clear the movie list?", isPresented: $confirmingClear) {
+        // Sheet → Filter Faces… and Face Detection…
+        .sheet(isPresented: $model.faceFilterShown) {
+            MenuDialog(title: "Filter Faces") { FaceFilterPanel(model: model) }
+                .environment(model)
+                .preferredColorScheme(.dark)
+        }
+        .sheet(isPresented: $model.faceDetectionShown) {
+            FaceDetectionDialog()
+                .environment(model)
+                .preferredColorScheme(.dark)
+        }
+        .alert("Clear the movie list?", isPresented: $model.confirmingClear) {
             Button("Clear", role: .destructive) { model.clearList() }
                 .help("Remove all movies and their sheets")
             Button("Cancel", role: .cancel) {}

@@ -33,11 +33,14 @@ which you can edit:
   open: move to pick, click to confirm, Esc to cancel. With a thumb selected,
   Return scrubs with the arrow keys.
 - **Drag a thumb** onto another to reorder; ⇧⌥←/→ move the selection.
-- The window toolbar adds interval sheets (2×2 … 6×6), duplicates the sheet,
-  undoes and redoes, zooms (⌘− / ⌘0 / ⌘=, fit height, fit width), shows hidden
-  thumbs and the header, cycles the thumb label, switches grid and timeline
-  view (G), shows mean colors only in the timeline, optimizes the grid, saves
-  the sheet (M) and toggles both sidebars (1, 3).
+- Every command is in the menus (File, Edit, View and Sheet), most with a ⌘
+  shortcut: interval sheets (2×2 … 6×6, ⌃⌘2 … ⌃⌘6), shot-detection (⇧⌘D) and
+  faces sheets, duplicate (⌘D), undo and redo, zoom (⌘− / ⌘0 / ⌘=, fit height
+  ⌃⌘0, fit width ⌥⌘0), hidden thumbs (⇧⌘H), the header (⇧⌘E), the thumb
+  label, grid and timeline view (G, ⌘G), mean colors only in the timeline,
+  optimize the grid, save the sheet (M, ⌘S) and both sidebars (1, 3, ⌘1, ⌘3).
+  The window toolbar holds the common ones; **View → Customize Toolbar…** adds
+  the rest or rearranges them.
 - **Add shot-detection sheet** (toolbar) scans the movie once for shots and
   streams the scenes into a shot sheet in timeline view (progress and Cancel
   in the toast, or Esc; the same button resumes a cancelled scan, and
@@ -50,9 +53,10 @@ which you can edit:
   timeline too.
 - **Hover a scene** in the timeline for EXPAND (a child sheet inside the
   scene), HIDE, ◀ HIDE / HIDE ▶, jump to the cut before or after, and a scrub
-  limited to the scene. The toolbar cuts the selected scene at its thumb and
-  merges it with the previous or next scene. **F** opens the detection chart
-  (difference per frame, threshold and cuts).
+  limited to the scene. **Sheet → Cut Scene** (⌘K) cuts the selected scene at
+  its thumb and **Merge with Previous / Next Scene** (⌘[ / ⌘]) merges it.
+  **F** (⇧⌘C) opens the detection chart (difference per frame, threshold and
+  cuts).
 - **Player view** (2, Space, the toolbar, or a double-click on a thumb or
   scene): the movie with a strip of consecutive frames around the current
   one, the sheet as one row, and a timeline bar. Step with ←/→ (±10),
@@ -71,13 +75,13 @@ which you can edit:
   name templates (`[MN]` `[ME]` `[SN]` `[FN]` `[TC]`), overwrite or " edit N",
   and a folder with each thumb as its own image. **Export JSON** is in a
   sheet's menu, and **Export EDL** (CMX3600) for shot sheets. **Save All
-  Sheets** (the Save button's menu) saves every sheet of every movie in turn,
+  Sheets** (File menu, ⌥⌘S) saves every sheet of every movie in turn,
   with progress and Cancel; a movie without a sheet gets the default one.
-- **Import Sheet…** (the … menu, or the + button, or a drop) reads a PNG or
+- **Import Sheet…** (File menu, ⇧⌘I, or the + button, or a drop) reads a PNG or
   JSON saved by FrameSheet or MoviePrint 0.2.x and adds the movie with that
   sheet. A moved movie shows "Movie is missing" with Locate…; **Replace
-  movie…** relinks a movie and keeps its sheets; **Clear movie list…** asks
-  first and can be undone.
+  movie…** relinks a movie and keeps its sheets; **Clear Movie List…** (File
+  menu) asks first and can be undone.
 - The settings panel (3) sets columns (rearranges live), target rows and
   Replace (recaptures columns × rows thumbs), header, margins, corner radius,
   the timeline (minutes per row, natural flow, scene width ratio, min scene
@@ -90,18 +94,19 @@ which you can edit:
   some files (open-GOP H.264) have frames AVFoundation cannot decode, and
   ffmpeg fetches those; without it such thumbs show the nearest decodable
   frame with a marker.
-- **Add faces sheet** (toolbar; click for every 10th frame, every 100th for
-  files read with ffmpeg; press and hold for every 100th frame or these
-  thumbs) looks for faces with Apple Vision between the sheet's first and
-  last thumb and makes a faces sheet of the frames with faces, largest face
-  first. It reads the frames in the shot scan's pass, so a movie not yet
+- **Add faces sheet** (toolbar or Sheet menu: every 10th frame, ⇧⌘F, every
+  100th frame, or these thumbs) looks for faces with Apple Vision between the
+  sheet's first and last thumb, on the multiples of 10 or 100, so a faces
+  sheet from another sheet of the movie reuses the frames already analyzed,
+  and makes a faces sheet of the frames with faces, largest face first. It reads the frames in the shot scan's pass, so a movie not yet
   scanned for shots gets that scan up to the last frame too; Cancel or Esc
   keeps what was found, and the same scope resumes. **Sort** (reverse, frame
   number; face count, size, confidence on faces sheets) and **Filter** (face
   count, face size) are one undo step each; the toolbar shows or hides the
   face rectangles (in the window and the player; in saved sheets with
   Output → Include face rectangles). The confidence and size thresholds are
-  in the settings panel; Apply rescans the current faces sheet with them.
+  in **Sheet → Face Detection…** (⌥⌘D); Apply rescans the current faces sheet
+  with them.
   A movie's stored shot and face scans can be deleted with **Clear Stored
   Scans** in its menu. Each scan writes timings to
   `~/Library/Logs/FrameSheet/scan.log`.
