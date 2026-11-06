@@ -413,8 +413,14 @@ sessions (tested 2026-11-04; `docs/CLOUD_ENVIRONMENTS.md` in
   `create_trigger` gets no connectors, credentials, or session tools
   (2026-10-29). Only work that needs session tools (Central HQ's morning
   check) stays bound to an HQ.
-- **Research:** an HQ or TF researches itself first: WebSearch, the Exa
-  connector (`web_search_exa`, `web_fetch_exa`), WebFetch. It starts a
+- **Research:** an HQ or TF researches itself first: search with
+  WebSearch, and when results are missing or weak, with Parallel
+  `web_search` or Exa; read or quote a page with Parallel `web_fetch`
+  (WebFetch returns a summary that can drop details), falling back to Exa
+  `web_fetch_exa`; use Exa for semantic, people or company search,
+  Parallel's verticals for ClinicalTrials.gov, preprints and ChEMBL, and
+  the PubMed connector for literature (Exa `agent_run` is paid: only when
+  the owner asks; owner, 2026-11-06). It starts a
   gateway session (`start-session`) only when these cannot reach the page,
   when the work would read many pages, or when the owner asks; without
   asking, with a time limit (an hour unless less will do) and a request
