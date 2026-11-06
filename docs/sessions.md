@@ -53,6 +53,16 @@ procedures are in skills (Skills, below); the reasons are in
   lineage (Cloud sessions). Each is the one file
   `quarterdeck.<session ID>` / `launcher.<session ID>` in Google Drive
   `AI/Status/Sessions/`. Procedure: `launcher`.
+- **Logbook** (cloud, `kni927/dotfiles`): `☁️ Logbook`, the owner's one
+  place to read Routine reports (2026-11-07). A fresh Routine session has no
+  `send_message`, so each Routine saves a short summary with a `Priority:`
+  line in Google Drive `AI/Status/Report/logbook/` and sends a
+  PushNotification itself for `high` (dotfiles `docs/routines/logbook.md`);
+  a Routine bound to Logbook has it read new summaries and list them in its
+  chat. Sessions with `send_message` send `[report]` to it directly. When the
+  owner asks it to act on a report, it hands the work to the HQ concerned
+  and does not implement. It is the one file `logbook.<session ID>` in
+  Google Drive `AI/Status/Sessions/`; it hands over like a cloud HQ.
 - **Gateway session** (cloud, `Full`): research and Web fetching, also for
   HQs (`kni927/gateway` `AGENTS.md`). Disposable: never starts sessions or
   Routines, never pushes.
