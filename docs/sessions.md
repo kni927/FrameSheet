@@ -157,7 +157,10 @@ Send each message only to the sessions that need it.
   Base the figure on the session's measured pace (the `work-timer` log),
   not on a person's: a few files with a test and docs take one to two
   minutes, research a few; `Took:` comes from `work-timer`, not shell
-  timestamps (owner, 2026-11-04).
+  timestamps (owner, 2026-11-04). Note the time when writing `Estimate:`
+  and pass it as `--since`; `--report` includes the turn still open, and the
+  minute spent writing the final reply is within its error (owner,
+  2026-11-06).
 - **How to send:** from a cloud session, `send_message` (claude-code-remote)
   to the session ID, local ones too, replying to `from-session`. From a
   local session, `SendMessage` to the name in `ListAgents` (its "one-way"
