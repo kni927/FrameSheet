@@ -23,12 +23,13 @@ reproduces MoviePrint v0.2.23 for Apple Silicon: decisions 14–22 in
   notarized zip on a GitHub Release (TF #02). The Codex pre-release audit's
   findings are fixed on `main` (TF #03, 2026-11-05: 15 confirmed and fixed,
   finding 12 refuted; `docs/tasks/2026-11-05-02-audit-fixes.md`), so the
-  release waits: the owner first wants more UI adjustments (done in a TF's
-  chat) and a second audit (owner, 2026-11-05; manual check of items 1, 5
-  and 10 OK, 9, 13 and 14 skipped). First UI round done (TF #03: menus with
-  ⌘ shortcuts, customizable toolbar, Face Detection… dialog, faces scopes on
-  a fixed grid; `docs/tasks/2026-11-05-03-toolbar-menus.md`); its owner
-  decisions are for the HQ to record in the spec and `docs/DECISIONS.md`.
+  release waits for the second Codex audit's fixes (Drive
+  `codex-audit-20261105-02.md`; 💻 TF #03: A must-fix, B small fixes, C a
+  source-generation mechanism, D recorded in KNOWN_ISSUES), then a
+  changes-only third audit, and the release unless it finds a blocker
+  (owner, 2026-11-06). Manual checks of the first fixes: 1, 5, 10 OK; 9, 13,
+  14 skipped. UI round 1 done (`docs/tasks/2026-11-05-03-toolbar-menus.md`;
+  decision 27).
 - Face follow-ups (owner, 2026-11-04): a "per shot" scope (the middle frame of
   each scene); more Vision workers on chips with two Neural Engines (measure
   first).
