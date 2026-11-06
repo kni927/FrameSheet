@@ -27,9 +27,10 @@ reproduces MoviePrint v0.2.23 for Apple Silicon: decisions 14–22 in
   fixed, D in KNOWN_ISSUES 7–11; `docs/tasks/2026-11-06-01-audit2-fixes.md`;
   release dry run passed), and the changes-only third audit (Drive
   `codex-audit-20261106-03.md`) found one blocker (the private-path check
-  fails open) plus a playback regression after Replace; 💻 TF #03 fixes
-  both, records the other ten in KNOWN_ISSUES, and a release dry run closes
-  it (no fourth audit; owner, 2026-11-06). Then TF #02 releases. Manual checks of the first fixes: 1, 5, 10 OK; 9, 13,
+  fails open) plus a playback regression after Replace; both are fixed
+  (TF #03, `docs/tasks/2026-11-06-03-audit3-fixes.md`), the other ten are in
+  KNOWN_ISSUES 12–19, and the release dry run passed at d37cdb4 (no fourth
+  audit; owner, 2026-11-06). Then TF #02 releases. Manual checks of the first fixes: 1, 5, 10 OK; 9, 13,
   14 skipped. UI round 1 done (`docs/tasks/2026-11-05-03-toolbar-menus.md`;
   decision 27).
 - Face follow-ups (owner, 2026-11-04): a "per shot" scope (the middle frame of
@@ -60,7 +61,8 @@ reproduces MoviePrint v0.2.23 for Apple Silicon: decisions 14–22 in
 
 - Manual check of the second audit's fixes on the owner's Mac: B9 OK (Save
   All, 2026-11-06); Save Sheet while playing OK (aae1e27); B10 and C
-  (Replace → undo with the player open) still to check; B11 needs a file whose frames
+  (Replace → undo with the player open; Play works after each, third
+  audit finding 3) still to check; B11 needs a file whose frames
   decode only as neighbors (skip without one). Steps:
   `docs/tasks/2026-11-06-01-audit2-fixes.md`.
 - Notary profile: the owner wrote its name to
