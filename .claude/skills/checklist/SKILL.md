@@ -12,9 +12,8 @@ description: Add, read or close owner steps in the owner's Todoist project Check
   hold (`6hv5QRVX8HMhVRX2`). One label naming the repository.
 - **Adding:** the Todoist connector's `add-tasks`: a short `content`, and at
   most two lines of `description`: why, and where the steps are (a skill, a
-  repository file); never the steps themselves. Give a due date only when
-  there is a real one, and a hard date in the title (Todoist deadlines are
-  premium only).
+  repository file); never the steps themselves. No due date: dated work
+  shows in Upcoming instead. A hard date, if any, goes in the title.
 - **Not here:** a reminder months ahead goes to Google Calendar as an
   all-day event (two-line description, pointing to the steps); when it comes
   up, the owner or a session adds the task then.
