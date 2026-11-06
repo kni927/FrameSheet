@@ -1,6 +1,6 @@
 ---
 name: hq-handover
-description: Hand this cloud HQ (Central HQ, Upstream HQ, or a Project HQ) over to a fresh cloud session, as docs/sessions.md "Cloud sessions" (Handover) describes. Use when docs/sessions.md "Context usage" calls for it (the threshold after the first compaction, or a second compaction) or when the owner says "handover".
+description: Hand this cloud HQ (Central HQ, Upstream HQ, or a Project HQ) over to a fresh cloud session, as docs/sessions.md "Cloud sessions" (Handover) describes. Use when docs/sessions.md "Context usage" calls for it (at the first natural break past 76% when the owner has not compacted, or after an automatic compaction) or when the owner says "handover".
 ---
 
 # Hand over a cloud HQ
@@ -39,7 +39,7 @@ An HQ with no work left and no successor needed goes on stand-by
 4. **Start the successor** through the Launcher (`launcher`, Asking the
    Launcher): title `☁️ ` and the plain name (for example `☁️ cooViewer HQ`),
    repository the project's for a Project HQ,
-   `https://github.com/kni927/dotfiles` for Upstream HQ,
+   `https://github.com/kni927/dotfiles` for Upstream HQ and Logbook,
    `https://github.com/kni927/HQ` for Central HQ, and the handover as the
    prompt. The Launcher answers with the successor's ID. Starting it with
    `create_session` here instead would put the successor one level below this
@@ -77,10 +77,12 @@ refused, it says which and why.
    `cloud-setup.sh` allow list by the owner's decision (2026-10-12); a
    subagent asked to add repositories with push access was refused
    (2026-10-30), so this step stays in this session.
-2. Upstream HQ only: in Google Drive `AI/Status/Sessions/`, rename the one
-   `upstream-hq.<session ID>` file (`update_file`, `title`) to carry this
-   session's ID, and check that it is the only such file. claude-app-watch
-   on the Macs sends its notices to the ID in that name.
+2. Upstream HQ and Logbook only: in Google Drive `AI/Status/Sessions/`,
+   rename the one `upstream-hq.<session ID>` (Upstream HQ) or
+   `logbook.<session ID>` (Logbook) file (`update_file`, `title`) to carry
+   this session's ID, and check that it is the only such file.
+   claude-app-watch on the Macs sends its notices to the ID in the
+   `upstream-hq.` name.
 3. **Routines.** With `list_triggers`, find those bound to the predecessor
    (`persistent_session_id`; Central HQ's morning check). Create each again
    bound to this session (same name, schedule, and prompt), then delete the

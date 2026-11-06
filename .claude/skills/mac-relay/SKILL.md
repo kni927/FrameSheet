@@ -1,6 +1,6 @@
 ---
 name: mac-relay
-description: Send a later message from a cloud session to a local session on one of the owner's Macs through the Google Drive inbox that handoff-relay on that Mac delivers, as docs/sessions.md "Messages" (Mac relay) describes. Use when a cloud HQ or TF must reach a Mac's base session, the Gate, or a local TF after it has started, since cloud-to-local send_message is refused.
+description: Send a later message from a cloud session to a local session on one of the owner's Macs through the Google Drive inbox that handoff-relay on that Mac delivers, as docs/sessions.md "Messages" (Cloud to Mac) describes. Use when a cloud HQ or TF must reach a Mac's base session, the Gate, or a local TF after it has started, since cloud-to-local send_message is refused.
 ---
 
 # Message a Mac session through the relay

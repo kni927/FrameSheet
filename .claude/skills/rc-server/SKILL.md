@@ -7,9 +7,9 @@ description: Start local TFs from a cloud HQ through Remote Control server mode 
 
 `docs/sessions.md` (Local sessions on the Mac) is the rule; this is the
 procedure. The owner starts the server only when this is wanted. The Mac
-mini also runs an always-on server in `~/Projects/Local/MacMiniHQ`
-(kni927/dotfiles `docs/AUTOMATIONS.md`, "Remote Control server"); it is
-not for TFs.
+mini also runs an always-on server in `~/Projects/Local/MacMiniGate`, the
+Mac mini Gate (kni927/dotfiles `docs/AUTOMATIONS.md`, "Remote Control
+server"); it is not for TFs.
 
 ## Starting TFs
 
