@@ -60,9 +60,9 @@ reproduces MoviePrint v0.2.23 for Apple Silicon: decisions 14–22 in
   Sheet while playing (aae1e27) still to check; B11 needs a file whose frames
   decode only as neighbors (skip without one). Steps:
   `docs/tasks/2026-11-06-01-audit2-fixes.md`.
-- The releasing Mac needs the notary profile's name in
-  `~/.config/framesheet/notary-profile` (or `FRAMESHEET_NOTARY_PROFILE`);
-  `scripts/release.sh` no longer has a default.
+- Notary profile: the owner wrote its name to
+  `~/.config/framesheet/notary-profile` on the releasing Mac (2026-11-06);
+  `scripts/release.sh` has no default.
 
 ## Notes
 
