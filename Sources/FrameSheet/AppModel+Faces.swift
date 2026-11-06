@@ -286,7 +286,9 @@ extension AppModel {
             } else if library.sheet(target.sheetId, of: target.fileId) == nil {
                 showNotice("The faces sheet was removed during the scan.")
             } else {
-                showNotice("No faces found in \(job.fileName) with these thresholds. The sheet is unchanged.")
+                showNotice(FaceScanNotice.noFaces(
+                    fileName: job.fileName, requested: frames, data: data,
+                    detail: " with these thresholds. The sheet is unchanged."))
             }
             return
         }
@@ -300,7 +302,9 @@ extension AppModel {
         if added {
             selectedThumbId = nil
         } else {
-            showNotice("No faces found in \(job?.fileName ?? "the movie") (\(job?.scope.label.lowercased() ?? "")).")
+            showNotice(FaceScanNotice.noFaces(
+                fileName: job?.fileName ?? "the movie", requested: frames, data: data,
+                detail: job.map { ", \($0.scope.label.lowercased())." } ?? "."))
         }
     }
 

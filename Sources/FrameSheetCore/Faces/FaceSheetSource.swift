@@ -21,6 +21,9 @@ public struct FaceSheetSource: Sendable, Equatable {
     /// The movie's transform when the faces were found (§3); nil on sheets
     /// made before transforms existed, which had none.
     public var transform: MovieTransform?
+    /// Replace movie put another file under the entry since the scan: the
+    /// faces are of the old movie until Apply rescans.
+    public var movieReplaced = false
 
     /// The source of a scan of `scope` over `thumbFrames` (the shown thumbs
     /// of the sheet Add faces sheet was used on).
@@ -38,17 +41,19 @@ public struct FaceSheetSource: Sendable, Equatable {
         scope.frames(thumbFrames: thumbFrames ?? [lowFrame, highFrame], frameCount: frameCount)
     }
 
-    /// The same frames with other thresholds.
+    /// The same frames with other thresholds, for a rescan (of the movie
+    /// the entry has now).
     public func with(_ thresholds: FaceThresholds) -> FaceSheetSource {
         var source = self
         source.thresholds = thresholds
+        source.movieReplaced = false
         return source
     }
 }
 
 extension FaceSheetSource: Codable {
     private enum CodingKeys: String, CodingKey {
-        case scope, lowFrame, highFrame, thumbFrames, thresholds, transform
+        case scope, lowFrame, highFrame, thumbFrames, thresholds, transform, movieReplaced
     }
 
     public init(from decoder: any Decoder) throws {
@@ -60,6 +65,7 @@ extension FaceSheetSource: Codable {
         highFrame = (try? c.decodeIfPresent(Int.self, forKey: .highFrame)) ?? frames?.max() ?? lowFrame
         thresholds = (try? c.decodeIfPresent(FaceThresholds.self, forKey: .thresholds)) ?? nil
         transform = (try? c.decodeIfPresent(MovieTransform.self, forKey: .transform)) ?? nil
+        movieReplaced = (try? c.decodeIfPresent(Bool.self, forKey: .movieReplaced)) ?? false
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -70,6 +76,7 @@ extension FaceSheetSource: Codable {
         try c.encodeIfPresent(thumbFrames, forKey: .thumbFrames)
         try c.encodeIfPresent(thresholds, forKey: .thresholds)
         try c.encodeIfPresent(transform, forKey: .transform)
+        if movieReplaced { try c.encode(true, forKey: .movieReplaced) }
     }
 }
 
@@ -131,11 +138,12 @@ extension Library {
     }
 
     /// A faces sheet whose face boxes were found with another rotation or
-    /// crop than the movie has now (decision 26): its boxes are off until
-    /// Apply rescans it.
+    /// crop than the movie has now (decision 26), or in the movie Replace
+    /// movie replaced: its boxes are off until Apply rescans it.
     public func faceSheetTransformChanged(_ ref: SheetRef) -> Bool {
         guard let file = file(ref.fileId), let sheet = sheet(ref.sheetId, of: ref.fileId), sheet.type == .faces
         else { return false }
+        if sheet.faceSource?.movieReplaced == true { return true }
         return !(sheet.faceSource?.transform ?? MovieTransform()).sameImage(as: file.transform)
     }
 

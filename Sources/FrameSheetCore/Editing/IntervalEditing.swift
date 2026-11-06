@@ -297,12 +297,20 @@ extension Library {
     }
 
     /// Locate: points a missing movie at another file.
-    public mutating func relink(_ fileId: UUID, to url: URL, bookmark: Data?) {
+    /// With `replacing` (Replace movie, another movie), its faces sheets'
+    /// faces count as of the old movie until Apply rescans them.
+    public mutating func relink(_ fileId: UUID, to url: URL, bookmark: Data?, replacing: Bool = false) {
         guard let i = files.firstIndex(where: { $0.id == fileId }) else { return }
         files[i].url = url
         files[i].bookmark = bookmark
         files[i].name = url.lastPathComponent
         files[i].folder = url.deletingLastPathComponent().path
+        guard replacing, let list = sheets[fileId] else { return }
+        sheets[fileId] = list.map { sheet in
+            var sheet = sheet
+            if sheet.type == .faces, sheet.faceSource != nil { sheet.faceSource?.movieReplaced = true }
+            return sheet
+        }
     }
 
     /// Fills in what the probe of a movie found, after an import, Locate or
@@ -323,9 +331,24 @@ extension Library {
         files[i].inFrame = 0
         files[i].outFrame = max(0, info.frameCount - 1)
         guard info.frameCount > 0, let list = sheets[fileId] else { return }
-        let last = info.frameCount - 1
+        let count = info.frameCount
+        let last = count - 1
         sheets[fileId] = list.map { sheet in
             var sheet = sheet
+            // Scenes past the new end go, with their thumbs; the others end
+            // at the last frame at most (a shorter replacement movie).
+            if !sheet.scenes.isEmpty {
+                let gone = Set(sheet.scenes.filter { $0.start >= count }.map(\.id))
+                sheet.scenes.removeAll { gone.contains($0.id) }
+                for s in sheet.scenes.indices {
+                    sheet.scenes[s].start = max(0, sheet.scenes[s].start)
+                    sheet.scenes[s].length = max(1, min(sheet.scenes[s].length, count - sheet.scenes[s].start))
+                }
+                if !gone.isEmpty {
+                    sheet.thumbs.removeAll { gone.contains($0.id) }
+                    sheet.reindex()
+                }
+            }
             for t in sheet.thumbs.indices {
                 sheet.thumbs[t].frameNumber = min(max(sheet.thumbs[t].frameNumber, 0), last)
             }

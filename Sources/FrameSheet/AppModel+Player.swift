@@ -132,9 +132,16 @@ extension AppModel {
         guard player.isShown else { return }
         if player.isPlaying { player.pause() }
         let frame = player.frame
+        // The movie and sheet S was pressed on, at its source then.
+        guard let ref = currentRef else { return }
+        let generation = sourceGeneration(ref.fileId)
         Task {
             await player.waitForDecodes()
-            saveFrame(frame)
+            guard currentRef == ref, sourceGeneration(ref.fileId) == generation else {
+                toast = "The movie or sheet changed before frame \(frame) was saved."
+                return
+            }
+            saveFrame(frame, generation: generation)
         }
     }
 }

@@ -135,7 +135,8 @@ final class RawVideoPipe: @unchecked Sendable {
                     kill(process.processIdentifier, SIGKILL)
                     exited.wait()
                 }
-                errorsDone.wait()
+                // Bounded: a child of ffmpeg could keep stderr open.
+                _ = errorsDone.wait(timeout: .now() + Self.killGrace)
                 let text = lock.withLock { String(decoding: errorData, as: UTF8.self) }
                 continuation.resume(returning: (process.terminationStatus, text))
             }

@@ -458,9 +458,12 @@ private struct FrameLabel: View {
         let player = model.player
         let frame = player.frame
         let still = player.still
-        // The previous frame's still, shown until this frame's arrives.
-        let pending = !player.isPlaying && still.map { $0.requested != frame } ?? false
-        let shownFrame = pending ? still?.shown ?? frame : frame
+        // The still that supplies the pixels on screen (paused: the previous
+        // frame's until this frame's arrives; playing: the start frame's
+        // until playback reaches frames it can show) names the label.
+        let covering = player.coveringStill
+        let pending = covering.map { $0.requested != frame } ?? false
+        let shownFrame = pending ? covering?.shown ?? frame : frame
         HStack(spacing: Theme.space2) {
             // Muted while no still is shown yet.
             Text(FrameInfoText.text(.frames, frame: shownFrame, fps: file.fps) ?? "")

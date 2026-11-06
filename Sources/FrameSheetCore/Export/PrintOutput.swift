@@ -241,3 +241,36 @@ public enum ImageEncoding {
         return result
     }
 }
+
+/// The images of a print and the frames its thumbs are printed as (§12,
+/// decision 11), from immutable decode results: for each requested frame
+/// the image decoded and the frame it shows. A thumb whose frame decoded as
+/// another one (the ±0.5 s retry's, or a window thumb that shows the
+/// nearest decodable frame) is printed as that frame with that image; the
+/// images are keyed by thumb, so two thumbs retargeted onto each other's
+/// frames keep their own pixels (the second pre-release audit, 2026-11-06).
+public enum PrintFrames {
+    public struct Decoded<Image> {
+        public var image: Image
+        public var shown: Int
+        public init(image: Image, shown: Int) {
+            self.image = image
+            self.shown = shown
+        }
+    }
+
+    public static func resolve<Image>(
+        _ thumbs: [Thumb], decoded: [Int: Decoded<Image>]
+    ) -> (thumbs: [Thumb], images: [UUID: Image], shown: [Int: Int]) {
+        var printed = thumbs
+        var images: [UUID: Image] = [:]
+        for i in printed.indices {
+            guard let result = decoded[thumbs[i].frameNumber] else { continue }
+            images[printed[i].id] = result.image
+            printed[i].frameNumber = result.shown
+        }
+        // Requested → shown frame where they differ, for the embedded data.
+        let shown = decoded.filter { $0.key != $0.value.shown }.mapValues(\.shown)
+        return (printed, images, shown)
+    }
+}

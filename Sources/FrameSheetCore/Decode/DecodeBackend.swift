@@ -1,5 +1,6 @@
 import CoreGraphics
 import Foundation
+import Synchronization
 
 /// What the probe of a movie found. Width and height are the display size
 /// (rotation applied).
@@ -126,5 +127,27 @@ extension DecodeBackend {
             }
             continuation.onTermination = { _ in task.cancel() }
         }
+    }
+}
+
+/// The value of a task that other callers share, awaited so that cancelling
+/// the caller stops its wait at once (`task.value` would wait for the shared
+/// task, which is not cancelled with one of its callers).
+func cancellableValue<T: Sendable>(of task: Task<T, any Error>) async throws -> T {
+    let pending = Mutex<CheckedContinuation<T, any Error>?>(nil)
+    return try await withTaskCancellationHandler {
+        try await withCheckedThrowingContinuation { continuation in
+            pending.withLock { $0 = continuation }
+            if Task.isCancelled {
+                pending.withLock { $0?.resume(throwing: CancellationError()); $0 = nil }
+                return
+            }
+            Task {
+                let result = await task.result
+                pending.withLock { $0?.resume(with: result); $0 = nil }
+            }
+        }
+    } onCancel: {
+        pending.withLock { $0?.resume(throwing: CancellationError()); $0 = nil }
     }
 }

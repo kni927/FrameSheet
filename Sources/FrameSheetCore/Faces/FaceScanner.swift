@@ -200,6 +200,7 @@ public enum FaceScanner {
                 await run(request, continuation)
                 continuation.finish()
             }
+            ScanProducers.track(request.fileId, task)
             continuation.onTermination = { _ in task.cancel() }
         }
     }
@@ -816,5 +817,21 @@ private final class FrameCopier: @unchecked Sendable {
         }
         try VisionFaceAnalyzer.copy(frame, into: buffer)
         return buffer
+    }
+}
+
+/// What a face scan that found no frame with faces says (§6): how many of
+/// the requested frames were analyzed, so a scan that analyzed none (each
+/// frame decoded only as a neighbor, or failed) does not read as one that
+/// looked and found nothing.
+public enum FaceScanNotice {
+    public static func noFaces(fileName: String, requested: [Int], data: FaceData, detail: String) -> String {
+        let analyzed = requested.reduce(0) { $0 + (data.analyzed.contains($1) ? 1 : 0) }
+        if analyzed == 0 {
+            return "No frame of \(fileName) could be analyzed for faces (\(requested.count) requested)."
+        }
+        let counted = analyzed < requested.count
+            ? "\(analyzed) of \(requested.count) frames analyzed" : "\(analyzed) frames analyzed"
+        return "No faces found in \(fileName) (\(counted))\(detail)"
     }
 }

@@ -74,7 +74,63 @@ history of this file up to tag v2.3.1.
   slows the shared run most is not measured. TF #03 (2026-11-05): 1 of 5
   runs failed at 2.53× with the scan alone at 11.29 s (9.6–9.9 s in the
   passing quiet runs, 1.08–1.10×); `top` is refused inside the sandbox, so
-  the load was not recorded.
+  the load was not recorded. 2026-11-06: once the scan alone took 26.74 s
+  (6.01–9.01 s in the runs before and after) and the shared run passed the
+  tests' 30 s watchdog, which ends the whole test run (`Hang: scan of
+  long.mp4`); the rerun passed at 1.28×.
 * **Workaround**: Close memory-heavy apps (browsers, a remote-screen app) and
   run again. Record the load (`top -l 2 -o cpu -n 8 -stats command,cpu`) as
   the `slowness-check` skill says when it recurs.
+
+### 7. Face scopes at their boundaries
+* **Description**: A sampled scope (every 10th / 100th frame) whose thumbs
+  span no multiple of the step analyzes the lowest thumb instead (every
+  100th over frames 37–42 analyzes 37); with every thumb hidden, a sampled
+  scope's empty range becomes frames 0–0 and can analyze frame 0. The spec
+  (§4, §6) still describes Add faces sheet's click as the default scope and
+  press-and-hold as the menu, while the toolbar opens the menu on a click
+  (owner, 2026-11-05).
+* **Reason**: `FaceScanScope.frames` and `FaceSheetSource` fall back to the
+  lowest thumb or frame 0 (second pre-release audit, 2026-11-06, traced).
+* **Workaround**: None needed in normal use; the HQ decides the intended
+  short-range behavior and updates the spec.
+
+### 8. Large scans and saves work on the main actor
+* **Description**: Reading and parsing scan caches, building the final
+  scene list, rendering the whole print and encoding the library JSON run
+  on the main actor; during `ImageRenderer`'s render Cancel cannot act. No
+  stall was measured.
+* **Reason**: Second pre-release audit (2026-11-06), traced in
+  `AppModel+Faces.swift`, `AppModel+Scan.swift`, `AppModel+Save.swift`,
+  `AppModel.swift` (`saveNow`).
+* **Workaround**: Wait for the stage to end; measure with the
+  `slowness-check` skill before moving work off the main actor.
+
+### 9. Two saves at once can pick the same name with Overwrite off
+* **Description**: Two Save Frame (or Save thumb) commands started together
+  can both choose the same free name before either writes, and the atomic
+  write then replaces the first file; the UUID name after `edit 99999` is
+  not checked either.
+* **Reason**: The free-name check (`FileNaming.outputURL`) and the write
+  are separate steps (second pre-release audit, 2026-11-06, traced).
+* **Workaround**: Wait for one save to finish before starting the next.
+
+### 10. ffmpeg scans count frames after a seek or a timestamp gap
+* **Description**: The ffmpeg resume and automatic IN/OUT paths seek half a
+  frame early and number the buffers from the first one without checking
+  timestamps; on the AVFoundation path a timestamp jump of 1,000 nominal
+  frames or more hands the image to face analysis under the stored index.
+* **Reason**: `ShotScanner.swift` (`runFFmpeg`, the gap handling) and
+  `AutoInOut.swift` (second pre-release audit, 2026-11-06, traced; not in
+  that TASK's scope).
+* **Workaround**: Rescan from the start (movie menu) when a resumed scan's
+  cuts look shifted.
+
+### 11. ffmpeg 5.1 or later is needed
+* **Description**: Frame runs (the frame strip) and ffmpeg playback pass
+  `-fps_mode passthrough` (ffmpeg 5.1, 2022) so each pixel buffer pairs with
+  its `showinfo` timestamp; an older ffmpeg rejects the option and those
+  decodes fail.
+* **Reason**: The second pre-release audit's fix (2026-11-06); no version
+  check in `FFmpegLocator`.
+* **Workaround**: Install a current ffmpeg (`brew install ffmpeg`).

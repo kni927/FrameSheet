@@ -87,6 +87,9 @@ final class PlayerController {
     @ObservationIgnored private var timeObserver: Any?
     @ObservationIgnored private var holdsGate = false
     @ObservationIgnored private var decodeTask: Task<Void, Never>?
+    /// Advanced when the shown movie's source changes (`sourceChanged`): a
+    /// still or strip slice decoded before stores nothing.
+    @ObservationIgnored private var sourceToken = 0
     @ObservationIgnored private var endObserver: (any NSObjectProtocol)?
     /// Counts Play presses, so a start that waited for the gate knows it is
     /// still wanted.
@@ -192,6 +195,20 @@ final class PlayerController {
         stillCacheKey = nil
         stripGeneration += 1
         if isShown, playback == .paused { scheduleDecodes() }
+    }
+
+    /// The movie's frames come from another file or transform (Replace
+    /// movie, Locate, undo or redo of either, a rotation or crop change):
+    /// playback stops and drops its item, and the stills and strip are
+    /// decoded again from the new source.
+    func sourceChanged(_ fileId: UUID) {
+        guard fileId == self.fileId else { return }
+        sourceToken += 1
+        decodeTask?.cancel()
+        decodeTask = nil
+        if playback != .paused || isShown { stopPlayback(dropItem: true) }
+        decoder = nil
+        transformChanged(fileId)
     }
 
     /// Space on a shot sheet: cut/merge mode ↔ change-thumb mode.
@@ -700,13 +717,14 @@ final class PlayerController {
         let needsStill = still?.requested != target
         guard needsStill || !missing.isEmpty else { return }
         let stopping = ffmpegStop
+        let token = sourceToken
         decodeTask = Task {
             try? await Task.sleep(for: Self.decodeDelay)
             // ffmpeg playback has exited before anything decodes.
             await stopping?.value
             guard !Task.isCancelled, let backend = try? await model.backend(for: file) else { return }
             if needsStill, let decoded = try? await backend.frame(target, maxWidth: stillWidth) {
-                guard !Task.isCancelled else { return }
+                guard !Task.isCancelled, token == sourceToken else { return }
                 let image = PlayerFrame(image: decoded.image, requested: target, shown: decoded.actualFrame)
                 still = image
                 stills.removeAll { $0.frame == target }
@@ -715,7 +733,7 @@ final class PlayerController {
             }
             for run in Self.runs(of: missing) {
                 for await result in backend.frameRun(run, maxWidth: stripWidth) {
-                    if Task.isCancelled { return }
+                    if Task.isCancelled || token != sourceToken { return }
                     guard case .success(let decoded) = result.result else { continue }
                     stripFrames[result.frameNumber] = PlayerFrame(
                         image: decoded.image, requested: result.frameNumber, shown: decoded.actualFrame)

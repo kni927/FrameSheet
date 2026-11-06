@@ -1,4 +1,5 @@
 import Foundation
+import Synchronization
 
 /// The stored result of a shot scan (§10): per frame the difference to the
 /// previous frame (Float32) and the frame's mean color, plus the method that
@@ -154,5 +155,38 @@ public struct ScanCacheStore: Sendable {
         var value: T = 0
         for i in 0..<MemoryLayout<T>.size { value |= T(bytes[offset + i]) << (8 * i) }
         return value
+    }
+}
+
+/// The tasks that run shot and face scans, by movie. A cancelled scan's
+/// stream ends at once for its consumer, while its task still stores its
+/// last checkpoint; whoever clears or reuses the movie's stored scans
+/// (Replace movie, undo, a transform change) awaits them first, so no
+/// late write puts the old scan back (the second pre-release audit,
+/// 2026-11-06).
+public enum ScanProducers {
+    private static let running = Mutex<[UUID: [Task<Void, Never>]]>([:])
+
+    static func track(_ fileId: UUID, _ task: Task<Void, Never>) {
+        running.withLock { $0[fileId, default: []].append(task) }
+        Task {
+            await task.value
+            running.withLock { tasks in
+                tasks[fileId]?.removeAll { $0 == task }
+                if tasks[fileId]?.isEmpty == true { tasks[fileId] = nil }
+            }
+        }
+    }
+
+    /// Cancels the movie's scans and returns once they have ended.
+    public static func stop(_ fileId: UUID) async {
+        let tasks = running.withLock { $0[fileId] ?? [] }
+        for task in tasks { task.cancel() }
+        for task in tasks { await task.value }
+    }
+
+    /// A scan of the movie is running (or still storing what it found).
+    public static func isRunning(_ fileId: UUID) -> Bool {
+        running.withLock { !($0[fileId] ?? []).isEmpty }
     }
 }

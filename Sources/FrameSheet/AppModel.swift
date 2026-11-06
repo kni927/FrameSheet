@@ -131,6 +131,12 @@ final class AppModel {
     /// Advanced by `forgetImages`: a decode that started before (of the old
     /// file or transform) stores nothing when it lands.
     @ObservationIgnored private var imageEpoch = 0
+    /// Each movie's source generation: advanced when the entry's frames come
+    /// from another source (Replace movie, Locate, undo or redo of either, a
+    /// rotation or crop change). A backend, decode or command that started
+    /// under another generation installs or stores nothing (the second
+    /// pre-release audit, 2026-11-06).
+    @ObservationIgnored private var sourceGenerations: [UUID: Int] = [:]
     /// Frames that failed to decode; not retried automatically on redraw.
     @ObservationIgnored private var failed: Set<String> = []
     @ObservationIgnored private var lastReload: [String: Date] = [:]
@@ -388,6 +394,9 @@ final class AppModel {
             if let linked = linkedURLs[file.id], linked != file.url {
                 backends[file.id] = nil
                 relinked = true
+                // The stored scans and the player's frames were of the other file.
+                sourceChanged(file.id)
+                dropStoredScans(file.id)
             }
             linkedURLs[file.id] = file.url
             if FileManager.default.fileExists(atPath: file.url.path) {
@@ -412,6 +421,8 @@ final class AppModel {
     }
 
     private func didChange() {
+        // A scrub belongs to the sheet it started on (selection, undo).
+        if let scrub, scrub.ref != currentRef { cancelScrub() }
         applyTransformChanges()
         if let id = selectedThumbId, currentSheet?.thumbs.contains(where: { $0.id == id }) != true {
             selectedThumbId = nil
@@ -703,7 +714,7 @@ final class AppModel {
         panel.canChooseDirectories = false
         panel.directoryURL = file.url.deletingLastPathComponent()
         guard panel.runModal() == .OK, let url = panel.url else { return }
-        relink(fileId, to: url)
+        relink(fileId, to: url, replacing: true)
     }
 
     /// Probes the new file, then relinks the entry and fills its probe data
@@ -711,7 +722,7 @@ final class AppModel {
     /// cached thumbs are dropped and decoded again from the new file. Not
     /// while a scan runs (also one that started during the probe): it would
     /// store the old file's results under the new one.
-    private func relink(_ fileId: UUID, to url: URL) {
+    private func relink(_ fileId: UUID, to url: URL, replacing: Bool = false) {
         guard !IncomingFiles.isSheetFile(url) else {
             toast = "\(url.lastPathComponent) is a sheet file, not a movie: use Import Sheet… to import it."
             return
@@ -733,7 +744,11 @@ final class AppModel {
                 toast = "Stop the scan before replacing or locating a movie."
                 return
             }
+            // A cancelled scan may still store its last checkpoint.
+            await ScanProducers.stop(fileId)
+            guard library.file(fileId) != nil, !isScanning else { return }
             cancelScrub()
+            sourceChanged(fileId)
             backends[fileId] = backend
             linkedURLs[fileId] = url
             missing.remove(fileId)
@@ -744,7 +759,7 @@ final class AppModel {
             scanData[fileId] = nil
             stoppedScans.remove(fileId)
             edit { library in
-                library.relink(fileId, to: url, bookmark: Self.bookmark(for: url))
+                library.relink(fileId, to: url, bookmark: Self.bookmark(for: url), replacing: replacing)
                 library.applyProbe(fileId, info: backend.info)
                 if let i = library.files.firstIndex(where: { $0.id == fileId }) { library.files[i].scanState = .none }
             }
@@ -1285,9 +1300,17 @@ final class AppModel {
             Task {
                 guard let file = library.file(session.ref.fileId) else { return }
                 let epoch = imageEpoch
+                let generation = sourceGeneration(file.id)
                 do {
                     let backend = try await backend(for: file)
                     let decoded = try await backend.frame(session.frame, maxWidth: Self.thumbWidth)
+                    // The movie changed its source, or the sheet went, meanwhile.
+                    guard generation == sourceGeneration(file.id),
+                          library.sheet(session.ref.sheetId, of: session.ref.fileId) != nil
+                    else {
+                        toast = "The movie changed before frame \(session.frame) was checked, so nothing changed."
+                        return
+                    }
                     if decoded.isExact {
                         if epoch == imageEpoch {
                             store(decoded.image, file: file.id, frame: decoded.actualFrame, width: Self.thumbWidth)
@@ -1387,17 +1410,34 @@ final class AppModel {
     /// The movie's backend, opened on first use, with the movie's current
     /// rotation and crop applied (`TransformedBackend`), so every consumer
     /// gets the same image.
+    /// It opens the file the entry names now; one that opened while the
+    /// entry changed its source (Replace, undo) is not installed, and the
+    /// current file is opened instead.
     func backend(for file: MovieFile) async throws -> any DecodeBackend {
-        let base: any DecodeBackend
-        if let open = backends[file.id] {
-            base = open
-        } else {
+        for _ in 0..<3 {
+            let current = library.file(file.id) ?? file
+            let transform = current.transform
+            if let open = backends[file.id] { return TransformedBackend.wrap(open, transform: transform) }
             guard !missing.contains(file.id) else { throw DecodeError("Movie is missing") }
-            base = try await openMovie(file.url)
+            let generation = sourceGeneration(file.id)
+            let base = try await openMovie(current.url)
+            guard generation == sourceGeneration(file.id), library.file(file.id)?.url ?? current.url == current.url
+            else { continue }
+            if let open = backends[file.id] { return TransformedBackend.wrap(open, transform: transform) }
             backends[file.id] = base
-            linkedURLs[file.id] = file.url
+            linkedURLs[file.id] = current.url
+            return TransformedBackend.wrap(base, transform: library.file(file.id)?.transform ?? transform)
         }
-        return TransformedBackend.wrap(base, transform: library.file(file.id)?.transform ?? file.transform)
+        throw DecodeError("The movie changed while it was being opened")
+    }
+
+    func sourceGeneration(_ fileId: UUID) -> Int { sourceGenerations[fileId] ?? 0 }
+
+    /// The movie's frames come from another source now: commands and decodes
+    /// of the old one store nothing, and the player starts over with it.
+    func sourceChanged(_ fileId: UUID) {
+        sourceGenerations[fileId, default: 0] += 1
+        player.sourceChanged(fileId)
     }
 
     func cachedImage(file: UUID, frame: Int, width: Int) -> CGImage? {
@@ -1569,8 +1609,16 @@ final class AppModel {
                     if !frame.isExact {
                         inexactImages[ImageKey(file: file.id, frame: frame.requestedFrame, width: width)] = frame.actualFrame
                     }
-                    if frame.actualFrame != frame.requestedFrame, let sheetId {
-                        retarget(file.id, sheet: sheetId, from: frame.requestedFrame, to: frame.actualFrame)
+                    if frame.actualFrame != frame.requestedFrame {
+                        // The sheet asked for, and the one shown now if it
+                        // asked for the frame meanwhile (it skipped it).
+                        var targets = Set([sheetId].compactMap { $0 })
+                        if file.id == library.currentFileId, let current = library.currentSheetId {
+                            targets.insert(current)
+                        }
+                        for target in targets {
+                            retarget(file.id, sheet: target, from: frame.requestedFrame, to: frame.actualFrame)
+                        }
                     }
                     imageGeneration += 1
                 case .failure:
