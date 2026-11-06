@@ -11,7 +11,7 @@
 # because plugins load before the hook runs.
 # The repositories are already cloned when it runs, but GitHub is not yet
 # reachable. kni927/dotfiles docs/CLOUD_ENVIRONMENTS.md explains each part.
-version=2026-11-06.1
+version=2026-11-06.2
 refresh=0; [ "${1:-}" = --refresh ] && refresh=1
 
 if [ $refresh = 0 ]; then
@@ -267,7 +267,9 @@ always exits 0, so it never changes a decision or blocks a turn.
 
     work-timer --report [--since ISO-TIME] [--session ID | --cwd DIR]
 
-sums the logged turns: elapsed, waited on the owner, and working time.
+sums the logged turns, and the open turn of each matching session up to now
+(so a report made in the turn it describes includes that turn): elapsed,
+waited on the owner, and working time.
 """
 
 import json
@@ -436,6 +438,31 @@ def report(args):
         dialogs += t.get("dialogs", 0)
         background += t.get("background_s", 0)
         peer += t.get("peer_wait_s", 0)
+
+    # Add each matching session's open turn (no Stop yet), so a report made
+    # in the turn it describes counts that turn up to now.
+    now = time.time()
+    try:
+        open_states = sorted(STATE_DIR.glob("*.json"))
+    except OSError:
+        open_states = []
+    for f in open_states:
+        st = load(f)
+        if not st or "start" not in st:
+            continue
+        if session and f.stem != session:
+            continue
+        if cwd and os.path.realpath(st.get("cwd") or "") != cwd:
+            continue
+        if since and datetime.fromtimestamp(st["start"]).astimezone() < since:
+            continue
+        waits = [w for w in st.get("waits", [])]
+        turns += 1
+        elapsed += round(now - st["start"])
+        waited += round(merged_length(waits))
+        dialogs += len(waits)
+        background += round(st.get("background_s", 0))
+        peer += round(st.get("peer_wait_s", 0))
 
     def mins(s):
         return f"{round(s / 60)} min" if s >= 60 else f"{s} s"
