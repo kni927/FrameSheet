@@ -23,11 +23,10 @@ reproduces MoviePrint v0.2.23 for Apple Silicon: decisions 14–22 in
   notarized zip on a GitHub Release (TF #02). The Codex pre-release audit's
   findings are fixed on `main` (TF #03, 2026-11-05: 15 confirmed and fixed,
   finding 12 refuted; `docs/tasks/2026-11-05-02-audit-fixes.md`), so the
-  release waits for the second Codex audit's fixes (Drive
-  `codex-audit-20261105-02.md`; 💻 TF #03: A must-fix, B small fixes, C a
-  source-generation mechanism, D recorded in KNOWN_ISSUES), then a
-  changes-only third audit, and the release unless it finds a blocker
-  (owner, 2026-11-06). Manual checks of the first fixes: 1, 5, 10 OK; 9, 13,
+  second Codex audit's fixes are on `main` too (TF #03, 2026-11-06: A, B, C
+  fixed, D in KNOWN_ISSUES 7–11; `docs/tasks/2026-11-06-01-audit2-fixes.md`;
+  release dry run passed), so a changes-only third audit comes next, and
+  the release unless it finds a blocker (owner, 2026-11-06). Manual checks of the first fixes: 1, 5, 10 OK; 9, 13,
   14 skipped. UI round 1 done (`docs/tasks/2026-11-05-03-toolbar-menus.md`;
   decision 27).
 - Face follow-ups (owner, 2026-11-04): a "per shot" scope (the middle frame of
@@ -56,7 +55,11 @@ reproduces MoviePrint v0.2.23 for Apple Silicon: decisions 14–22 in
 
 ## Waiting on owner
 
-- Further UI adjustments, if any, for TF #03; then the second audit.
+- Manual check of the second audit's fixes (B9, B10, B11, C: Replace → undo
+  with the player open); steps in the task archive.
+- The releasing Mac needs the notary profile's name in
+  `~/.config/framesheet/notary-profile` (or `FRAMESHEET_NOTARY_PROFILE`);
+  `scripts/release.sh` no longer has a default.
 
 ## Notes
 
