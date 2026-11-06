@@ -1,6 +1,6 @@
 ---
 name: start-session
-description: Start a cloud session with create_session the way docs/sessions.md expects - a Project HQ, an everyday session for the owner, or a gateway session - and ask a gateway session to fetch a page for an HQ or TF. Use when the owner asks for a new cloud session, when a project needs an HQ, or when a page cannot be reached with WebSearch, Exa or WebFetch, or research would read many pages.
+description: Start a cloud session with create_session the way docs/sessions.md expects - a Project HQ, an everyday session for the owner, or a gateway session - and ask a gateway session to fetch a page for an HQ or TF. Use when the owner asks for a new cloud session, when a project needs an HQ, or when a page cannot be reached with WebSearch, Parallel, Exa or WebFetch, or research would read many pages.
 ---
 
 # Start a cloud session
@@ -37,8 +37,8 @@ into repository files.
 
 ## Asking a gateway session for a page
 
-1. Research yourself first: WebSearch, the Exa connector (`web_search_exa`,
-   `web_fetch_exa`), WebFetch. Go on only when they cannot reach the page,
+1. Research yourself first, with the tools sessions.md "Research" names
+   (WebSearch, Parallel, Exa, WebFetch). Go on only when they cannot reach the page,
    the work would read many pages, or the owner asks (sessions.md, Research).
 2. Start a gateway session as above, without asking the owner (sessions.md,
    Cloud sessions), with a prompt that opens with the First lines (kind
