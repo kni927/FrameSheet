@@ -65,19 +65,24 @@ public enum FaceScanScope: String, Codable, CaseIterable, Sendable {
         decoder == .ffmpeg ? .everyHundredth : .everyTenth
     }
 
-    /// The frames to analyze, sorted and unique: for the sampled scopes
-    /// round(max(1, range × resolution)) frames spread evenly from the
-    /// lowest to the highest thumb (MoviePrint `scanBetweenInAndOut` with
-    /// `getIntervalArray`); for `thumbs` the thumbs' frames.
+    /// The frames to analyze, sorted and unique: for the sampled scopes the
+    /// multiples of 10 (or 100) from the lowest to the highest thumb, or the
+    /// lowest thumb when there is none; for `thumbs` the thumbs' frames.
+    /// MoviePrint (`scanBetweenInAndOut` with `getIntervalArray`) spreads
+    /// round(range × resolution) frames evenly between the thumbs, so sheets
+    /// with other first and last thumbs (an interval sheet and the shot
+    /// sheet of the same movie) shared no frame and a faces sheet from the
+    /// second read the movie again; on the fixed grid they share every frame
+    /// of their common range (owner, 2026-11-05). The count stays about the
+    /// same, each frame at most half a step from MoviePrint's.
     public func frames(thumbFrames: [Int], frameCount: Int) -> [Int] {
         let frames = thumbFrames.filter { $0 >= 0 && $0 < max(1, frameCount) }
         guard let low = frames.min(), let high = frames.max() else { return [] }
         guard let resolution else { return Array(Set(frames)).sorted() }
-        let amount = Int(IntervalFrames.jsRound(max(1, Double(high - low) * resolution)))
-        // A single frame: `getIntervalArray` would give frame 0.
-        guard amount > 1 else { return [low] }
-        let list = IntervalFrames.frameNumbers(amount: amount, start: low, stop: high, maxValue: frameCount)
-        return Array(Set(list)).sorted()
+        let step = max(1, Int((1 / resolution).rounded()))
+        let first = (low + step - 1) / step * step
+        guard first <= high else { return [low] }
+        return Array(stride(from: first, through: high, by: step))
     }
 }
 
@@ -195,6 +200,7 @@ public enum FaceScanner {
                 await run(request, continuation)
                 continuation.finish()
             }
+            ScanProducers.track(request.fileId, task)
             continuation.onTermination = { _ in task.cancel() }
         }
     }
@@ -358,7 +364,10 @@ public enum FaceScanner {
                     // One at a time: each request takes the DecodeGate; the
                     // next frame decodes while the last one is analyzed.
                     let decoded = try await backend.frame(number, maxWidth: size.width)
-                    await collector.enqueue(number, image: decoded.image)
+                    // Only the frame itself: another one (the ±0.5 s retry's)
+                    // would be cached as this frame's faces. The frame stays
+                    // unanalyzed.
+                    if decoded.isExact { await collector.enqueue(number, image: decoded.image) }
                 } catch {
                     if Task.isCancelled { break }
                     failures += 1
@@ -808,5 +817,21 @@ private final class FrameCopier: @unchecked Sendable {
         }
         try VisionFaceAnalyzer.copy(frame, into: buffer)
         return buffer
+    }
+}
+
+/// What a face scan that found no frame with faces says (§6): how many of
+/// the requested frames were analyzed, so a scan that analyzed none (each
+/// frame decoded only as a neighbor, or failed) does not read as one that
+/// looked and found nothing.
+public enum FaceScanNotice {
+    public static func noFaces(fileName: String, requested: [Int], data: FaceData, detail: String) -> String {
+        let analyzed = requested.reduce(0) { $0 + (data.analyzed.contains($1) ? 1 : 0) }
+        if analyzed == 0 {
+            return "No frame of \(fileName) could be analyzed for faces (\(requested.count) requested)."
+        }
+        let counted = analyzed < requested.count
+            ? "\(analyzed) of \(requested.count) frames analyzed" : "\(analyzed) frames analyzed"
+        return "No faces found in \(fileName) (\(counted))\(detail)"
     }
 }

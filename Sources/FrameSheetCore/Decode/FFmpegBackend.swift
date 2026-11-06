@@ -21,15 +21,23 @@ public final class FFmpegBackend: DecodeBackend {
     /// Frames that can be decoded before a frame shown earlier (ffprobe's
     /// `has_b_frames`).
     private let reorderDepth: Int
+    /// The `-map` of the probed video stream, for every extraction: without
+    /// it ffmpeg picks the stream it rates best (the largest), which in a
+    /// file with two video tracks is not the one the probe, scans and
+    /// playback read (the second pre-release audit, 2026-11-06).
+    public let videoStream: String
 
     static let concurrency = 5
 
-    private init(tools: FFmpegTools, path: String, info: MediaInfo, startTime: Double, reorderDepth: Int) {
+    private init(
+        tools: FFmpegTools, path: String, info: MediaInfo, startTime: Double, reorderDepth: Int, videoStream: String
+    ) {
         self.tools = tools
         self.path = path
         self.info = info
         self.startTime = startTime
         self.reorderDepth = reorderDepth
+        self.videoStream = videoStream
     }
 
     public static func open(_ url: URL, tools: FFmpegTools) async throws -> FFmpegBackend {
@@ -49,7 +57,10 @@ public final class FFmpegBackend: DecodeBackend {
         } catch {
             throw DecodeError("ffprobe output could not be parsed: \(error.localizedDescription)")
         }
-        guard let stream = probe.streams?.first(where: { $0.codec_type == "video" }) else {
+        // The first video stream that is not a cover picture.
+        let videoStreams = probe.streams?.filter { $0.codec_type == "video" } ?? []
+        guard let stream = videoStreams.first(where: { $0.disposition?.attached_pic != 1 }) ?? videoStreams.first
+        else {
             throw DecodeError("The file has no video stream.")
         }
 
@@ -77,7 +88,8 @@ public final class FFmpegBackend: DecodeBackend {
         let start = Double(stream.start_time ?? "") ?? Double(probe.format?.start_time ?? "") ?? 0
         return FFmpegBackend(
             tools: tools, path: path, info: info, startTime: start.isFinite ? start : 0,
-            reorderDepth: max(0, stream.has_b_frames ?? 0))
+            reorderDepth: max(0, stream.has_b_frames ?? 0),
+            videoStream: stream.index.map { "0:\($0)" } ?? "0:v:0")
     }
 
     // MARK: - Probe helpers
@@ -89,6 +101,8 @@ public final class FFmpegBackend: DecodeBackend {
             var start_time: String?
         }
         struct Stream: Decodable {
+            var index: Int?
+            var disposition: Disposition?
             var codec_type: String?
             var codec_name: String?
             var codec_tag_string: String?
@@ -106,6 +120,9 @@ public final class FFmpegBackend: DecodeBackend {
             var rotation: Int? {
                 side_data_list?.compactMap(\.rotation).first ?? tags?["rotate"].flatMap { Int($0) }
             }
+        }
+        struct Disposition: Decodable {
+            var attached_pic: Int?
         }
         struct SideData: Decodable {
             var rotation: Int?
@@ -133,7 +150,8 @@ public final class FFmpegBackend: DecodeBackend {
     static func estimateDuration(path: String, ffprobe: URL) async -> Double? {
         let base = ["-v", "error", "-select_streams", "v:0", "-show_entries", "packet=pts_time", "-of", "csv=p=0"]
         for extra in [["-read_intervals", "9999999"], []] {
-            guard let result = try? await ProcessRunner.run(ffprobe, base + extra + [path]),
+            // Bounded: a fallback open runs inside the DecodeGate.
+            guard let result = try? await ProcessRunner.run(ffprobe, base + extra + [path], timeout: .seconds(60)),
                   result.status == 0 else { continue }
             let maxPTS = result.stdoutText.split(whereSeparator: \.isNewline)
                 .compactMap { Double($0.trimmingCharacters(in: .whitespaces).trimmingCharacters(in: .punctuationCharacters)) }
@@ -220,7 +238,7 @@ public final class FFmpegBackend: DecodeBackend {
             "-copyts",
             "-ss", String(format: "%.6f", seek),
             "-i", path,
-            "-frames:v", "1", "-an", "-sn", "-dn",
+            "-map", videoStream, "-frames:v", "1", "-an", "-sn", "-dn",
             "-vf", "select='gte(t,\(String(format: "%.6f", lowerBound)))',showinfo,scale=\(width):-2",
             "-f", "image2pipe", "-c:v", "png", "-",
         ], timeout: .seconds(60))
@@ -312,9 +330,12 @@ public final class FFmpegBackend: DecodeBackend {
             "-copyts",
             "-ss", String(format: "%.6f", seek),
             "-i", path,
-            "-map", "0:v:0", "-an", "-sn", "-dn",
+            "-map", videoStream, "-an", "-sn", "-dn",
             "-vf", "\(select),showinfo,scale=\(width):\(height)",
             "-frames:v", "\(range.count)",
+            // One buffer per decoded frame, so each pairs with its showinfo
+            // line (rawvideo's default constant rate duplicates frames).
+            "-fps_mode", "passthrough",
             "-pix_fmt", "bgra", "-f", "rawvideo", "-",
         ])
         try pipe.start()
@@ -334,8 +355,9 @@ public final class FFmpegBackend: DecodeBackend {
         let (_, log) = await pipe.finish()
         let times = Self.showinfoTimes(log)
         var frames: [DecodedFrame] = []
-        for (k, data) in buffers.enumerated() {
-            let number = k < times.count ? frameNumber(at: times[k]) : range.lowerBound + k
+        // A buffer without its timestamp is dropped, not named by its place.
+        for (k, data) in buffers.enumerated() where k < times.count {
+            let number = frameNumber(at: times[k])
             guard range.contains(number), let image = Self.image(bgra: data, width: width, height: height) else {
                 continue
             }
@@ -381,8 +403,9 @@ public final class FFmpegBackend: DecodeBackend {
             "-copyts",
             "-ss", String(format: "%.6f", seek),
             "-i", path,
-            "-map", "0:v:0", "-an", "-sn", "-dn",
+            "-map", videoStream, "-an", "-sn", "-dn",
             "-vf", "select='gte(t,\(String(format: "%.6f", lowerBound)))',showinfo,scale=\(width):\(height)",
+            "-fps_mode", "passthrough",
             "-pix_fmt", "bgra", "-f", "rawvideo", "-",
         ]
         let startTime = startTime

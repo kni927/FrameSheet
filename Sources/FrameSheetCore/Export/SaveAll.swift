@@ -23,6 +23,9 @@ public enum SaveAllPlan {
 /// How one queued save ended.
 public enum SaveAllOutcome: Sendable, Equatable {
     case saved
+    /// Saved, but not every frame could be decoded for it (the window's
+    /// thumb or an empty cell in its place), with what is missing.
+    case savedIncomplete(String)
     /// Not saved, with the reason (a missing movie, no thumbs, an error).
     case failed(String)
 }
@@ -31,6 +34,8 @@ public enum SaveAllOutcome: Sendable, Equatable {
 public struct SaveAllReport: Sendable, Equatable {
     public var saved = 0
     public var failures: [(item: SheetRef, reason: String)] = []
+    /// Saved, but with frames missing (counted in `saved` too).
+    public var incomplete: [(item: SheetRef, reason: String)] = []
     /// Items not started because of Cancel.
     public var skipped = 0
     public var cancelled = false
@@ -41,11 +46,14 @@ public struct SaveAllReport: Sendable, Equatable {
     public static func == (a: SaveAllReport, b: SaveAllReport) -> Bool {
         a.saved == b.saved && a.skipped == b.skipped && a.cancelled == b.cancelled
             && a.failures.map(\.item) == b.failures.map(\.item) && a.failures.map(\.reason) == b.failures.map(\.reason)
+            && a.incomplete.map(\.item) == b.incomplete.map(\.item)
+            && a.incomplete.map(\.reason) == b.incomplete.map(\.reason)
     }
 
     /// One line for the notice: what was saved, what failed, how long it took.
     public var summary: String {
         var text = "Saved \(saved) sheet\(saved == 1 ? "" : "s")"
+        if !incomplete.isEmpty { text += " (\(incomplete.count) with frames missing)" }
         if !failures.isEmpty { text += ", \(failures.count) failed" }
         if cancelled { text += ", \(skipped) not saved (canceled)" }
         return text + String(format: " in %.1f s", seconds)
@@ -75,6 +83,9 @@ public enum SaveAllQueue {
             do {
                 switch try await save(item) {
                 case .saved: report.saved += 1
+                case .savedIncomplete(let reason):
+                    report.saved += 1
+                    report.incomplete.append((item, reason))
                 case .failed(let reason): report.failures.append((item, reason))
                 }
             } catch is CancellationError {

@@ -16,41 +16,7 @@ struct FrameSheetApp: App {
                 .onAppear { delegate.attach(model) }
                 .background(WindowReader { delegate.mainWindow = $0 })
         }
-        .commands {
-            CommandGroup(replacing: .newItem) {
-                Button("Add Movies…") { model.presentOpenPanel() }
-            }
-            // Library undo (§3), or the typing while a text field is being
-            // edited (`AppModel.performUndo`); the toolbar has the same.
-            CommandGroup(replacing: .undoRedo) {
-                Button("Undo") { model.performUndo() }
-                    .keyboardShortcut("z", modifiers: .command)
-                    .disabled(!model.canPerformUndo)
-                Button("Redo") { model.performRedo() }
-                    .keyboardShortcut("z", modifiers: [.command, .shift])
-                    .disabled(!model.canPerformRedo)
-            }
-            // View menu; Enter Full Screen (🌐F on macOS 27) comes with the window.
-            CommandGroup(before: .toolbar) {
-                Button("Fit") { model.zoomToFit() }
-                    .keyboardShortcut("0", modifiers: .command)
-                Button("Zoom In") { model.zoom(in: true) }
-                    .keyboardShortcut("=", modifiers: .command)
-                Button("Zoom Out") { model.zoom(in: false) }
-                    .keyboardShortcut("-", modifiers: .command)
-                Divider()
-                Button(model.showMovieList ? "Hide Movie List" : "Show Movie List") { model.showMovieList.toggle() }
-                Button(model.showSettings ? "Hide Settings Panel" : "Show Settings Panel") { model.showSettings.toggle() }
-                Divider()
-                // Key F (the key monitor; a menu shortcut would also fire
-                // while a text field has focus).
-                Button(model.detectionChart == nil ? "Show Detection Chart" : "Hide Detection Chart") {
-                    model.toggleDetectionChart()
-                }
-                .disabled(model.currentFile == nil)
-                Divider()
-            }
-        }
+        .commands { AppCommands(model: model) }
         Settings {
             SettingsWindow()
                 .environment(model)

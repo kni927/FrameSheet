@@ -62,19 +62,21 @@ extension AppModel {
         forgetImages()
         for file in library.files { loadPoster(file) }
         for id in changed {
-            player.transformChanged(id)
+            sourceChanged(id)
             dropStoredScans(id)
         }
     }
 
     /// Clears a movie's stored shot and face scans (as Clear Stored Scans).
     /// A scan of it still running (an undo during a scan) is cancelled, and
-    /// what it stores on the way out is cleared once it has ended.
-    private func dropStoredScans(_ fileId: UUID) {
+    /// what it stores on the way out is cleared once both its consumer and
+    /// its producer (`ScanProducers`) have ended.
+    func dropStoredScans(_ fileId: UUID) {
         let running = scanJob?.fileId == fileId || faceScanJob?.fileId == fileId ? scanTask : nil
         running?.cancel()
         Task {
             await running?.value
+            await ScanProducers.stop(fileId)
             scanStore?.delete(fileId)
             faceStore?.delete(fileId)
             scanData[fileId] = nil

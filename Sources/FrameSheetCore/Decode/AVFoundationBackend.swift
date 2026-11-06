@@ -486,7 +486,9 @@ final class FFmpegFrameFallback: Sendable {
             task = new
             return new
         }
-        return try await task.value
+        // The caller holds the DecodeGate: a cancelled caller stops waiting
+        // for the shared open (which goes on for the next one).
+        return try await cancellableValue(of: task)
     }
 }
 

@@ -11,7 +11,7 @@
 # because plugins load before the hook runs.
 # The repositories are already cloned when it runs, but GitHub is not yet
 # reachable. kni927/dotfiles docs/CLOUD_ENVIRONMENTS.md explains each part.
-version=2026-11-04.1
+version=2026-11-06.4
 refresh=0; [ "${1:-}" = --refresh ] && refresh=1
 
 if [ $refresh = 0 ]; then
@@ -252,14 +252,27 @@ time spent in permission prompts, so the wait is
 (PostToolUse time - PreToolUse time) - duration_ms. Overlapping waits
 (parallel calls, subagents) are merged so no second is counted twice.
 
+A turn started by a background-task notification (a build or test run with
+run_in_background finished) counts the gap since the previous Stop as
+working time (`background_s`): the session was working, not the owner. A
+turn started by another session's message counts its gap as waiting on that
+session (`peer_wait_s`). Only a gap before the owner's own prompt stays
+uncounted. The kind comes from the prompt text only: at UserPromptSubmit
+the transcript's last user entry is still the previous one (an owner prompt
+read as the peer message before it, 2026-11-06).
+
 Each finished turn appends one JSON line to the log, with any `Estimate:`
 or `Took:` line of the turn's last reply, so estimates can be compared with
 the measured time. Prints nothing and
 always exits 0, so it never changes a decision or blocks a turn.
 
-    work-timer --report [--since ISO-TIME] [--session ID | --cwd DIR]
+    work-timer --report [--since ISO-TIME] [--session ID | --cwd DIR | --all]
 
-sums the logged turns: elapsed, waited on the owner, and working time.
+Without --session, --cwd or --all it reports the calling session only.
+
+sums the logged turns, and the open turn of each matching session up to now
+(so a report made in the turn it describes includes that turn): elapsed,
+waited on the owner, and working time.
 """
 
 import json
@@ -304,6 +317,21 @@ def tagged_lines(text):
             if l.strip().startswith(("Estimate:", "Took:"))][:4]
 
 
+def prompt_kind(data):
+    """What started the turn: `background` (this session's own background task
+    or subagent finished), `peer` (another session's message), or `human`.
+    A queued-remote-notifications ping (a scheduled task, a remote message
+    waiting) is the session idling, not working, so it counts as `human`."""
+    text = (data.get("prompt") or "").lstrip()
+    if "queued-remote-notifications" in text[:2000]:
+        return "human"
+    if text.startswith("<task-notification>") or "Subagent hand-back" in text[:600]:
+        return "background"
+    if text.startswith(("<cross-session-message", "Another Claude session sent a message")):
+        return "peer"
+    return "human"
+
+
 def close_turn(state, end, session_id, how, reply=None):
     waits = state.get("waits", [])
     line = {
@@ -316,6 +344,9 @@ def close_turn(state, end, session_id, how, reply=None):
         "dialogs": len(waits),
         "end": how,
     }
+    for key in ("background_s", "peer_wait_s"):
+        if state.get(key):
+            line[key] = round(state[key])
     tags = tagged_lines(reply)
     if tags:
         line["lines"] = tags
@@ -336,10 +367,24 @@ def hook():
     path = STATE_DIR / f"{session_id}.json"
     state = load(path)
 
+    ended = STATE_DIR / f"{session_id}.stop"
     if event == "UserPromptSubmit":
-        if state:  # the last turn never reached Stop (interrupted)
-            close_turn(state, state.get("last", state["start"]), session_id, "interrupted")
+        if state:  # the last turn never reached Stop (interrupted, or a
+            # message arrived while background work kept the turn open)
+            end = state.get("last", state["start"])
+            close_turn(state, end, session_id, "interrupted")
+            ended.write_text(json.dumps({"t": end}))
         state = {"start": now, "last": now, "cwd": data.get("cwd"), "pre": {}, "waits": []}
+        # The gap runs from the end of the previous turn, however it ended,
+        # so no second is counted both in a turn and in the next gap.
+        stopped = load(ended)
+        if stopped and stopped.get("t") and now > stopped["t"]:
+            gap = now - stopped["t"]
+            kind = prompt_kind(data)
+            if kind == "background":
+                state["background_s"] = gap
+            elif kind == "peer":
+                state["peer_wait_s"] = gap
     elif state is None:
         # A turn that did not start with a prompt (a message from another
         # session, a scheduled task): start it at the first event we see.
@@ -349,29 +394,46 @@ def hook():
         state["pre"][data["tool_use_id"]] = now
     elif event in ("PostToolUse", "PostToolUseFailure"):
         started = state["pre"].pop(data.get("tool_use_id"), None)
-        duration = (data.get("duration_ms") or 0) / 1000
-        if started is not None and (now - started) - duration >= MIN_WAIT:
+        # Without duration_ms (some MCP tools, failures) the call's own run
+        # time cannot be told from a dialog, so it is not counted as one.
+        raw = data.get("duration_ms")
+        duration = (raw or 0) / 1000
+        if started is not None and raw is not None and (now - started) - duration >= MIN_WAIT:
             state["waits"].append([started, now - duration])
 
     state["last"] = now
     if event == "Stop":
         close_turn(state, now, session_id, "stop", data.get("last_assistant_message"))
         path.unlink(missing_ok=True)
+        ended.write_text(json.dumps({"t": now}))
     else:
         path.write_text(json.dumps(state))
 
 
 def report(args):
     since = session = cwd = None
+    every = False
     it = iter(args)
     for a in it:
+        if a == "--all":
+            every = True
+            continue
         if a == "--since":
             since = datetime.fromisoformat(next(it)).astimezone()
         elif a == "--session":
             session = next(it)
         elif a == "--cwd":
             cwd = os.path.realpath(next(it))
-    elapsed = waited = dialogs = turns = 0
+    if session is None and cwd is None and not every:
+        # Default to the session calling --report: its open turn's state file
+        # is the newest one (its Bash call has just been recorded). Other
+        # sessions on the same machine, subagents' `claude -p` included, stay out.
+        try:
+            newest = max(STATE_DIR.glob("*.json"), key=lambda f: f.stat().st_mtime)
+            session = newest.stem
+        except (OSError, ValueError):
+            pass
+    elapsed = waited = dialogs = turns = background = peer = 0
     try:
         lines = LOG.read_text(encoding="utf-8").splitlines()
     except OSError:
@@ -391,13 +453,42 @@ def report(args):
         elapsed += t.get("elapsed_s", 0)
         waited += t.get("waited_s", 0)
         dialogs += t.get("dialogs", 0)
+        background += t.get("background_s", 0)
+        peer += t.get("peer_wait_s", 0)
+
+    # Add each matching session's open turn (no Stop yet), so a report made
+    # in the turn it describes counts that turn up to now.
+    now = time.time()
+    try:
+        open_states = sorted(STATE_DIR.glob("*.json"))
+    except OSError:
+        open_states = []
+    for f in open_states:
+        st = load(f)
+        if not st or "start" not in st:
+            continue
+        if session and f.stem != session:
+            continue
+        if cwd and os.path.realpath(st.get("cwd") or "") != cwd:
+            continue
+        if since and datetime.fromtimestamp(st["start"]).astimezone() < since:
+            continue
+        waits = [w for w in st.get("waits", [])]
+        turns += 1
+        elapsed += round(now - st["start"])
+        waited += round(merged_length(waits))
+        dialogs += len(waits)
+        background += round(st.get("background_s", 0))
+        peer += round(st.get("peer_wait_s", 0))
 
     def mins(s):
         return f"{round(s / 60)} min" if s >= 60 else f"{s} s"
 
     print(
         f"turns {turns}, elapsed {mins(elapsed)}, waited on the owner {mins(waited)} "
-        f"({dialogs} dialogs), working {mins(elapsed - waited)}"
+        f"({dialogs} dialogs), background {mins(background)}, "
+        f"working {mins(elapsed - waited + background)}, "
+        f"waited on other sessions {mins(peer)}"
     )
 
 

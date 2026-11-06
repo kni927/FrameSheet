@@ -82,8 +82,9 @@ public enum FileNaming {
     }
 
     /// `<folder>/<baseName>.<ext>`; when not overwriting and that exists,
-    /// the first free `<baseName> edit N.<ext>` for N = 1…999, or the
-    /// `edit 999` name when all are taken (MoviePrint `getFilePathObject`).
+    /// the first free `<baseName> edit N.<ext>` for N = 1 … 99999, then a
+    /// name with a UUID: never one that exists (MoviePrint
+    /// `getFilePathObject` stops at 999 and then overwrites `edit 999`).
     public static func outputURL(
         folder: URL, baseName: String, fileExtension: String, overwrite: Bool,
         exists: (URL) -> Bool
@@ -93,10 +94,10 @@ public enum FileNaming {
         }
         var candidate = url(baseName)
         guard !overwrite, exists(candidate) else { return candidate }
-        for i in 1..<1000 {
+        for i in 1...99_999 {
             candidate = url("\(baseName) edit \(i)")
-            if !exists(candidate) { break }
+            if !exists(candidate) { return candidate }
         }
-        return candidate
+        return url("\(baseName) edit \(UUID().uuidString)")
     }
 }

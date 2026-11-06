@@ -143,7 +143,7 @@ public enum AutoInOut {
             var arguments = ["-hide_banner", "-nostdin", "-nostats", "-loglevel", "error"]
             if first > 0 { arguments += ["-ss", String(format: "%.6f", (Double(first) - 0.5) / fps)] }
             arguments += [
-                "-i", source.url.nfcPath, "-map", "0:v:0", "-an", "-sn", "-dn", "-frames:v", "\(count)",
+                "-i", source.url.nfcPath, "-map", source.videoStream, "-an", "-sn", "-dn", "-frames:v", "\(count)",
                 "-vf", "scale=\(size.width):\(size.height)", "-pix_fmt", "bgra", "-f", "rawvideo", "-",
             ]
             let pipe = RawVideoPipe(executable: tools.ffmpeg, arguments: arguments)

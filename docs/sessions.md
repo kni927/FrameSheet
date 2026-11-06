@@ -25,8 +25,14 @@ procedures are in skills (Skills, below); the reasons are in
 - **Base local session** (one per Mac): `🖥️ Mac mini HQ` in
   `~/Projects/Local/MacMiniHQ`, `💻 MacBook HQ` in `~/Projects/Local/MacBookHQ`.
   Holds the Mac's Local Routines, answers cloud HQs about the Mac, and after
-  an app restart runs `wake-local` once the owner types `/rc`. Does not
-  implement. Mac mini HQ's session ID is the name of the one file
+  an app restart runs `wake-local` once the owner types `/rc`. It
+  implements, above all what needs the Mac (dotfiles and home-server
+  changes, launchd jobs, settings, tests there), moving work that grows large
+  to a TF; app projects always go to a TF. It may change rules and policy as
+  Upstream HQ does, telling Upstream HQ (Messages, Owner decisions from a
+  local chat). Its folder's `CLAUDE.md` and `.claude/settings.json` come
+  from dotfiles; the settings let it write to the dotfiles and home-server
+  clones without a dialog (owner's decision, 2026-11-05). Mac mini HQ's session ID is the name of the one file
   `mac-mini-hq.<session ID>` in Google Drive `AI/Status/Sessions/`; `/rc`
   keeps the ID. A new Mac mini HQ tells Central HQ, which renames the file
   (also when its morning check finds the file pointing at a finished one).
@@ -47,6 +53,18 @@ procedures are in skills (Skills, below); the reasons are in
   lineage (Cloud sessions). Each is the one file
   `quarterdeck.<session ID>` / `launcher.<session ID>` in Google Drive
   `AI/Status/Sessions/`. Procedure: `launcher`.
+- **Logbook** (cloud, `kni927/dotfiles`): `☁️ Logbook`, the owner's one
+  place to read Routine reports (2026-11-07). A fresh Routine session has no
+  `send_message`, so each Routine saves a short summary with a `Priority:`
+  line in Google Drive `AI/Status/Report/logbook/` and sends a
+  PushNotification itself for `high` (dotfiles `docs/routines/logbook.md`);
+  a Routine bound to Logbook has it read new summaries and list them in its
+  chat. Sessions with `send_message` send `[report]` to it directly. When the
+  owner asks in its chat, it makes the fixes a report calls for itself,
+  following the target repository's `AGENTS.md`, and tells the HQ concerned
+  in one line what it pushed; larger or cross-repository work still goes to
+  that HQ (owner, 2026-11-06). It is the one file `logbook.<session ID>` in
+  Google Drive `AI/Status/Sessions/`; it hands over like a cloud HQ.
 - **Gateway session** (cloud, `Full`): research and Web fetching, also for
   HQs (`kni927/gateway` `AGENTS.md`). Disposable: never starts sessions or
   Routines, never pushes.
@@ -70,7 +88,11 @@ procedures are in skills (Skills, below); the reasons are in
   first reply: the mark, then its role name or a few English words naming
   the work. A cloud session finds its own ID with `get_session`.
 - **TF numbers:** per repository from `#01`: the highest `#NN` among its TF
-  titles, finished ones included, plus one. The HQ that offers a TF picks it.
+  titles, finished ones included, plus one. The HQ picks it and passes it in
+  the start prompt (`/tf #NN <what>`), unless there is a special reason; a TF
+  that must count itself counts across both Macs (`list_sessions`, where it
+  has it), since `ListAgents` sees only its own Mac, and tells the HQ the
+  number it took (owner's decision, 2026-11-05, in FrameSheet HQ's chat).
 - Names are unique (local sessions address messages by name); copy full
   titles from `ListAgents` or `list_sessions`. A repository's HQ is
   `<repo> HQ`, except Upstream HQ and Central HQ (`kni927/HQ`) as above;
@@ -111,6 +133,20 @@ Send each message only to the sessions that need it.
   buttons (in the Claude desktop app, `wrap_up`'s `ask`/`actions`: pass the
   recap only); a skipped or unanswered question is not a decision (owner,
   2026-11-03, 2026-11-04).
+- **One asker:** a question or check for the owner is asked by one session
+  only, the one that acts on the answer. A session that asks another to do
+  something the owner must confirm names which of the two asks; the other
+  does not ask too. The asker passes the answer on only when the other
+  session needs it to act (it is waiting on it, or its next step changes);
+  an answer that only closes a check is not passed on (owner, 2026-11-07,
+  after Upstream HQ and Logbook both asked whether one test push arrived).
+- **Short checks:** when a check would settle a `Guess:` or an open
+  question, needs no special permission (no permission dialog, no sandbox
+  bypass, no change outside the working directory, nothing sent outside),
+  and should take under 10 minutes, run it in the same turn and report the
+  result instead of proposing it or asking first; only checks outside that
+  end a reply with `Investigate further? (y/n)` (owner's decision,
+  2026-11-06).
 - **Earlier results:** before a test or an investigation, a session
   searches the records (`docs/` and `docs/archives/` in the repositories,
   `git log --grep`) for an earlier result and cites it; it tests again only
@@ -140,11 +176,16 @@ Send each message only to the sessions that need it.
   Base the figure on the session's measured pace (the `work-timer` log),
   not on a person's: a few files with a test and docs take one to two
   minutes, research a few; `Took:` comes from `work-timer`, not shell
-  timestamps (owner, 2026-11-04).
+  timestamps (owner, 2026-11-04). Note the time when writing `Estimate:`
+  and pass it as `--since`; `--report` includes the turn still open, and the
+  minute spent writing the final reply is within its error (owner,
+  2026-11-06).
 - **How to send:** from a cloud session, `send_message` (claude-code-remote)
   to the session ID, local ones too, replying to `from-session`. From a
   local session, `SendMessage` to the name in `ListAgents` (its "one-way"
-  note is anthropics/claude-code#98897; the message arrives). `ListAgents`
+  note is anthropics/claude-code#98897; the message arrives), the other
+  Mac's local sessions included while they are on Remote Control (Mac mini
+  HQ to MacBook HQ and back arrived, 2026-11-05). `ListAgents`
   shows names, not session IDs, so a local session matches the sender's
   title and does not try to confirm the ID a message gives; only when two
   listed sessions share that title does it ask the owner. If that cannot
@@ -174,16 +215,10 @@ Send each message only to the sessions that need it.
   `reload-all`; repository instruction files catch up by themselves
   when a session gets a new container, or on the owner's "reload-all" (cloud
   and local sessions).
-- **Cloud to Mac is refused:** since about 2026-10-20 the server refuses
-  `send_message` from a cloud session into a local one
-  (`elevated_session_untrusted_device`, anthropics/claude-code#103864); Mac
-  to cloud and cloud to cloud still arrive. Never approve the card that
-  offers to let a cloud session "use your computers and other sessions": it
-  cannot be undone, and the session then asks on every send to the Mac,
-  can no longer exchange messages with other cloud sessions, and needs a
-  fresh sign-in on the Web. Until the refusal is lifted, an HQ puts what a TF
-  needs in its start prompt (`offer-tf`) or the repository; TFs report to
-  their HQ as before.
+- **Cloud to Mac is refused:** a cloud session's `send_message` to a local
+  one is refused (anthropics/claude-code#103864); use the Mac relay below.
+  Never approve the card that offers to let a cloud session "use your
+  computers and other sessions" (`mac-relay` has why).
 - **Mac relay:** a later message to a local session on a Mac goes as a file
   in Google Drive, `AI/Handoff/Inbox/` for the server Mac (the Mac mini) and
   `AI/Handoff/Inbox/Client/` for the client Mac (a MacBook), which
@@ -206,9 +241,18 @@ Send each message only to the sessions that need it.
 - Slash commands do not travel in a message; ask the session to read the
   skill's `SKILL.md`, and leave built-in commands such as `/compact` to the
   owner.
-- **TASKs:** a TF takes TASKs only from its repository's HQ (or the HQ the
-  owner names), following `/tf`; a TASK's explicit instructions win, and the
-  TF says which step changed.
+- **TASKs:** a TF takes TASKs from its repository's HQ (or the HQ the owner
+  names), following `/tf`; a TASK's explicit instructions win, and the TF
+  says which step changed.
+- **TASKs from the TF's chat:** for work the owner defines in the TF's chat,
+  the TF may write its own `TASK.md`, new features included when they do not
+  conflict with existing ones. It tells its HQ in one line what the TASK
+  covers and its estimate, so the HQ can keep two TFs off the same files. Its
+  completion report lists every spec or design decision the owner made in
+  the chat; the HQ keeps the project's spec, `docs/DECISIONS.md` and
+  `docs/STATUS.md`, which the TF edits only as far as its TASK needs.
+  Releases and work spanning several TFs still come from the HQ (owner's
+  decision, 2026-11-05).
 - **Receiving:** an HQ starts its next reply to the owner with this block and
   a summary (the owner does not see the message; give it in full when
   asked). Keep each `---` between blank lines.
@@ -273,18 +317,10 @@ next, what is on hold, what waits on the owner, and short-lived notes.
 - **Owner steps count as done** once given, unless the step is critical,
   urgent, or a next step depends on it, or the owner says it is pending. Only
   those are kept, as tasks in the owner's Todoist project **Checklist**
-  (`6hv5QRGXXcX7vqRR`; section Waiting `6hv5QRWwJPh6FVFR` when a next step
-  depends on it, else On hold `6hv5QRVX8HMhVRX2`; one label naming the
-  repository), added with the Todoist connector (`add-tasks`): a short
-  `content`, and the steps in `description` as a bulleted list, one command
-  per line, starting with "Added by <session>, <date>." Erga kai Hemerai
-  (https://claude.ai/artifact/BfRA69hSfCditT5eUz8fzY) shows it, and the
-  owner completes them there or in Todoist. The artifact's database is not
-  used: its writes raise a dialog. "Waiting on owner" in a STATUS file
-  points to the Checklist. Do not ask the owner to report the rest. Read the
-  Checklist (`find-tasks` with that project) at the start of a turn that
-  follows up an owner step: a task no longer open is done; do not ask about
-  it.
+  (`checklist` skill), which Erga kai Hemerai shows. "Waiting on owner" in a
+  STATUS file points to the Checklist. Do not ask the owner to report the
+  rest; at the start of a turn that follows up an owner step, read the
+  Checklist: a task no longer open is done.
 - Before an item goes to the owner or stays under "Waiting on owner", check
   whether it is already done (`list_sessions`, `git log`, GitHub, the
   Google Drive connector, `list_events`), unless checking costs far more than
@@ -318,7 +354,8 @@ a session), `start-session` (Project HQ, everyday, or gateway session),
 `offer-tf` (a local TF as a one-click card), `rc-server` (TFs through Remote
 Control server mode), `find-session`, `mac-relay` (a message to a Mac
 session through the Google Drive inbox), `reload-all` (bring a
-running session's instructions up to date), `explain-before-shorten` (rewrite a
+running session's instructions up to date), `checklist` (owner steps in
+Todoist), `explain-before-shorten` (rewrite a
 Japanese explanation so it is understood, then shorten it; copied text with no
 license, so not in public repositories). `.claude/cloud-setup.sh`, copied the
 same way, is the `Trusted` environment's setup script
@@ -382,8 +419,14 @@ sessions (tested 2026-11-04; `docs/CLOUD_ENVIRONMENTS.md` in
   `create_trigger` gets no connectors, credentials, or session tools
   (2026-10-29). Only work that needs session tools (Central HQ's morning
   check) stays bound to an HQ.
-- **Research:** an HQ or TF researches itself first: WebSearch, the Exa
-  connector (`web_search_exa`, `web_fetch_exa`), WebFetch. It starts a
+- **Research:** an HQ or TF researches itself first: search with
+  WebSearch, and when results are missing or weak, with Parallel
+  `web_search` or Exa; read or quote a page with Parallel `web_fetch`
+  (WebFetch returns a summary that can drop details), falling back to Exa
+  `web_fetch_exa`; use Exa for semantic, people or company search,
+  Parallel's verticals for ClinicalTrials.gov, preprints and ChEMBL, and
+  the PubMed connector for literature (Exa `agent_run` is paid: only when
+  the owner asks; owner, 2026-11-06). It starts a
   gateway session (`start-session`) only when these cannot reach the page,
   when the work would read many pages, or when the owner asks; without
   asking, with a time limit (an hour unless less will do) and a request
@@ -439,11 +482,15 @@ sessions (tested 2026-11-04; `docs/CLOUD_ENVIRONMENTS.md` in
   apply rewrites the Mac's `~/.claude/settings.json`, `CLAUDE.md`, hooks and
   launchd jobs, so the dialog is where the owner sees such a change (owner's
   decision, 2026-11-05).
-- **Starting a TF:** the owner types `/tf <what>` in a new local session or
-  starts one from an HQ's card (`offer-tf`), with **Start with worktree**
-  only when another TF works in the main clone; a TF handing over starts its
-  successor itself (`start_session`, then `detach_session`), and the
-  successor archives it (dotfiles `/tf`, `local-handover`).
+- **Starting a TF:** a local session with `start_session` starts it with no
+  owner click: a cloud HQ asks that Mac's base local session (Mac relay, or
+  `SendMessage` between Macs), which calls `start_session` with the TF's
+  start prompt in the repository's folder, then `detach_session` (checked
+  2026-11-05: MacBook HQ started FrameSheet TF #03 this way). A TF handing
+  over starts its successor the same way, and the successor archives it
+  (dotfiles `/tf`, `local-handover`). An HQ's card (`offer-tf`) or the owner
+  typing `/tf <what>` is the fallback when no session there has the tool,
+  with **Start with worktree** only when another TF works in the main clone.
 - **Handing over a local session:** a TF or a base session past its
   threshold, after an automatic compaction, or when the owner says so, hands
   over with the global skill `local-handover` (dotfiles): handover file,
@@ -485,7 +532,9 @@ sessions (tested 2026-11-04; `docs/CLOUD_ENVIRONMENTS.md` in
   replaced without asking the owner (owner-approved, 2026-11-04): once it
   is detached and the predecessor is idle with its handover pushed, it turns
   the predecessor's Remote Control off (`set_remote_control` false), then
-  `archive_session` (`local-handover`). Archiving a parent never takes its
+  `archive_session`; an idle session with Remote Control on is refused, and
+  turning off a link the owner set up asks the owner once
+  (`local-handover`). Archiving a parent never takes its
   children with it: a cloud parent is archived without a prompt and its
   cloud child moves to the top level (tested 2026-11-05); a local parent
   asks "Archive this session" or "Archive 2 sessions", and the first keeps

@@ -80,7 +80,7 @@ extension AppModel {
             guard let current = await player.exactCurrentFrame(), currentRef == ref else { return }
             let frame = current.frame
             guard current.exact else {
-                refuseInexactPlayerFrame(frame)
+                refuseInexactPlayerFrame(frame, error: current.error)
                 return
             }
             switch edit({ $0.cutScene(ref, at: frame) }) {
@@ -112,7 +112,7 @@ extension AppModel {
             guard let current = await player.exactCurrentFrame(), currentRef == ref else { return }
             let frame = current.frame
             guard current.exact else {
-                refuseInexactPlayerFrame(frame)
+                refuseInexactPlayerFrame(frame, error: current.error)
                 return
             }
             if let id = edit({ $0.applyPlayerThumbAction(ref, action, at: frame, selected: selected) }) {
@@ -121,8 +121,9 @@ extension AppModel {
         }
     }
 
-    private func refuseInexactPlayerFrame(_ frame: Int) {
-        toast = "Frame \(frame) could not be decoded exactly, so nothing changed (\(exactFrameHint))."
+    private func refuseInexactPlayerFrame(_ frame: Int, error: String?) {
+        toast = error.map { "Frame \(frame) could not be decoded, so nothing changed: \($0)." }
+            ?? "Frame \(frame) could not be decoded exactly, so nothing changed (\(exactFrameHint))."
     }
 
     /// S and Save frame: the player's frame at the movie's own size, named
@@ -131,9 +132,16 @@ extension AppModel {
         guard player.isShown else { return }
         if player.isPlaying { player.pause() }
         let frame = player.frame
+        // The movie and sheet S was pressed on, at its source then.
+        guard let ref = currentRef else { return }
+        let generation = sourceGeneration(ref.fileId)
         Task {
             await player.waitForDecodes()
-            saveFrame(frame)
+            guard currentRef == ref, sourceGeneration(ref.fileId) == generation else {
+                toast = "The movie or sheet changed before frame \(frame) was saved."
+                return
+            }
+            saveFrame(frame, generation: generation)
         }
     }
 }

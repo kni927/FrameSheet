@@ -148,6 +148,7 @@ public enum ShotScanner {
                 await run(request, continuation)
                 continuation.finish()
             }
+            ScanProducers.track(request.fileId, task)
             continuation.onTermination = { _ in task.cancel() }
         }
     }
@@ -286,6 +287,8 @@ struct ScanSource: Sendable {
     var url: URL
     var info: MediaInfo
     var kind: Kind
+    /// The `-map` of the video stream on the ffmpeg path (the backend's).
+    var videoStream = "0:v:0"
 
     var decoder: DecoderKind {
         if case .ffmpeg = kind { return .ffmpeg }
@@ -311,7 +314,8 @@ struct ScanSource: Sendable {
                 throw DecodeError("\(routing.reason), and ffmpeg was not found. Install it, for example with `brew install ffmpeg`, or choose it in the settings.")
             }
             let backend = try await FFmpegBackend.open(url, tools: ffmpeg)
-            return ScanSource(url: url, info: backend.info, kind: .ffmpeg(tools: ffmpeg))
+            return ScanSource(
+                url: url, info: backend.info, kind: .ffmpeg(tools: ffmpeg), videoStream: backend.videoStream)
         }
     }
 
@@ -689,7 +693,7 @@ private final class ScanSession {
             arguments += ["-ss", String(format: "%.6f", (Double(first) - 0.5) / fps)]
         }
         arguments += [
-            "-i", source.url.nfcPath, "-map", "0:v:0", "-an", "-sn", "-dn",
+            "-i", source.url.nfcPath, "-map", source.videoStream, "-an", "-sn", "-dn",
             "-vf", "scale=\(width):\(height)", "-pix_fmt", "bgra", "-f", "rawvideo", "-",
         ]
         let pipe = RawVideoPipe(executable: tools.ffmpeg, arguments: arguments)

@@ -31,10 +31,17 @@ rm -rf "$BUILD_DIR"
 mkdir -p "$APP_DIR/Contents/MacOS" "$APP_DIR/Contents/Resources"
 
 echo "=== Step 2: Compiling the Swift package ==="
-SWIFT_ARGS=(-c release --arch arm64 --package-path "$REPO_DIR" --scratch-path "$SCRATCH_DIR")
+# The source paths are written as relative ones into file names (#file) and
+# debug info, and the debug map (object file paths in the build folder) and
+# local symbols are stripped before signing, so the app names no folder of
+# the build machine (scripts/check-private-paths.sh checks it). Mapping the
+# build folder too would also rewrite the paths of its module cache.
+SWIFT_ARGS=(-c release --arch arm64 --package-path "$REPO_DIR" --scratch-path "$SCRATCH_DIR"
+    -Xswiftc -file-prefix-map -Xswiftc "$REPO_DIR=$APP_NAME")
 swift build "${SWIFT_ARGS[@]}" --product "$APP_NAME"
 BIN_DIR="$(swift build "${SWIFT_ARGS[@]}" --show-bin-path)"
 cp "$BIN_DIR/$APP_NAME" "$APP_DIR/Contents/MacOS/$APP_NAME"
+strip -S -x "$APP_DIR/Contents/MacOS/$APP_NAME"
 
 echo "=== Step 3: Creating app icon from assets/AppIcon.png ==="
 ICON_PNG="$REPO_DIR/assets/AppIcon.png"

@@ -358,10 +358,7 @@ private struct ThumbView: View {
         .draggable(thumb.id.uuidString) {
             // The thumb as the drag image; the cell itself is transparent.
             if let image = model.image(file: file.id, frame: thumb.frameNumber, width: AppModel.thumbWidth) {
-                Image(decorative: image, scale: 1)
-                    .resizable()
-                    .aspectRatio(contentMode: .fill)
-                    .frame(width: size.width, height: size.height)
+                DisplayAspectImage(image: image, aspectInv: file.displayAspectRatioInv, size: size)
                     .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
             }
         }

@@ -245,7 +245,8 @@ extension Library {
     }
 
     /// A copy with new ids and the next `Sheet-N` name, placed after
-    /// the original.
+    /// the original. A shot sheet's scenes are copied with their thumbs'
+    /// new ids (a scene's id is its thumb's).
     @discardableResult
     public mutating func duplicateSheet(_ ref: SheetRef) -> SheetRef? {
         guard let i = sheetIndex(ref), let f = files.firstIndex(where: { $0.id == ref.fileId }) else { return nil }
@@ -253,8 +254,17 @@ extension Library {
         copy.id = UUID()
         copy.name = SheetNaming.newSheetName(sheetCount: files[f].sheetCounter)
         files[f].sheetCounter += 1
-        copy.thumbs = copy.thumbs.map { Thumb(frameNumber: $0.frameNumber, index: $0.index, hidden: $0.hidden, faces: $0.faces) }
-        copy.scenes = []
+        var newIds: [UUID: UUID] = [:]
+        copy.thumbs = copy.thumbs.map { thumb in
+            let new = Thumb(frameNumber: thumb.frameNumber, index: thumb.index, hidden: thumb.hidden, faces: thumb.faces)
+            newIds[thumb.id] = new.id
+            return new
+        }
+        copy.scenes = copy.scenes.map { scene in
+            var scene = scene
+            scene.id = newIds[scene.id] ?? UUID()
+            return scene
+        }
         sheets[ref.fileId]!.insert(copy, at: i + 1)
         return SheetRef(fileId: ref.fileId, sheetId: copy.id)
     }
@@ -287,12 +297,20 @@ extension Library {
     }
 
     /// Locate: points a missing movie at another file.
-    public mutating func relink(_ fileId: UUID, to url: URL, bookmark: Data?) {
+    /// With `replacing` (Replace movie, another movie), its faces sheets'
+    /// faces count as of the old movie until Apply rescans them.
+    public mutating func relink(_ fileId: UUID, to url: URL, bookmark: Data?, replacing: Bool = false) {
         guard let i = files.firstIndex(where: { $0.id == fileId }) else { return }
         files[i].url = url
         files[i].bookmark = bookmark
         files[i].name = url.lastPathComponent
         files[i].folder = url.deletingLastPathComponent().path
+        guard replacing, let list = sheets[fileId] else { return }
+        sheets[fileId] = list.map { sheet in
+            var sheet = sheet
+            if sheet.type == .faces, sheet.faceSource != nil { sheet.faceSource?.movieReplaced = true }
+            return sheet
+        }
     }
 
     /// Fills in what the probe of a movie found, after an import, Locate or
@@ -313,9 +331,24 @@ extension Library {
         files[i].inFrame = 0
         files[i].outFrame = max(0, info.frameCount - 1)
         guard info.frameCount > 0, let list = sheets[fileId] else { return }
-        let last = info.frameCount - 1
+        let count = info.frameCount
+        let last = count - 1
         sheets[fileId] = list.map { sheet in
             var sheet = sheet
+            // Scenes past the new end go, with their thumbs; the others end
+            // at the last frame at most (a shorter replacement movie).
+            if !sheet.scenes.isEmpty {
+                let gone = Set(sheet.scenes.filter { $0.start >= count }.map(\.id))
+                sheet.scenes.removeAll { gone.contains($0.id) }
+                for s in sheet.scenes.indices {
+                    sheet.scenes[s].start = max(0, sheet.scenes[s].start)
+                    sheet.scenes[s].length = max(1, min(sheet.scenes[s].length, count - sheet.scenes[s].start))
+                }
+                if !gone.isEmpty {
+                    sheet.thumbs.removeAll { gone.contains($0.id) }
+                    sheet.reindex()
+                }
+            }
             for t in sheet.thumbs.indices {
                 sheet.thumbs[t].frameNumber = min(max(sheet.thumbs[t].frameNumber, 0), last)
             }

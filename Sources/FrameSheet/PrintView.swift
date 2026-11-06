@@ -110,11 +110,7 @@ private struct PrintScene: View {
         ZStack {
             color
             if let image {
-                Image(decorative: image, scale: 1)
-                    .resizable()
-                    .interpolation(.high)
-                    .aspectRatio(contentMode: .fill)
-                    .frame(width: size.width, height: size.height)
+                DisplayAspectImage(image: image, aspectInv: file.displayAspectRatioInv, size: size)
             }
         }
         .frame(width: size.width, height: size.height)
@@ -145,10 +141,7 @@ private struct PrintThumb: View {
     var body: some View {
         ZStack {
             if let image {
-                Image(decorative: image, scale: 1)
-                    .resizable()
-                    .interpolation(.high)
-                    .aspectRatio(contentMode: .fill)
+                DisplayAspectImage(image: image, aspectInv: file.displayAspectRatioInv, size: size)
             } else {
                 Theme.surface
             }
@@ -327,5 +320,24 @@ private struct HeaderTimeline: View {
                     Path(CGRect(x: x, y: 0, width: tickWidth, height: size.height)), with: .color(Theme.text))
             }
         }
+    }
+}
+
+/// A frame stretched to the movie's display aspect ratio (decision 26) and
+/// filling `size`, centered and clipped: a timeline scene's box crops the
+/// stretched frame, never the decoded one.
+struct DisplayAspectImage: View {
+    let image: CGImage
+    let aspectInv: Double
+    let size: CGSize
+
+    var body: some View {
+        let drawn = DisplayAspect.fillSize(box: size, aspectInv: aspectInv)
+        Image(decorative: image, scale: 1)
+            .resizable()
+            .interpolation(.high)
+            .frame(width: drawn.width, height: drawn.height)
+            .frame(width: size.width, height: size.height)
+            .clipped()
     }
 }

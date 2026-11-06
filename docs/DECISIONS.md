@@ -446,3 +446,24 @@ touching each one. Clearing scans on a change is simpler than versioning the
 cache by transform and cannot show scenes or faces from other frames; a
 rescan of a 2 h film takes minutes, and transforms are set rarely, usually
 before scanning.
+
+### 27. Menus for every command; customizable toolbar; faces on a fixed frame grid (2026-11-05)
+
+#### Decision
+The owner decided in FrameSheet TF #03's chat:
+- Every toolbar command is also in the File, Edit, View or new Sheet menu,
+  most with a ⌘ shortcut; the single-letter keys of §8 stay.
+- The toolbar is customizable (one item per control, a short default set);
+  controls that do not apply are disabled, not hidden.
+- Face detection settings move from the right panel to a Sheet → Face
+  Detection… window.
+- Faces sampled scopes take the multiples of 10 or 100 between the first and
+  last thumb, instead of MoviePrint's per-sheet spread.
+
+#### Rationale
+Menus make every command findable and give it a shortcut; a customizable
+toolbar keeps the window uncluttered and fixed the overflow that listed only
+one control. Checked from the owner's scan log: an interval sheet's scope
+(213 frames) and a shot sheet's (195) shared no frame under the per-sheet
+spread, so each new faces sheet rescanned; a fixed grid lets sheets reuse
+analyzed frames.

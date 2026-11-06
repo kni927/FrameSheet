@@ -121,12 +121,22 @@ final class AppModel {
     let cache: ThumbnailCache
     /// The player view (§9).
     let player = PlayerController()
-    private let store: LibraryStore?
+    /// Off after a launch that could not read the library (`LibraryPersistence`).
+    private let store: LibraryPersistence?
     @ObservationIgnored private var backends: [UUID: any DecodeBackend] = [:]
     /// The file each movie's backend and cached images came from; when undo
     /// or redo puts another file under the entry, they are dropped.
     @ObservationIgnored private var linkedURLs: [UUID: URL] = [:]
     @ObservationIgnored private var loading: Set<String> = []
+    /// Advanced by `forgetImages`: a decode that started before (of the old
+    /// file or transform) stores nothing when it lands.
+    @ObservationIgnored private var imageEpoch = 0
+    /// Each movie's source generation: advanced when the entry's frames come
+    /// from another source (Replace movie, Locate, undo or redo of either, a
+    /// rotation or crop change). A backend, decode or command that started
+    /// under another generation installs or stores nothing (the second
+    /// pre-release audit, 2026-11-06).
+    @ObservationIgnored private var sourceGenerations: [UUID: Int] = [:]
     /// Frames that failed to decode; not retried automatically on redraw.
     @ObservationIgnored private var failed: Set<String> = []
     @ObservationIgnored private var lastReload: [String: Date] = [:]
@@ -187,6 +197,12 @@ final class AppModel {
     @ObservationIgnored var faceScanFrames: (fileId: UUID, frames: Set<Int>)?
     /// The movie whose transform dialog is open (movie menu, §4).
     var transformDialogFile: UUID?
+    /// File → Clear Movie List… asks first.
+    var confirmingClear = false
+    /// Sheet → Filter Faces… (the toolbar button has its own popover).
+    var faceFilterShown = false
+    /// Sheet → Face Detection…: the thresholds dialog.
+    var faceDetectionShown = false
     /// Each movie's transform as the cached images and stored scans have
     /// it; a change (the dialog, undo, redo) drops them (`AppModel+Transform`).
     @ObservationIgnored var appliedTransforms: [UUID: MovieTransform] = [:]
@@ -212,14 +228,17 @@ final class AppModel {
     }
 
     init() {
-        let store = (try? LibraryStore.defaultURL()).map(LibraryStore.init)
+        var store = (try? LibraryStore.defaultURL()).map { LibraryPersistence(store: LibraryStore(url: $0)) }
         var loaded = Library()
         var loadError: String?
-        if let store {
-            do {
-                loaded = try store.load()
-            } catch {
-                loadError = "The movie list could not be read: \(error.localizedDescription)"
+        if let result = store?.load() {
+            loaded = result.library
+            if let error = result.error {
+                // Not saved over: the list stays as it is for a later launch
+                // or version to read.
+                loadError = "The movie list could not be read (\(error.localizedDescription)). "
+                    + "Changes are not saved this session, so the file in "
+                    + "~/Library/Application Support/FrameSheet stays as it is."
             }
         }
         var missing: Set<UUID> = []
@@ -375,6 +394,9 @@ final class AppModel {
             if let linked = linkedURLs[file.id], linked != file.url {
                 backends[file.id] = nil
                 relinked = true
+                // The stored scans and the player's frames were of the other file.
+                sourceChanged(file.id)
+                dropStoredScans(file.id)
             }
             linkedURLs[file.id] = file.url
             if FileManager.default.fileExists(atPath: file.url.path) {
@@ -399,6 +421,8 @@ final class AppModel {
     }
 
     private func didChange() {
+        // A scrub belongs to the sheet it started on (selection, undo).
+        if let scrub, scrub.ref != currentRef { cancelScrub() }
         applyTransformChanges()
         if let id = selectedThumbId, currentSheet?.thumbs.contains(where: { $0.id == id }) != true {
             selectedThumbId = nil
@@ -552,6 +576,9 @@ final class AppModel {
 
     /// Empties the cache and what is pinned or marked failed.
     func forgetImages() {
+        imageEpoch += 1
+        // Loads in flight are of the old images: the new ones load anew.
+        loading.removeAll()
         cache.removeAll()
         pinned.removeAll()
         failed.removeAll()
@@ -687,15 +714,21 @@ final class AppModel {
         panel.canChooseDirectories = false
         panel.directoryURL = file.url.deletingLastPathComponent()
         guard panel.runModal() == .OK, let url = panel.url else { return }
-        relink(fileId, to: url)
+        relink(fileId, to: url, replacing: true)
     }
 
     /// Probes the new file, then relinks the entry and fills its probe data
     /// as one undo step (thumb frames kept, clamped to the new length); the
-    /// cached thumbs are dropped and decoded again from the new file.
-    private func relink(_ fileId: UUID, to url: URL) {
+    /// cached thumbs are dropped and decoded again from the new file. Not
+    /// while a scan runs (also one that started during the probe): it would
+    /// store the old file's results under the new one.
+    private func relink(_ fileId: UUID, to url: URL, replacing: Bool = false) {
         guard !IncomingFiles.isSheetFile(url) else {
             toast = "\(url.lastPathComponent) is a sheet file, not a movie: use Import Sheet… to import it."
+            return
+        }
+        guard !isScanning else {
+            toast = "Stop the scan before replacing or locating a movie."
             return
         }
         Task {
@@ -707,7 +740,15 @@ final class AppModel {
                 return
             }
             guard library.file(fileId) != nil else { return }
+            guard !isScanning else {
+                toast = "Stop the scan before replacing or locating a movie."
+                return
+            }
+            // A cancelled scan may still store its last checkpoint.
+            await ScanProducers.stop(fileId)
+            guard library.file(fileId) != nil, !isScanning else { return }
             cancelScrub()
+            sourceChanged(fileId)
             backends[fileId] = backend
             linkedURLs[fileId] = url
             missing.remove(fileId)
@@ -718,7 +759,7 @@ final class AppModel {
             scanData[fileId] = nil
             stoppedScans.remove(fileId)
             edit { library in
-                library.relink(fileId, to: url, bookmark: Self.bookmark(for: url))
+                library.relink(fileId, to: url, bookmark: Self.bookmark(for: url), replacing: replacing)
                 library.applyProbe(fileId, info: backend.info)
                 if let i = library.files.firstIndex(where: { $0.id == fileId }) { library.files[i].scanState = .none }
             }
@@ -1242,8 +1283,9 @@ final class AppModel {
 
     /// Release (or Return, or a click in a sticky scrub) confirms with one
     /// undo step; over the Cancel bar it cancels. A frame that does not
-    /// decode exactly is not stored (the thumb keeps its frame) and the toast
-    /// says so; one the preview has not decoded yet is decoded first.
+    /// decode exactly, or not at all, is not stored (the thumb keeps its
+    /// frame) and the toast says so; one the preview has not decoded yet is
+    /// decoded first.
     func endScrub() {
         guard let session = scrub else { return }
         let exact = scrubExact[session.frame]
@@ -1257,20 +1299,30 @@ final class AppModel {
         case nil:
             Task {
                 guard let file = library.file(session.ref.fileId) else { return }
+                let epoch = imageEpoch
+                let generation = sourceGeneration(file.id)
                 do {
                     let backend = try await backend(for: file)
                     let decoded = try await backend.frame(session.frame, maxWidth: Self.thumbWidth)
+                    // The movie changed its source, or the sheet went, meanwhile.
+                    guard generation == sourceGeneration(file.id),
+                          library.sheet(session.ref.sheetId, of: session.ref.fileId) != nil
+                    else {
+                        toast = "The movie changed before frame \(session.frame) was checked, so nothing changed."
+                        return
+                    }
                     if decoded.isExact {
-                        store(decoded.image, file: file.id, frame: decoded.actualFrame, width: Self.thumbWidth)
-                        inexactImages[ImageKey(file: file.id, frame: decoded.actualFrame, width: Self.thumbWidth)] = nil
+                        if epoch == imageEpoch {
+                            store(decoded.image, file: file.id, frame: decoded.actualFrame, width: Self.thumbWidth)
+                            inexactImages[ImageKey(file: file.id, frame: decoded.actualFrame, width: Self.thumbWidth)] = nil
+                        }
                         applyScrub(session)
                     } else {
                         refuseScrub(session)
                     }
                 } catch {
-                    // Not decodable at all: stored as before; loading the
-                    // thumb reports the failure.
-                    applyScrub(session)
+                    // Not decodable at all: not stored either.
+                    refuseScrub(session, error: error)
                 }
             }
         }
@@ -1281,13 +1333,14 @@ final class AppModel {
         selectedThumbId = id ?? session.thumbId
     }
 
-    /// The confirmed frame did not decode exactly: nothing changes.
-    private func refuseScrub(_ session: ScrubSession) {
+    /// The confirmed frame did not decode exactly (or, with `error`, at
+    /// all): nothing changes.
+    private func refuseScrub(_ session: ScrubSession, error: (any Error)? = nil) {
         let kept = library.sheet(session.ref.sheetId, of: session.ref.fileId)?
             .thumbs.first { $0.id == session.thumbId }?.frameNumber
-        toast = "Frame \(session.frame) could not be decoded exactly"
+        toast = "Frame \(session.frame) could not be decoded\(error == nil ? " exactly" : "")"
             + (kept.map { ", so the thumb keeps frame \($0)" } ?? "")
-            + " (\(exactFrameHint))."
+            + (error.map { ": \($0.localizedDescription)" } ?? " (\(exactFrameHint))") + "."
     }
 
     func cancelScrub() {
@@ -1357,17 +1410,34 @@ final class AppModel {
     /// The movie's backend, opened on first use, with the movie's current
     /// rotation and crop applied (`TransformedBackend`), so every consumer
     /// gets the same image.
+    /// It opens the file the entry names now; one that opened while the
+    /// entry changed its source (Replace, undo) is not installed, and the
+    /// current file is opened instead.
     func backend(for file: MovieFile) async throws -> any DecodeBackend {
-        let base: any DecodeBackend
-        if let open = backends[file.id] {
-            base = open
-        } else {
+        for _ in 0..<3 {
+            let current = library.file(file.id) ?? file
+            let transform = current.transform
+            if let open = backends[file.id] { return TransformedBackend.wrap(open, transform: transform) }
             guard !missing.contains(file.id) else { throw DecodeError("Movie is missing") }
-            base = try await openMovie(file.url)
+            let generation = sourceGeneration(file.id)
+            let base = try await openMovie(current.url)
+            guard generation == sourceGeneration(file.id), library.file(file.id)?.url ?? current.url == current.url
+            else { continue }
+            if let open = backends[file.id] { return TransformedBackend.wrap(open, transform: transform) }
             backends[file.id] = base
-            linkedURLs[file.id] = file.url
+            linkedURLs[file.id] = current.url
+            return TransformedBackend.wrap(base, transform: library.file(file.id)?.transform ?? transform)
         }
-        return TransformedBackend.wrap(base, transform: library.file(file.id)?.transform ?? file.transform)
+        throw DecodeError("The movie changed while it was being opened")
+    }
+
+    func sourceGeneration(_ fileId: UUID) -> Int { sourceGenerations[fileId] ?? 0 }
+
+    /// The movie's frames come from another source now: commands and decodes
+    /// of the old one store nothing, and the player starts over with it.
+    func sourceChanged(_ fileId: UUID) {
+        sourceGenerations[fileId, default: 0] += 1
+        player.sourceChanged(fileId)
     }
 
     func cachedImage(file: UUID, frame: Int, width: Int) -> CGImage? {
@@ -1469,11 +1539,22 @@ final class AppModel {
     }
 
     /// Decodes the frames not yet cached. When the ±0.5 s retry returns
-    /// another frame, the thumb takes that frame number (decision 11).
+    /// another frame, the thumb takes that frame number (decision 11), also
+    /// when the image comes from the cache, so its label and marker name the
+    /// frame shown. Reloads (no `sheetId`) retarget the current sheet.
     private func load(frames: [Int], of file: MovieFile, width: Int, sheetId: UUID?) {
         // Window thumbs of the current movie at the current sheet's size.
         let decodeWidth = width == Self.thumbWidth && file.id == library.currentFileId
             ? currentThumbDecodeWidth ?? width : width
+        let sheetId = sheetId
+            ?? (width == Self.thumbWidth && file.id == library.currentFileId ? library.currentSheetId : nil)
+        if let sheetId {
+            for frame in Set(frames) {
+                if let shown = inexactImages[ImageKey(file: file.id, frame: frame, width: width)], shown != frame {
+                    retarget(file.id, sheet: sheetId, from: frame, to: shown)
+                }
+            }
+        }
         let wanted = Array(Set(frames)).filter {
             guard !loading.contains(Self.loadingKey(file.id, $0, width)) else { return false }
             if width == Self.thumbWidth, awaitsFaceScan(file.id, $0) { return false }
@@ -1482,6 +1563,7 @@ final class AppModel {
         }
         guard !wanted.isEmpty, !missing.contains(file.id) else { return }
         for frame in wanted { loading.insert(Self.loadingKey(file.id, frame, width)) }
+        let epoch = imageEpoch
         let log = scanLog
         let requested = ContinuousClock.now
         // A faces sheet's many thumbs (after a relaunch nothing of them is
@@ -1490,7 +1572,7 @@ final class AppModel {
         let sequential = width == Self.thumbWidth && file.id == library.currentFileId
             && currentSheet?.type == .faces && wanted.count >= Self.sequentialThumbMinimum
         Task {
-            defer { for frame in wanted { loading.remove(Self.loadingKey(file.id, frame, width)) } }
+            defer { if epoch == imageEpoch { for frame in wanted { loading.remove(Self.loadingKey(file.id, frame, width)) } } }
             var failures = 0
             defer {
                 log?.thumbDecode(
@@ -1500,17 +1582,20 @@ final class AppModel {
             do {
                 backend = try await self.backend(for: file)
             } catch {
-                for frame in wanted { loading.remove(Self.loadingKey(file.id, frame, width)) }
+                if epoch == imageEpoch { for frame in wanted { loading.remove(Self.loadingKey(file.id, frame, width)) } }
                 if checkMovieFile(file.id) { toast = "\(file.name): \(error.localizedDescription)" }
                 return
             }
             var remaining = wanted
             if sequential {
-                let delivered = await loadSequentially(remaining, of: file, decodeWidth: decodeWidth)
+                let delivered = await loadSequentially(remaining, of: file, decodeWidth: decodeWidth, epoch: epoch)
                 remaining.removeAll { delivered.contains($0) }
                 if remaining.isEmpty { return }
             }
             for await result in backend.frames(remaining, maxWidth: decodeWidth) {
+                // The images were dropped meanwhile (a new transform or
+                // file): this decode is of the old ones.
+                guard epoch == imageEpoch else { return }
                 switch result.result {
                 case .success(let frame):
                     store(frame.image, file: file.id, frame: frame.actualFrame, width: width, decodedFor: decodeWidth)
@@ -1524,8 +1609,16 @@ final class AppModel {
                     if !frame.isExact {
                         inexactImages[ImageKey(file: file.id, frame: frame.requestedFrame, width: width)] = frame.actualFrame
                     }
-                    if frame.actualFrame != frame.requestedFrame, let sheetId {
-                        retarget(file.id, sheet: sheetId, from: frame.requestedFrame, to: frame.actualFrame)
+                    if frame.actualFrame != frame.requestedFrame {
+                        // The sheet asked for, and the one shown now if it
+                        // asked for the frame meanwhile (it skipped it).
+                        var targets = Set([sheetId].compactMap { $0 })
+                        if file.id == library.currentFileId, let current = library.currentSheetId {
+                            targets.insert(current)
+                        }
+                        for target in targets {
+                            retarget(file.id, sheet: target, from: frame.requestedFrame, to: frame.actualFrame)
+                        }
                     }
                     imageGeneration += 1
                 case .failure:
@@ -1533,7 +1626,7 @@ final class AppModel {
                     failures += 1
                 }
             }
-            guard failures > 0 else { return }
+            guard failures > 0, epoch == imageEpoch else { return }
             // A moved or deleted file shows as missing in the movie list
             // instead; done loading first, so a followed file decodes again.
             for frame in wanted { loading.remove(Self.loadingKey(file.id, frame, width)) }
@@ -1547,7 +1640,9 @@ final class AppModel {
     /// Reads `frames` in one sequential pass (`SequentialThumbnails`) and
     /// caches each thumbnail as it arrives; returns the frames delivered
     /// (the rest are decoded one by one). Each is the exact frame.
-    private func loadSequentially(_ frames: [Int], of file: MovieFile, decodeWidth: Int) async -> Set<Int> {
+    private func loadSequentially(
+        _ frames: [Int], of file: MovieFile, decodeWidth: Int, epoch: Int
+    ) async -> Set<Int> {
         let delivered = DeliveredFrames()
         let started = ContinuousClock.now
         let log = ScanLog("faces sheet thumbs")
@@ -1559,7 +1654,7 @@ final class AppModel {
         ) { [weak self] frame, image in
             delivered.insert(frame)
             Task { @MainActor in
-                guard let self else { return }
+                guard let self, self.imageEpoch == epoch else { return }
                 self.store(image, file: file.id, frame: frame, width: Self.thumbWidth, decodedFor: decodeWidth)
                 self.inexactImages[ImageKey(file: file.id, frame: frame, width: Self.thumbWidth)] = nil
                 self.imageGeneration += 1
@@ -1582,7 +1677,9 @@ final class AppModel {
     /// Moves thumbs to the frame the retry decoded; a correction, not an
     /// edit, so it records no undo step. The moved thumbs get the marker.
     private func retarget(_ fileId: UUID, sheet sheetId: UUID, from: Int, to: Int) {
-        guard let s = library.sheets[fileId]?.firstIndex(where: { $0.id == sheetId }) else { return }
+        guard let s = library.sheets[fileId]?.firstIndex(where: { $0.id == sheetId }),
+              library.sheets[fileId]![s].thumbs.contains(where: { $0.frameNumber == from })
+        else { return }
         for thumb in library.sheets[fileId]![s].thumbs where thumb.frameNumber == from {
             // A thumb moved twice keeps the frame it first asked for.
             let requested = nearestFrame(of: thumb) ?? from
@@ -1615,6 +1712,7 @@ final class AppModel {
     func saveNow() {
         guard let store else { return }
         do {
+            // Nothing is written after a failed load.
             try store.save(library)
         } catch {
             toast = "The movie list could not be saved: \(error.localizedDescription)"

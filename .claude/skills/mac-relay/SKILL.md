@@ -5,6 +5,15 @@ description: Send a later message from a cloud session to a local session on one
 
 # Message a Mac session through the relay
 
+Why a relay: since about 2026-10-20 the server refuses `send_message` from a
+cloud session into a local one (`elevated_session_untrusted_device`,
+anthropics/claude-code#103864); Mac to cloud and cloud to cloud still arrive.
+A refusal offers a card to let the cloud session "use your computers and
+other sessions": never approve it. It cannot be undone, and the session then
+asks on every send to the Mac, can no longer exchange messages with other
+cloud sessions, and needs a fresh sign-in on the Web. The Friday count probes
+whether the refusal is lifted.
+
 1. Write one Markdown file to the Mac's inbox in Google Drive,
    `AI/Handoff/Inbox/` for the server Mac or `AI/Handoff/Inbox/Client/` for
    the client Mac (docs/sessions.md, Roles, says which sessions run where),

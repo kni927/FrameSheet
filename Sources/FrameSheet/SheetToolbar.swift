@@ -1,324 +1,184 @@
 import FrameSheetCore
 import SwiftUI
 
-/// The sheet tools in the window toolbar next to the title (§4's floating
-/// toolbar, moved there by the owner, 2026-11-03): back to parent, add
-/// interval sheet, add shot-detection sheet, duplicate, undo and redo, zoom
-/// (with Fit height and Fit width when they would change the fit), show
-/// hidden thumbs, show header, cycle the thumb label, grid/timeline, player
-/// view, toggle images (timeline), optimize grid layout, Save Sheet with its menu, then
-/// the right panel toggle. Disabled while no sheet is shown (not the toggle). Each group is
-/// one `ToolbarIconGroup` in a single toolbar item, so its icons touch; the
-/// items have no glass background, and each control has its own tooltip
-/// (`toolbarHelp`).
-struct SheetToolbar: ToolbarContent {
+/// The window toolbar after the app name (§4's floating toolbar, moved there
+/// by the owner, 2026-11-03), customizable (owner, 2026-11-05): one item per
+/// control, so the overflow menu and Customize Toolbar… list each of them. By
+/// default: Add movies, the sheet adders, Undo and Redo, the zoom, Grid /
+/// Timeline, the player view, Save sheet and the panel toggle; the rest is in
+/// the customization palette. Every action is in a menu too (`AppCommands`).
+/// Disabled while no sheet is shown (not the toggles); Fit height and Fit
+/// width are disabled, not hidden, when they would not change the fit. Each
+/// control has its own tooltip (`toolbarHelp`).
+struct SheetToolbar: CustomizableToolbarContent {
     let model: AppModel
     let sheet: Sheet?
 
-    var body: some ToolbarContent {
+    var body: some CustomizableToolbarContent {
         let settings = model.library.settings
         let noSheet = sheet == nil
         let geometry = noSheet ? nil : model.currentFit
         let timeline = sheet.map(model.isTimeline) ?? false
-        ToolbarItem(placement: .navigation) {
-            ToolbarIconGroup {
-                Button {
-                    model.backToParent()
-                } label: {
-                    Label("Back to parent", systemImage: "arrow.turn.left.up")
+        item("addMovies", "Add movies", "plus", help: "Add movies (A)") { model.presentOpenPanel() }
+        item("backToParent", "Back to parent", "arrow.turn.left.up", shown: false, help: "Back to parent sheet (⇧⌘P)",
+             disabled: sheet?.parentSheetId == nil) { model.backToParent() }
+        ToolbarItem(id: "addInterval", placement: Self.placement) {
+            Menu {
+                ForEach(2...6, id: \.self) { n in
+                    Button("\(n) × \(n)") { model.addIntervalSheet(columns: n, rows: n) }
                 }
-                .buttonStyle(ToolbarIconStyle(grouped: true))
-                .toolbarHelp("Back to parent sheet")
-                .disabled(sheet?.parentSheetId == nil)
-                Menu {
-                    ForEach(2...6, id: \.self) { n in
-                        Button("\(n) × \(n)") { model.addIntervalSheet(columns: n, rows: n) }
-                    }
-                } label: {
-                    Label("Add interval sheet", systemImage: "rectangle.stack.badge.plus")
-                }
-                .menuStyle(.button)
-                .menuIndicator(.hidden)
-                .buttonStyle(ToolbarIconStyle(grouped: true))
-                .toolbarHelp("Add interval sheet")
-                .disabled(noSheet)
-                Button {
-                    model.addShotDetectionSheet()
-                } label: {
-                    Label("Add shot-detection sheet", systemImage: "barcode.viewfinder")
-                }
-                .buttonStyle(ToolbarIconStyle(grouped: true))
-                .toolbarHelp(shotSheetHelp)
-                .disabled(noSheet || model.isScanning)
-                // Add faces sheet (§4): a click scans with the default
-                // scope; the menu (press and hold) offers all three.
-                Menu {
-                    ForEach(FaceScanScope.allCases, id: \.self) { scope in
-                        if scope == .thumbs { Divider() }
-                        Button(scope.label) { model.addFacesSheet(scope) }
-                            .help(scope.help)
-                    }
-                } label: {
-                    Label("Add faces sheet", systemImage: "person.crop.rectangle.stack")
-                } primaryAction: {
-                    model.addFacesSheet(model.defaultFaceScanScope)
-                }
-                .menuStyle(.button)
-                .menuIndicator(.hidden)
-                .buttonStyle(ToolbarIconStyle(grouped: true))
-                .toolbarHelp("Add faces sheet: \(model.defaultFaceScanScope.label.lowercased()) (hold for more)")
-                .disabled(noSheet || model.isScanning || sheet?.type == .faces)
-                Menu {
-                    ForEach(ThumbSort.allCases, id: \.self) { sort in
-                        Button(sort.label) { model.sortSheet(sort) }
-                            .disabled(sort.needsFaces && sheet?.type != .faces)
-                        if sort == .frameNumber { Divider() }
-                    }
-                } label: {
-                    Label("Sort", systemImage: "arrow.up.arrow.down")
-                }
-                .menuStyle(.button)
-                .menuIndicator(.hidden)
-                .buttonStyle(ToolbarIconStyle(grouped: true))
-                .toolbarHelp("Sort thumbs")
-                .disabled(noSheet || sheet?.type == .shot || model.isStreamingSheetShown)
-                FaceFilterButton(model: model, sheet: sheet)
-                Button {
-                    if let ref = model.currentRef { model.duplicateSheet(ref) }
-                } label: {
-                    Label("Duplicate sheet", systemImage: "plus.square.on.square")
-                }
-                .buttonStyle(ToolbarIconStyle(grouped: true))
-                .toolbarHelp("Duplicate sheet")
-                .disabled(noSheet)
-                // The Edit menu's Undo and Redo, text field typing included.
-                Button {
-                    model.performUndo()
-                } label: {
-                    Label("Undo", systemImage: "arrow.uturn.backward")
-                }
-                .buttonStyle(ToolbarIconStyle(grouped: true))
-                .toolbarHelp("Undo (⌘Z)")
-                .disabled(!model.canPerformUndo)
-                Button {
-                    model.performRedo()
-                } label: {
-                    Label("Redo", systemImage: "arrow.uturn.forward")
-                }
-                .buttonStyle(ToolbarIconStyle(grouped: true))
-                .toolbarHelp("Redo (⇧⌘Z)")
-                .disabled(!model.canPerformRedo)
+            } label: {
+                Label("Add interval sheet", systemImage: "rectangle.stack.badge.plus")
             }
+            .menuStyle(.button)
+            .menuIndicator(.hidden)
+            .buttonStyle(ToolbarIconStyle())
+            .toolbarHelp("Add interval sheet")
+            .disabled(noSheet)
         }
         .sharedBackgroundVisibility(.hidden)
-        ToolbarItem(placement: .navigation) {
-            ToolbarIconGroup {
-                Button {
-                    model.zoom(in: false)
-                } label: {
-                    Label("Zoom out", systemImage: "minus.magnifyingglass")
+        item("addShots", "Add shot-detection sheet", "barcode.viewfinder", help: shotSheetHelp,
+             disabled: noSheet || model.isScanning) { model.addShotDetectionSheet() }
+        // Add faces sheet (§4): a click opens the scopes (owner, 2026-11-05).
+        ToolbarItem(id: "addFaces", placement: Self.placement) {
+            Menu {
+                ForEach(FaceScanScope.allCases, id: \.self) { scope in
+                    if scope == .thumbs { Divider() }
+                    Button(scope.label) { model.addFacesSheet(scope) }
+                        .help(scope.help)
                 }
-                .buttonStyle(ToolbarIconStyle(grouped: true))
-                .toolbarHelp("Zoom out (⌘−)")
-                .disabled(noSheet || model.zoom <= GridGeometry.zoomSteps.first!)
-                // Only when the print leaves space in that direction.
-                if geometry?.hasSpaceAboveAndBelow == true {
-                    Button {
-                        model.zoomToFitHeight()
-                    } label: {
-                        Label("Fit height", systemImage: "arrow.up.and.down")
-                    }
-                    .buttonStyle(ToolbarIconStyle(grouped: true))
-                    .toolbarHelp("Fit height")
-                }
-                if geometry?.hasSpaceAtSides == true {
-                    Button {
-                        model.zoomToFitWidth()
-                    } label: {
-                        Label("Fit width", systemImage: "arrow.left.and.right")
-                    }
-                    .buttonStyle(ToolbarIconStyle(grouped: true))
-                    .toolbarHelp("Fit width")
-                }
-                Button {
-                    model.zoomToFit()
-                } label: {
-                    Label("Fit", systemImage: "square.arrowtriangle.4.outward")
-                }
-                .buttonStyle(ToolbarIconStyle(grouped: true))
-                .toolbarHelp("Fit (⌘0) · \(Int((model.zoom * 100).rounded()))%")
-                .disabled(noSheet)
-                Button {
-                    model.zoom(in: true)
-                } label: {
-                    Label("Zoom in", systemImage: "plus.magnifyingglass")
-                }
-                .buttonStyle(ToolbarIconStyle(grouped: true))
-                .toolbarHelp("Zoom in (⌘=)")
-                .disabled(noSheet || model.zoom >= GridGeometry.zoomSteps.last!)
+            } label: {
+                Label("Add faces sheet", systemImage: "person.crop.rectangle.stack")
             }
+            .menuStyle(.button)
+            .menuIndicator(.hidden)
+            .buttonStyle(ToolbarIconStyle())
+            .toolbarHelp("Add faces sheet")
+            .disabled(noSheet || model.isScanning || sheet?.type == .faces)
         }
         .sharedBackgroundVisibility(.hidden)
-        ToolbarItem(placement: .navigation) {
-            // In the main window toolbar, not the inspector's, so the panel
-            // toggle stays when the panel is hidden; a small gap sets it apart.
-            HStack(spacing: Theme.space3) {
-                ToolbarIconGroup {
-                    // A button drawn as selected while on, so it shares the icon style.
-                    Button {
-                        model.updateSettings { $0.showHiddenThumbs.toggle() }
-                    } label: {
-                        Label("Show hidden thumbs", systemImage: settings.showHiddenThumbs ? "eye" : "eye.slash")
-                    }
-                    .buttonStyle(ToolbarIconStyle(selected: settings.showHiddenThumbs, grouped: true))
-                    .accessibilityAddTraits(settings.showHiddenThumbs ? .isSelected : [])
-                    .toolbarHelp("Show hidden thumbs")
-                    .disabled(noSheet)
-                    Button {
-                        model.updateSettings { $0.showHeader.toggle() }
-                    } label: {
-                        Label("Show header", systemImage: "rectangle.topthird.inset.filled")
-                    }
-                    .buttonStyle(ToolbarIconStyle(selected: settings.showHeader, grouped: true))
-                    .accessibilityAddTraits(settings.showHeader ? .isSelected : [])
-                    .toolbarHelp("Show header")
-                    .disabled(noSheet || timeline)
-                    Button {
-                        model.cycleFrameInfo()
-                    } label: {
-                        Label(
-                            "Frame info",
-                            systemImage: settings.frameInfo == .hidden ? "123.rectangle" : "123.rectangle.fill")
-                    }
-                    .buttonStyle(ToolbarIconStyle(grouped: true))
-                    .toolbarHelp("Thumb label: \(frameInfoName(settings.frameInfo)) (click cycles)")
-                    .disabled(noSheet)
-                    Button {
-                        model.updateSettings { $0.showFaceRectangles.toggle() }
-                    } label: {
-                        Label("Face rectangles", systemImage: "person.crop.square")
-                    }
-                    .buttonStyle(ToolbarIconStyle(selected: settings.showFaceRectangles, grouped: true))
-                    .accessibilityAddTraits(settings.showFaceRectangles ? .isSelected : [])
-                    .toolbarHelp(settings.showFaceRectangles ? "Hide face rectangles" : "Show face rectangles")
-                    .disabled(sheet?.type != .faces)
-                    Button {
-                        if let ref = model.currentRef { model.toggleView(ref) }
-                    } label: {
-                        Label(timeline ? "Grid view" : "Timeline view", systemImage: timeline ? "square.grid.2x2" : "barcode")
-                    }
-                    .buttonStyle(ToolbarIconStyle(grouped: true))
-                    .toolbarHelp(timeline ? "Grid view (G)" : "Timeline view (G)")
-                    .disabled(noSheet || sheet?.type == .faces)
-                    Button {
-                        model.togglePlayerView()
-                    } label: {
-                        Label(model.player.isShown ? "Hide player view" : "Show player view", systemImage: "play.rectangle")
-                    }
-                    .buttonStyle(ToolbarIconStyle(selected: model.player.isShown, grouped: true))
-                    .accessibilityAddTraits(model.player.isShown ? .isSelected : [])
-                    .toolbarHelp(model.player.isShown ? "Hide player view (2)" : "Show player view (2)")
-                    .disabled(noSheet && !model.player.isShown)
-                    Button {
-                        model.updateSettings { $0.timelineShowImages.toggle() }
-                    } label: {
-                        Label("Toggle images", systemImage: settings.timelineShowImages ? "photo" : "paintpalette")
-                    }
-                    .buttonStyle(ToolbarIconStyle(selected: !settings.timelineShowImages, grouped: true))
-                    .accessibilityAddTraits(!settings.timelineShowImages ? .isSelected : [])
-                    .toolbarHelp(settings.timelineShowImages ? "Show mean colors only" : "Show images")
-                    .disabled(noSheet || !timeline)
-                    Button {
-                        model.optimizeGrid()
-                    } label: {
-                        Label("Optimize grid", systemImage: "square.grid.3x3")
-                    }
-                    .buttonStyle(ToolbarIconStyle(grouped: true))
-                    .toolbarHelp("Optimize grid layout")
-                    .disabled(noSheet || timeline)
+        ToolbarItem(id: "sort", placement: Self.placement, showsByDefault: false) {
+            Menu {
+                ForEach(ThumbSort.allCases, id: \.self) { sort in
+                    Button(sort.label) { model.sortSheet(sort) }
+                        .disabled(sort.needsFaces && sheet?.type != .faces)
+                    if sort == .frameNumber { Divider() }
                 }
-                // Cut and merge on the selected scene of a shot sheet (§7),
-                // in grid and timeline view; one undo step each.
-                ToolbarIconGroup {
-                    let scene = model.selectedScene
-                    Button {
-                        model.cutSelectedScene()
-                    } label: {
-                        Label("Cut scene", systemImage: "scissors")
-                    }
-                    .buttonStyle(ToolbarIconStyle(grouped: true))
-                    .toolbarHelp(model.player.isShown ? "Cut scene at the player's frame" : "Cut scene at its thumb")
-                    .disabled(
-                        (model.player.isShown ? sheet?.type != .shot : scene == nil) || model.isStreamingSheetShown)
-                    Button {
-                        model.mergeSelectedScene(.previous)
-                    } label: {
-                        Label("Merge with previous", systemImage: "square.filled.and.line.vertical.and.square")
-                    }
-                    .buttonStyle(ToolbarIconStyle(grouped: true))
-                    .toolbarHelp("Merge with previous scene")
-                    .disabled(!model.canMergeSelectedScene(.previous) || model.isStreamingSheetShown)
-                    Button {
-                        model.mergeSelectedScene(.next)
-                    } label: {
-                        Label("Merge with next", systemImage: "square.and.line.vertical.and.square.filled")
-                    }
-                    .buttonStyle(ToolbarIconStyle(grouped: true))
-                    .toolbarHelp("Merge with next scene")
-                    .disabled(!model.canMergeSelectedScene(.next) || model.isStreamingSheetShown)
-                    Button {
-                        model.toggleDetectionChart()
-                    } label: {
-                        Label("Detection chart", systemImage: "chart.xyaxis.line")
-                    }
-                    .buttonStyle(ToolbarIconStyle(grouped: true))
-                    .toolbarHelp("Detection chart (F)")
-                    .disabled(noSheet)
-                }
-                // Save (decision 23): the download button, and a menu with
-                // Save All sheets and the output location.
-                ToolbarIconGroup {
-                    Button {
-                        model.saveSheet()
-                    } label: {
-                        Label("Save sheet", systemImage: "square.and.arrow.down")
-                    }
-                    .buttonStyle(ToolbarIconStyle(grouped: true))
-                    .toolbarHelp("Save sheet (M)")
-                    .disabled(noSheet || model.isSaving)
-                    Menu {
-                        Button("Save All Sheets") { model.saveAllSheets() }
-                            .disabled(model.library.files.isEmpty || model.isSaving || model.isScanning)
-                            .help("Save every sheet of every movie, one after the other")
-                        Button("Open Output Location") { model.openOutputLocation() }
-                    } label: {
-                        Label("Save options", systemImage: "chevron.down")
-                    }
-                    .menuStyle(.button)
-                    .menuIndicator(.hidden)
-                    .buttonStyle(ToolbarIconStyle(grouped: true))
-                    .toolbarHelp("More save options")
-                }
-                Button {
-                    model.showSettings.toggle()
-                } label: {
-                    Label(model.showSettings ? "Hide panel" : "Show panel", systemImage: "sidebar.right")
-                }
-                .buttonStyle(ToolbarIconStyle(selected: model.showSettings))
-                .accessibilityAddTraits(model.showSettings ? .isSelected : [])
-                .toolbarHelp(model.showSettings ? "Hide panel (3)" : "Show panel (3)")
+            } label: {
+                Label("Sort", systemImage: "arrow.up.arrow.down")
             }
+            .menuStyle(.button)
+            .menuIndicator(.hidden)
+            .buttonStyle(ToolbarIconStyle())
+            .toolbarHelp("Sort thumbs")
+            .disabled(noSheet || sheet?.type == .shot || model.isStreamingSheetShown)
+        }
+        .sharedBackgroundVisibility(.hidden)
+        ToolbarItem(id: "filter", placement: Self.placement, showsByDefault: false) {
+            FaceFilterButton(model: model, sheet: sheet)
+        }
+        .sharedBackgroundVisibility(.hidden)
+        item("duplicate", "Duplicate sheet", "plus.square.on.square", shown: false, help: "Duplicate sheet (⌘D)",
+             disabled: noSheet) {
+            if let ref = model.currentRef { model.duplicateSheet(ref) }
+        }
+        // The Edit menu's Undo and Redo, text field typing included.
+        item("undo", "Undo", "arrow.uturn.backward", help: "Undo (⌘Z)", disabled: !model.canPerformUndo) {
+            model.performUndo()
+        }
+        item("redo", "Redo", "arrow.uturn.forward", help: "Redo (⇧⌘Z)", disabled: !model.canPerformRedo) {
+            model.performRedo()
+        }
+        item("zoomOut", "Zoom out", "minus.magnifyingglass", help: "Zoom out (⌘−)",
+             disabled: noSheet || model.zoom <= GridGeometry.zoomSteps.first!) { model.zoom(in: false) }
+        item("fitHeight", "Fit height", "arrow.up.and.down", shown: false, help: "Fit height (⌃⌘0)",
+             disabled: geometry?.hasSpaceAboveAndBelow != true) { model.zoomToFitHeight() }
+        item("fitWidth", "Fit width", "arrow.left.and.right", shown: false, help: "Fit width (⌥⌘0)",
+             disabled: geometry?.hasSpaceAtSides != true) { model.zoomToFitWidth() }
+        item("fit", "Fit", "square.arrowtriangle.4.outward",
+             help: "Fit (⌘0) · \(Int((model.zoom * 100).rounded()))%", disabled: noSheet) { model.zoomToFit() }
+        item("zoomIn", "Zoom in", "plus.magnifyingglass", help: "Zoom in (⌘=)",
+             disabled: noSheet || model.zoom >= GridGeometry.zoomSteps.last!) { model.zoom(in: true) }
+        item("showHidden", "Show hidden thumbs", settings.showHiddenThumbs ? "eye" : "eye.slash", shown: false,
+             selected: settings.showHiddenThumbs, help: "Show hidden thumbs (⇧⌘H)", disabled: noSheet) {
+            model.updateSettings { $0.showHiddenThumbs.toggle() }
+        }
+        item("showHeader", "Show header", "rectangle.topthird.inset.filled", shown: false,
+             selected: settings.showHeader, help: "Show header (⇧⌘E)", disabled: noSheet || timeline) {
+            model.updateSettings { $0.showHeader.toggle() }
+        }
+        item("frameInfo", "Thumb label", settings.frameInfo == .hidden ? "123.rectangle" : "123.rectangle.fill",
+             shown: false, help: "Thumb label: \(frameInfoName(settings.frameInfo)) (click cycles)",
+             disabled: noSheet) { model.cycleFrameInfo() }
+        item("faceRectangles", "Face rectangles", "person.crop.square", shown: false,
+             selected: settings.showFaceRectangles,
+             help: settings.showFaceRectangles ? "Hide face rectangles (⌥⌘R)" : "Show face rectangles (⌥⌘R)",
+             disabled: sheet?.type != .faces) { model.updateSettings { $0.showFaceRectangles.toggle() } }
+        item("view", timeline ? "Grid view" : "Timeline view", timeline ? "square.grid.2x2" : "barcode",
+             help: timeline ? "Grid view (G)" : "Timeline view (G)", disabled: noSheet || sheet?.type == .faces) {
+            if let ref = model.currentRef { model.toggleView(ref) }
+        }
+        item("player", model.player.isShown ? "Hide player view" : "Show player view", "play.rectangle",
+             selected: model.player.isShown,
+             help: model.player.isShown ? "Hide player view (2)" : "Show player view (2)",
+             disabled: noSheet && !model.player.isShown) { model.togglePlayerView() }
+        item("meanColors", "Mean colors only", settings.timelineShowImages ? "photo" : "paintpalette", shown: false,
+             selected: !settings.timelineShowImages,
+             help: settings.timelineShowImages ? "Show mean colors only (⌥⌘I)" : "Show images (⌥⌘I)",
+             disabled: noSheet || !timeline) { model.updateSettings { $0.timelineShowImages.toggle() } }
+        item("optimizeGrid", "Optimize grid", "square.grid.3x3", shown: false, help: "Optimize grid layout (⌥⌘O)",
+             disabled: noSheet || timeline) { model.optimizeGrid() }
+        // Cut and merge on the selected scene of a shot sheet (§7).
+        item("cut", "Cut scene", "scissors", shown: false,
+             help: model.player.isShown ? "Cut scene at the player's frame (⌘K)" : "Cut scene at its thumb (⌘K)",
+             disabled: (model.player.isShown ? sheet?.type != .shot : model.selectedScene == nil)
+                || model.isStreamingSheetShown) { model.cutSelectedScene() }
+        item("mergePrevious", "Merge with previous", "square.filled.and.line.vertical.and.square", shown: false,
+             help: "Merge with previous scene (⌘[)",
+             disabled: !model.canMergeSelectedScene(.previous) || model.isStreamingSheetShown) {
+            model.mergeSelectedScene(.previous)
+        }
+        item("mergeNext", "Merge with next", "square.and.line.vertical.and.square.filled", shown: false,
+             help: "Merge with next scene (⌘])",
+             disabled: !model.canMergeSelectedScene(.next) || model.isStreamingSheetShown) {
+            model.mergeSelectedScene(.next)
+        }
+        // Save All and the output location are in the File menu.
+        item("save", "Save sheet", "square.and.arrow.down", help: "Save sheet (M)",
+             disabled: noSheet || model.isSaving) { model.saveSheet() }
+        ToolbarSpacer(.flexible, placement: Self.placement)
+        item("panel", model.showSettings ? "Hide panel" : "Show panel", "sidebar.right",
+             selected: model.showSettings, help: model.showSettings ? "Hide panel (3)" : "Show panel (3)") {
+            model.showSettings.toggle()
+        }
+    }
+
+    private static let placement = ToolbarItemPlacement.automatic
+
+    /// One button item, shown by default unless `shown` is false.
+    private func item(
+        _ id: String, _ title: String, _ systemImage: String, shown: Bool = true, selected: Bool = false,
+        help: String, disabled: Bool = false, action: @escaping () -> Void
+    ) -> some CustomizableToolbarContent {
+        ToolbarItem(id: id, placement: Self.placement, showsByDefault: shown) {
+            Button(action: action) {
+                Label(title, systemImage: systemImage)
+            }
+            .buttonStyle(ToolbarIconStyle(selected: selected))
+            .accessibilityAddTraits(selected ? .isSelected : [])
+            .toolbarHelp(help)
+            .disabled(disabled)
         }
         .sharedBackgroundVisibility(.hidden)
     }
 
     /// Add shot-detection sheet: what it will do for the current movie.
     private var shotSheetHelp: String {
-        guard let id = model.library.currentFileId else { return "Add shot-detection sheet" }
+        guard let id = model.library.currentFileId else { return "Add shot-detection sheet (⇧⌘D)" }
         switch model.scanCacheState(id) {
-        case .complete: return "Add shot-detection sheet (from the stored scan)"
-        case .partial: return "Resume shot detection"
-        case .none: return "Add shot-detection sheet (scans the movie)"
+        case .complete: return "Add shot-detection sheet from the stored scan (⇧⌘D)"
+        case .partial: return "Resume shot detection (⇧⌘D)"
+        case .none: return "Add shot-detection sheet: scans the movie (⇧⌘D)"
         }
     }
 
@@ -349,9 +209,9 @@ private struct FaceFilterButton: View {
                 "Filter",
                 systemImage: active ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle")
         }
-        .buttonStyle(ToolbarIconStyle(selected: active, grouped: true))
+        .buttonStyle(ToolbarIconStyle(selected: active))
         .accessibilityAddTraits(active ? .isSelected : [])
-        .toolbarHelp("Filter faces")
+        .toolbarHelp("Filter faces (⌥⌘F)")
         .disabled(sheet?.type != .faces)
         .popover(isPresented: $shown, arrowEdge: .bottom) {
             FaceFilterPanel(model: model)
@@ -359,7 +219,7 @@ private struct FaceFilterButton: View {
     }
 }
 
-private struct FaceFilterPanel: View {
+struct FaceFilterPanel: View {
     let model: AppModel
     /// Slider positions while dragging; applied on release.
     @State private var sizeLower: Double?

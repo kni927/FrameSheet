@@ -87,6 +87,9 @@ final class PlayerController {
     @ObservationIgnored private var timeObserver: Any?
     @ObservationIgnored private var holdsGate = false
     @ObservationIgnored private var decodeTask: Task<Void, Never>?
+    /// Advanced when the shown movie's source changes (`sourceChanged`): a
+    /// still or strip slice decoded before stores nothing.
+    @ObservationIgnored private var sourceToken = 0
     @ObservationIgnored private var endObserver: (any NSObjectProtocol)?
     /// Counts Play presses, so a start that waited for the gate knows it is
     /// still wanted.
@@ -174,11 +177,21 @@ final class PlayerController {
             stillCacheKey = nil
         }
         frame = PlayerNavigation.clamp(start, frameCount: file.frameCount)
+        refreshDecoder()
+        scheduleDecodes()
+    }
+
+    /// Opens (or reopens) the shown movie's backend and takes its decoder,
+    /// which decides how it plays (`canPlay`); a result for another movie or
+    /// an older source is dropped.
+    private func refreshDecoder() {
+        guard let model, let file else { return }
+        let token = sourceToken
         Task {
-            guard let model, let backend = try? await model.backend(for: file), fileId == file.id else { return }
+            guard let backend = try? await model.backend(for: file), fileId == file.id, token == sourceToken
+            else { return }
             decoder = backend.kind
         }
-        scheduleDecodes()
     }
 
     /// The shown movie's rotation or crop changed (§3): its stills and
@@ -192,6 +205,23 @@ final class PlayerController {
         stillCacheKey = nil
         stripGeneration += 1
         if isShown, playback == .paused { scheduleDecodes() }
+    }
+
+    /// The movie's frames come from another file or transform (Replace
+    /// movie, Locate, undo or redo of either, a rotation or crop change):
+    /// playback stops and drops its item, and the stills and strip are
+    /// decoded again from the new source.
+    func sourceChanged(_ fileId: UUID) {
+        guard fileId == self.fileId else { return }
+        sourceToken += 1
+        decodeTask?.cancel()
+        decodeTask = nil
+        if playback != .paused || isShown { stopPlayback(dropItem: true) }
+        // Play stays off until the new source's backend is open (the third
+        // pre-release audit: it stayed off until the player was reopened).
+        decoder = nil
+        transformChanged(fileId)
+        refreshDecoder()
     }
 
     /// Space on a shot sheet: cut/merge mode ↔ change-thumb mode.
@@ -607,18 +637,21 @@ final class PlayerController {
     /// The current frame for an edit there, after pausing, and whether it
     /// decodes exactly (decision 25: an inexact frame is not stored). Uses
     /// the still when it is the frame's, else decodes the frame. A frame
-    /// that does not decode at all counts as exact, as the scrub stores it.
-    func exactCurrentFrame() async -> (frame: Int, exact: Bool)? {
+    /// that does not decode at all is not exact either, with the error.
+    func exactCurrentFrame() async -> (frame: Int, exact: Bool, error: String?)? {
         guard isShown, let model, let file else { return nil }
         if playback != .paused { pause() }
         let target = frame
         await waitForDecodes()
-        if let still, still.requested == target { return (target, still.isExact) }
-        if let cached = stills.first(where: { $0.frame == target }) { return (target, cached.image.isExact) }
-        guard let backend = try? await model.backend(for: file),
-              let decoded = try? await backend.frame(target, maxWidth: stillWidth(file))
-        else { return (target, true) }
-        return (target, decoded.isExact)
+        if let still, still.requested == target { return (target, still.isExact, nil) }
+        if let cached = stills.first(where: { $0.frame == target }) { return (target, cached.image.isExact, nil) }
+        do {
+            let backend = try await model.backend(for: file)
+            let decoded = try await backend.frame(target, maxWidth: stillWidth(file))
+            return (target, decoded.isExact, nil)
+        } catch {
+            return (target, false, error.localizedDescription)
+        }
     }
 
     // MARK: - Still and frame strip
@@ -697,13 +730,14 @@ final class PlayerController {
         let needsStill = still?.requested != target
         guard needsStill || !missing.isEmpty else { return }
         let stopping = ffmpegStop
+        let token = sourceToken
         decodeTask = Task {
             try? await Task.sleep(for: Self.decodeDelay)
             // ffmpeg playback has exited before anything decodes.
             await stopping?.value
             guard !Task.isCancelled, let backend = try? await model.backend(for: file) else { return }
             if needsStill, let decoded = try? await backend.frame(target, maxWidth: stillWidth) {
-                guard !Task.isCancelled else { return }
+                guard !Task.isCancelled, token == sourceToken else { return }
                 let image = PlayerFrame(image: decoded.image, requested: target, shown: decoded.actualFrame)
                 still = image
                 stills.removeAll { $0.frame == target }
@@ -712,7 +746,7 @@ final class PlayerController {
             }
             for run in Self.runs(of: missing) {
                 for await result in backend.frameRun(run, maxWidth: stripWidth) {
-                    if Task.isCancelled { return }
+                    if Task.isCancelled || token != sourceToken { return }
                     guard case .success(let decoded) = result.result else { continue }
                     stripFrames[result.frameNumber] = PlayerFrame(
                         image: decoded.image, requested: result.frameNumber, shown: decoded.actualFrame)

@@ -94,6 +94,7 @@ private struct MovieRow: View {
                     .help("Find the moved movie")
             }
             Button("Replace movie…") { model.replaceMovie(file.id) }
+                .disabled(model.isScanning)
                 .help("Link this entry to another file, keeping its sheets")
             // Add shot-detection sheet uses (or resumes) the stored scan;
             // this one starts over.

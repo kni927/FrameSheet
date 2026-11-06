@@ -74,6 +74,21 @@ public struct ExchangeTransform: Decodable, Sendable, Equatable {
         aspectRatioInv = try? c.decodeIfPresent(Double.self, forKey: .aspectRatioInv)
     }
 
+    /// The values an import keeps (§12): crops not below 0 (the probe
+    /// clamps them to the frame), an aspect ratio within
+    /// `ImportLimits.aspectRatioInv` or none.
+    var validated: ExchangeTransform {
+        var t = self
+        t.cropTop = max(0, cropTop)
+        t.cropLeft = max(0, cropLeft)
+        t.cropBottom = max(0, cropBottom)
+        t.cropRight = max(0, cropRight)
+        if let ratio = aspectRatioInv, !(ratio == 0 || ImportLimits.aspectRatioInv.contains(ratio)) {
+            t.aspectRatioInv = nil
+        }
+        return t
+    }
+
     /// Every key in MoviePrint's order (`TRANSFORMOBJECT_INIT`), with an
     /// explicit `null` aspect ratio.
     var jsonText: JSONText {
@@ -124,7 +139,7 @@ public struct ExchangeScene: Decodable, Sendable, Equatable {
         self.length = length
         frameNumber = c.flexibleInt(.frameNumber)
         // OpenCV means may be fractional.
-        colorArray = (try? c.decodeIfPresent([Double].self, forKey: .colorArray))?.map { Int($0.rounded()) }
+        colorArray = (try? c.decodeIfPresent([Double].self, forKey: .colorArray))?.compactMap(SheetExchange.wholeNumber)
     }
 }
 
@@ -236,7 +251,7 @@ public struct SheetExchange: Sendable, Equatable {
         filePath = value("filePath").map { $0.removingPercentEncoding ?? $0 }
         transform = json("transformObject", as: ExchangeTransform.self)
         columnCount = value("columnCount").flatMap(Self.parseInt)
-        frameNumbers = json("frameNumberArray", as: [Double].self)?.map { Int($0.rounded()) }
+        frameNumbers = json("frameNumberArray", as: [Double].self)?.compactMap(Self.wholeNumber)
         scenes = json("sceneArray", as: [ExchangeScene].self)
     }
 
@@ -308,7 +323,7 @@ public struct SheetExchange: Sendable, Equatable {
             // MoviePrint reads `Number(columnCount)`.
             columnCount = c.flexibleInt(.columnCount)
             frameNumberArray = (try? c.decodeIfPresent([Double].self, forKey: .frameNumberArray))?
-                .map { Int($0.rounded()) }
+                .compactMap(SheetExchange.wholeNumber)
             sceneArray = try? c.decodeIfPresent([ExchangeScene].self, forKey: .sceneArray)
         }
     }
@@ -326,9 +341,25 @@ public struct SheetExchange: Sendable, Equatable {
     /// JavaScript `Number(text)` for a whole number ("4", "4.0").
     static func parseInt(_ text: String) -> Int? {
         let trimmed = text.trimmingCharacters(in: .whitespaces)
-        if let i = Int(trimmed) { return i }
-        guard let d = Double(trimmed), d.isFinite else { return nil }
-        return Int(d.rounded())
+        if let i = Int(trimmed) { return wholeNumber(i) }
+        return Double(trimmed).flatMap(wholeNumber)
+    }
+
+    /// The largest magnitude an imported number may have. Frame numbers,
+    /// lengths, counts and crop values stay far below it, and sums of them
+    /// cannot overflow; a larger value (`1e100`) counts as left out instead
+    /// of crashing the conversion to `Int`.
+    static let maxImportedValue = Int(Int32.max)
+
+    /// A number from an imported file, rounded; nil when not finite or out
+    /// of range.
+    static func wholeNumber(_ value: Double) -> Int? {
+        guard value.isFinite, abs(value) <= Double(maxImportedValue) else { return nil }
+        return Int(value.rounded())
+    }
+
+    static func wholeNumber(_ value: Int) -> Int? {
+        (-maxImportedValue...maxImportedValue).contains(value) ? value : nil
     }
 }
 
@@ -391,11 +422,52 @@ indirect enum JSONText {
 extension KeyedDecodingContainer {
     /// An integer written as a number (whole or not) or a numeric string.
     func flexibleInt(_ key: Key) -> Int? {
-        if let i = try? decodeIfPresent(Int.self, forKey: key) { return i }
-        if let d = try? decodeIfPresent(Double.self, forKey: key), d.isFinite { return Int(d.rounded()) }
+        if let i = try? decodeIfPresent(Int.self, forKey: key) { return SheetExchange.wholeNumber(i) }
+        if let d = try? decodeIfPresent(Double.self, forKey: key) { return SheetExchange.wholeNumber(d) }
         if let s = try? decodeIfPresent(String.self, forKey: key) { return SheetExchange.parseInt(s) }
         return nil
     }
+}
+
+/// What an imported sheet may hold (§12; the second pre-release audit,
+/// 2026-11-06): a value outside its field's range is left out or clamped
+/// before the sheet reaches layout and saving, which convert it to sizes
+/// and counts.
+public enum ImportLimits {
+    /// Height / width of a display aspect ratio: 1:100 to 100:1.
+    public static let aspectRatioInv: ClosedRange<Double> = 0.01...100
+    /// Columns of a grid sheet (the panel's slider goes to 20).
+    public static let columns: ClosedRange<Int> = 1...100
+    /// Thumbs or scenes of one imported sheet; the rest are left out.
+    public static let maxItems = 10_000
+    /// A frame number, start or length (`SheetExchange.maxImportedValue`).
+    public static let frames: ClosedRange<Int> = 0...SheetExchange.maxImportedValue
+    /// sRGB components.
+    public static let color: ClosedRange<Int> = 0...255
+
+    /// Frame numbers inside `frames`, at most `maxItems`.
+    public static func frameNumbers(_ list: [Int]) -> [Int] {
+        Array(list.filter(frames.contains).prefix(maxItems))
+    }
+
+    /// Scenes with a start and length inside `frames` (length at least 1,
+    /// the end too), at most `maxItems`; colors clamped, or nil unless
+    /// three components.
+    public static func scenes(_ list: [ExchangeScene]) -> [ExchangeScene] {
+        let kept = list.filter { scene in
+            frames.contains(scene.start) && scene.length >= 1 && frames.contains(scene.start + scene.length)
+        }
+        return kept.prefix(maxItems).map { scene in
+            var scene = scene
+            scene.colorArray = scene.colorArray.flatMap { $0.count == 3 ? $0.map(color.clamp) : nil }
+            return scene
+        }
+    }
+}
+
+extension ClosedRange where Bound == Int {
+    /// The nearest value inside the range.
+    func clamp(_ value: Int) -> Int { Swift.min(Swift.max(value, lowerBound), upperBound) }
 }
 
 extension Library {
@@ -413,15 +485,19 @@ extension Library {
         var file = MovieFile(
             id: fileId, url: URL(fileURLWithPath: path), duration: 0, frameCount: 0, fps: 0, width: 0,
             height: 0, size: 0, fourCC: "")
-        if let transform = data.transform { file.transform = transform.movieTransform(keepRotation: false) }
+        if let transform = data.transform {
+            file.transform = transform.validated.movieTransform(keepRotation: false)
+        }
+        let frames = ImportLimits.frameNumbers(data.frameNumbers ?? [])
+        let list = ImportLimits.scenes(data.scenes ?? [])
+        guard !frames.isEmpty || !list.isEmpty else { throw SheetExchangeError.noData }
         files.append(file)
 
         let sheet: Sheet?
-        if let frames = data.frameNumbers, !frames.isEmpty {
+        if !frames.isEmpty {
             let thumbs = frames.enumerated().map { Thumb(frameNumber: $1, index: $0) }
             sheet = addSheet(to: file.id, type: .interval, view: .grid, thumbs: thumbs)
         } else {
-            let list = data.scenes ?? []
             let thumbs = list.enumerated().map { Thumb(frameNumber: $1.start + $1.length / 2, index: $0) }
             sheet = addSheet(to: file.id, type: .shot, view: .timeline, thumbs: thumbs)
             if let sheet, let i = sheets[file.id]?.firstIndex(where: { $0.id == sheet.id }) {
@@ -434,7 +510,7 @@ extension Library {
         guard let sheet, let i = sheets[file.id]?.firstIndex(where: { $0.id == sheet.id }) else {
             throw SheetExchangeError.noData
         }
-        sheets[file.id]![i].columnCount = max(1, data.columnCount ?? Defaults.columnCount)
+        sheets[file.id]![i].columnCount = ImportLimits.columns.clamp(data.columnCount ?? Defaults.columnCount)
         currentFileId = file.id
         currentSheetId = sheet.id
         return SheetRef(fileId: file.id, sheetId: sheet.id)

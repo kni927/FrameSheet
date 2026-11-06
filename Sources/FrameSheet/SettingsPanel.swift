@@ -24,7 +24,6 @@ struct SettingsPanel: View {
                 FrameInfoSection()
                 OutputSection()
                 NamingSection()
-                FaceDetectionSection()
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
@@ -44,7 +43,7 @@ extension AppModel {
 }
 
 /// A slider with its label on the left and its value right-aligned above it.
-private struct LabeledSlider: View {
+struct LabeledSlider: View {
     let title: String
     @Binding var value: Double
     let range: ClosedRange<Double>
@@ -892,35 +891,73 @@ private struct TimelineStylingRows: View {
     }
 }
 
-/// Face detection (§6): the thresholds a face scan stores faces with. On a
-/// faces sheet, Apply rescans the sheet's frames with them and replaces its
-/// thumbs.
-private struct FaceDetectionSection: View {
+/// Sheet → Face Detection… (§6; out of the settings panel, owner
+/// 2026-11-05): the thresholds a face scan stores faces with. On a faces
+/// sheet, Apply rescans the sheet's frames with them and replaces its
+/// thumbs; it is the default button, at the bottom right next to Close.
+struct FaceDetectionDialog: View {
     @Environment(AppModel.self) private var model
+    @Environment(\.dismiss) private var dismiss
 
     var body: some View {
-        PanelSection(title: "Face detection") {
+        let canApply = model.canApplyFaceThresholds
+        let applied = model.isFacesSheetShown && !model.isScanning && !canApply
+        VStack(alignment: .leading, spacing: Theme.space4) {
+            Text("Face detection").font(Theme.sectionTitle)
             LabeledSlider(
                 title: "Confidence", value: model.setting(\.faceConfidenceThreshold), range: 0...100,
                 help: "Faces detected with a lower confidence are ignored")
             LabeledSlider(
                 title: "Size", value: model.setting(\.faceSizeThreshold), range: 0...100, unit: " %",
                 help: "Faces smaller than this share of the frame height are ignored")
-            HStack {
+            HStack(spacing: Theme.space3) {
                 Text(model.facesSheetTransformChanged ? "Transform changed: Apply rescans this sheet"
                     : model.isFacesSheetShown ? "Apply rescans this faces sheet" : "Takes effect on the next scan")
                     .font(Theme.panelCaption)
                     .foregroundStyle(Theme.textMuted)
                 Spacer(minLength: 0)
-                let canApply = model.canApplyFaceThresholds
-                let applied = model.isFacesSheetShown && !model.isScanning && !canApply
-                Button("Apply") { model.applyFaceThresholds() }
-                    .controlSize(.small)
-                    .disabled(!canApply)
-                    .help(applied ? "These thresholds are already applied"
-                        : "Rescan this faces sheet with these thresholds and the movie's current transform")
+                Button("Close") { dismiss() }
+                    .keyboardShortcut(.cancelAction)
+                    .help("Keep the thresholds for the next scan")
+                Button("Apply") {
+                    model.applyFaceThresholds()
+                    dismiss()
+                }
+                .keyboardShortcut(.defaultAction)
+                .disabled(!canApply)
+                .help(applied ? "These thresholds are already applied"
+                    : "Rescan this faces sheet with these thresholds and the movie's current transform")
             }
         }
+        .padding(Theme.space6)
+        .frame(width: 420)
+        .background(Theme.base)
+        .foregroundStyle(Theme.text)
+        .font(Theme.bodySm)
+    }
+}
+
+/// A small dialog for a menu command whose controls live in a toolbar
+/// popover too (Sheet → Filter Faces…): a title, the controls and Done.
+struct MenuDialog<Content: View>: View {
+    @Environment(\.dismiss) private var dismiss
+    let title: String
+    @ViewBuilder var content: Content
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Theme.space3) {
+            Text(title).font(Theme.sectionTitle)
+            content
+            HStack {
+                Spacer()
+                Button("Done") { dismiss() }
+                    .keyboardShortcut(.defaultAction)
+            }
+        }
+        .padding(Theme.space4)
+        .background(Theme.base)
+        .foregroundStyle(Theme.text)
+        .font(Theme.bodySm)
     }
 }
 

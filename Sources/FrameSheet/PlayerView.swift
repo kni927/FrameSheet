@@ -446,8 +446,10 @@ private struct PlayerControls: View {
     }
 }
 
-/// The current frame and its timecode; "→ shows M" while the still is the
-/// nearest decodable frame (decision 25).
+/// The frame on screen and its timecode; "→ shows M" while the still is the
+/// nearest decodable frame (decision 25). While paused on a frame whose
+/// still is not decoded yet (or could not be), the label names the still
+/// that is shown and the frame being decoded follows, muted.
 private struct FrameLabel: View {
     @Environment(AppModel.self) private var model
     let file: MovieFile
@@ -456,14 +458,26 @@ private struct FrameLabel: View {
         let player = model.player
         let frame = player.frame
         let still = player.still
+        // The still that supplies the pixels on screen (paused: the previous
+        // frame's until this frame's arrives; playing: the start frame's
+        // until playback reaches frames it can show) names the label.
+        let covering = player.coveringStill
+        let pending = covering.map { $0.requested != frame } ?? false
+        let shownFrame = pending ? covering?.shown ?? frame : frame
         HStack(spacing: Theme.space2) {
-            // Muted while the still of this frame is being decoded.
-            Text(FrameInfoText.text(.frames, frame: frame, fps: file.fps) ?? "")
+            // Muted while no still is shown yet.
+            Text(FrameInfoText.text(.frames, frame: shownFrame, fps: file.fps) ?? "")
                 .font(Theme.mono(15, medium: true))
-                .foregroundStyle(player.isPlaying || still?.requested == frame ? Theme.text : Theme.textMuted)
-            Text(Timecode.string(frames: frame, fps: file.fps))
+                .foregroundStyle(player.isPlaying || still != nil ? Theme.text : Theme.textMuted)
+            Text(Timecode.string(frames: shownFrame, fps: file.fps))
                 .font(Theme.mono(12))
                 .foregroundStyle(Theme.textMuted)
+            if pending {
+                Text("→ \(FrameInfoText.text(.frames, frame: frame, fps: file.fps) ?? "")")
+                    .font(Theme.mono(12))
+                    .foregroundStyle(Theme.textMuted)
+                    .help("Decoding frame \(frame)")
+            }
             if let still, still.requested == frame, !still.isExact, !player.isPlaying {
                 Text("→ shows \(FrameInfoText.text(.frames, frame: still.shown, fps: file.fps) ?? "")")
                     .font(Theme.mono(12))
@@ -546,7 +560,9 @@ private struct PlayerSheetStrip: View {
                 let selected = model.selectedThumbId == thumb.id
                 Group {
                     if let image = model.image(file: file.id, frame: thumb.frameNumber, width: AppModel.thumbWidth) {
-                        Image(decorative: image, scale: 1).resizable().aspectRatio(contentMode: .fill)
+                        DisplayAspectImage(
+                            image: image, aspectInv: model.player.aspectRatioInv(file),
+                            size: CGSize(width: width, height: height))
                     } else {
                         Theme.surface
                     }
@@ -588,7 +604,9 @@ private struct PlayerSheetStrip: View {
                 Group {
                     if selected, let thumb = sheet.thumbs.first(where: { $0.id == scene.id }),
                        let image = model.image(file: file.id, frame: thumb.frameNumber, width: AppModel.thumbWidth) {
-                        Image(decorative: image, scale: 1).resizable().aspectRatio(contentMode: .fill)
+                        DisplayAspectImage(
+                            image: image, aspectInv: model.player.aspectRatioInv(file),
+                            size: CGSize(width: width, height: height))
                     } else {
                         Self.color(scene)
                     }
