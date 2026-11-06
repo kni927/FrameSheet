@@ -10,11 +10,14 @@ description: Add, read or close owner steps in the owner's Todoist project Check
 - **Where:** the Todoist project **Checklist** (`6hv5QRGXXcX7vqRR`). Section
   Waiting (`6hv5QRWwJPh6FVFR`) when a next step depends on the task, else On
   hold (`6hv5QRVX8HMhVRX2`). One label naming the repository.
-- **Adding:** the Todoist connector's `add-tasks`: a short `content`, and the
-  steps in `description` as a bulleted list, one command per line, starting
-  with "Added by <session>, <date>." Give a due date only when there is a
-  real one. Todoist deadlines are a premium feature this account lacks: put
-  a hard date in the title instead.
+- **Adding:** the Todoist connector's `add-tasks`: a short `content`, and at
+  most two lines of `description`: why, and where the steps are (a skill, a
+  repository file); never the steps themselves. Give a due date only when
+  there is a real one, and a hard date in the title (Todoist deadlines are
+  premium only).
+- **Not here:** a reminder months ahead goes to Google Calendar as an
+  all-day event (two-line description, pointing to the steps); when it comes
+  up, the owner or a session adds the task then.
 - **Reading:** `find-tasks` with that project, at the start of a turn that
   follows up an owner step. A task no longer open is done; do not ask the
   owner about it.
