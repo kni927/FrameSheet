@@ -56,8 +56,8 @@ reproduces MoviePrint v0.2.23 for Apple Silicon: decisions 14–22 in
 ## Waiting on owner
 
 - Manual check of the second audit's fixes on the owner's Mac: B9 OK (Save
-  All, 2026-11-06); B10 and C (Replace → undo with the player open) and Save
-  Sheet while playing (aae1e27) still to check; B11 needs a file whose frames
+  All, 2026-11-06); Save Sheet while playing OK (aae1e27); B10 and C
+  (Replace → undo with the player open) still to check; B11 needs a file whose frames
   decode only as neighbors (skip without one). Steps:
   `docs/tasks/2026-11-06-01-audit2-fixes.md`.
 - Notary profile: the owner wrote its name to
