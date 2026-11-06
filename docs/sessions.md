@@ -131,6 +131,11 @@ Send each message only to the sessions that need it.
   buttons (in the Claude desktop app, `wrap_up`'s `ask`/`actions`: pass the
   recap only); a skipped or unanswered question is not a decision (owner,
   2026-11-03, 2026-11-04).
+- **One asker:** a question or check for the owner is asked by one session
+  only, the one that acts on the answer. A session that asks another to do
+  something the owner must confirm names which of the two asks; the other
+  neither asks nor relays the owner's answer back (owner, 2026-11-07, after
+  Upstream HQ and Logbook both asked whether one test push arrived).
 - **Short checks:** when a check would settle a `Guess:` or an open
   question, needs no special permission (no permission dialog, no sandbox
   bypass, no change outside the working directory, nothing sent outside),
