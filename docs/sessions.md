@@ -159,7 +159,9 @@ Send each message only to the sessions that need it.
   <summary>
   ```
 - A message holds at most 64 KB; `&` and angle brackets may arrive as HTML
-  character references.
+  character references. The receiver reads `&lt;`, `&gt;` and `&amp;` as
+  `<`, `>` and `&` without reporting it. The sender fills every `<...>`
+  before sending; a placeholder the receiver must fill is written `{...}`.
 
 ### Approvals
 
