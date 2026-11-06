@@ -134,8 +134,10 @@ Send each message only to the sessions that need it.
 - **One asker:** a question or check for the owner is asked by one session
   only, the one that acts on the answer. A session that asks another to do
   something the owner must confirm names which of the two asks; the other
-  neither asks nor relays the owner's answer back (owner, 2026-11-07, after
-  Upstream HQ and Logbook both asked whether one test push arrived).
+  does not ask too. The asker passes the answer on only when the other
+  session needs it to act (it is waiting on it, or its next step changes);
+  an answer that only closes a check is not passed on (owner, 2026-11-07,
+  after Upstream HQ and Logbook both asked whether one test push arrived).
 - **Short checks:** when a check would settle a `Guess:` or an open
   question, needs no special permission (no permission dialog, no sandbox
   bypass, no change outside the working directory, nothing sent outside),
