@@ -224,6 +224,9 @@ Send each message only to the sessions that need it.
 - **Own tools:** a session knows its tools, deferred ones included (loaded
   with ToolSearch), and proposes one unasked when it could do the work
   better or remove a manual step for the owner, as it would a skill.
+- **Skills, read each time:** when a skill covers the step (a relay file, a
+  handover, a first prompt, a TF start), invoke it and follow its text, even
+  when the steps seem known; never write its format from memory.
 - **Time estimates:** before work expected to take over 10 minutes, write
   one line `Estimate: <time> (<reason>)` and note the time: one figure, not
   a range, for the session's own working time only, from its measured pace
