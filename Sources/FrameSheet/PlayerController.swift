@@ -177,11 +177,21 @@ final class PlayerController {
             stillCacheKey = nil
         }
         frame = PlayerNavigation.clamp(start, frameCount: file.frameCount)
+        refreshDecoder()
+        scheduleDecodes()
+    }
+
+    /// Opens (or reopens) the shown movie's backend and takes its decoder,
+    /// which decides how it plays (`canPlay`); a result for another movie or
+    /// an older source is dropped.
+    private func refreshDecoder() {
+        guard let model, let file else { return }
+        let token = sourceToken
         Task {
-            guard let model, let backend = try? await model.backend(for: file), fileId == file.id else { return }
+            guard let backend = try? await model.backend(for: file), fileId == file.id, token == sourceToken
+            else { return }
             decoder = backend.kind
         }
-        scheduleDecodes()
     }
 
     /// The shown movie's rotation or crop changed (§3): its stills and
@@ -207,8 +217,11 @@ final class PlayerController {
         decodeTask?.cancel()
         decodeTask = nil
         if playback != .paused || isShown { stopPlayback(dropItem: true) }
+        // Play stays off until the new source's backend is open (the third
+        // pre-release audit: it stayed off until the player was reopened).
         decoder = nil
         transformChanged(fileId)
+        refreshDecoder()
     }
 
     /// Space on a shot sheet: cut/merge mode ↔ change-thumb mode.

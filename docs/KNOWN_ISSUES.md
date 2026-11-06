@@ -134,3 +134,67 @@ history of this file up to tag v2.3.1.
 * **Reason**: The second pre-release audit's fix (2026-11-06); no version
   check in `FFmpegLocator`.
 * **Workaround**: Install a current ffmpeg (`brew install ffmpeg`).
+
+### 12. Some commands still miss a source change while they wait
+* **Description**: Save Sheet binds its movie and sheet when it starts, but
+  a Replace or Undo during its wait for playback lets the new source supply
+  the pixels while the name and embedded data are the old movie's; a scan
+  cancelled by an undo can still drain old thumbnails into the cleared
+  cache, and its deferred cleanup does not block a new scan; a player
+  CHANGE/CUT and Save Frame's encoding do not check the generation before
+  they commit.
+* **Reason**: Third pre-release audit (2026-11-06) findings 2, 4 and 5,
+  traced in `AppModel+Save.swift`, `AppModel+Transform.swift`,
+  `AppModel+Faces.swift`, `PlayerController.swift`; not reproduced.
+* **Workaround**: Do not replace or undo a movie while a save, scan or
+  player edit of it runs.
+
+### 13. Pipe readers outlive a child that keeps the pipes open
+* **Description**: After its 2 s drain deadline `ProcessRunner` returns but
+  leaves its blocked readers; `RawVideoPipe.finish` cannot reach its
+  deadline when a descendant keeps stdout open.
+* **Reason**: Third audit finding 6, traced; ffmpeg and ffprobe start no
+  such children.
+* **Workaround**: None needed with the system ffmpeg.
+
+### 14. notarytool's own error can show the profile name
+* **Description**: `scripts/release.sh` no longer prints the profile, but
+  notarytool's diagnostic for a missing profile names it, and its output
+  goes to the release log.
+* **Reason**: Third audit finding 7 (the message text read from the tool's
+  binary).
+* **Workaround**: Check `~/.config/framesheet/notary-profile` before a
+  release; the log stays on the Mac.
+
+### 15. ffmpeg playback estimates timestamps after one late line
+* **Description**: When a `showinfo` timestamp is 500 ms late, ffmpeg
+  playback names the rest of its frames by an estimate at 1/fps.
+* **Reason**: Third audit finding 8, traced in `FFmpegPlayback.swift`.
+* **Workaround**: Pause and play again.
+
+### 16. The duration probe reads the first video stream
+* **Description**: For a file without a duration whose first video stream
+  is a cover picture, the packet-timestamp probe uses `v:0` while decoding
+  uses the selected stream: the duration can be wrong or missing.
+* **Reason**: Third audit finding 9 (`FFmpegBackend.estimateDuration`).
+* **Workaround**: None; such files are rare.
+
+### 17. Imports keep at most 10,000 thumbs or scenes without saying so
+* **Description**: `ImportLimits.maxItems` cuts a longer frame list or
+  scene array and the import still reports success.
+* **Reason**: Third audit finding 10.
+* **Workaround**: Split very large sheets before exporting them.
+
+### 18. Faces sheets without a stored source are not marked on Replace
+* **Description**: Replace movie marks faces sheets for Apply only when
+  they record their scan source; sheets from before Apply existed keep the
+  old movie's face boxes unmarked.
+* **Reason**: Third audit finding 11 (`Library.relink`).
+* **Workaround**: Delete and remake such a faces sheet after Replace movie.
+
+### 19. A terminated release run leaves its temporary files
+* **Description**: `scripts/release.sh` cleans its worktree, build folder
+  and archives on exit, but not when it is killed with SIGTERM.
+* **Reason**: Third audit finding 12 (an `EXIT` trap only).
+* **Workaround**: After an interrupted release, run `git worktree prune`
+  and remove the leftover temporary folder.
