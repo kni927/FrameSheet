@@ -12,6 +12,11 @@
       "tools/spike/run-all.sh *",
       "scripts/check.sh *",
       "scripts/release.sh *"
-    ]
+    ],
+    "filesystem": {
+      "allowWrite": [
+        "~/Library/Caches/FrameSheet"
+      ]
+    }
   }
 }
