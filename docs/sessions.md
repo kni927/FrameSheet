@@ -302,8 +302,10 @@ lossy summary.
   (local TF) before an automatic compaction comes: at the first natural
   break past 76% (cloud HQ) or 94% (local TF), when the owner has not
   compacted; after an automatic compaction, at the next natural break. The
-  owner may say "handover" or "wrap up" at any time. Gateway and Workspace
-  sessions are exempt.
+  owner may say "handover" or "wrap up" at any time. When a `/compact`
+  leaves more than 25% of the window (`postTokens` in its
+  `compact_boundary`), the session suggests a handover once, in one line;
+  the owner decides. Gateway and Workspace sessions are exempt.
 - A session that wrapped up or handed over ends with the ready-to-archive
   block (`hq-handover`, `/tf`, `local-handover`) and waits.
 
