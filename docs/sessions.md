@@ -60,8 +60,10 @@ procedures are in skills (Skills, below); the reasons are in
   PushNotification itself for `high` (dotfiles `docs/routines/logbook.md`);
   a Routine bound to Logbook has it read new summaries and list them in its
   chat. Sessions with `send_message` send `[report]` to it directly. When the
-  owner asks it to act on a report, it hands the work to the HQ concerned
-  and does not implement. It is the one file `logbook.<session ID>` in
+  owner asks in its chat, it makes the fixes a report calls for itself,
+  following the target repository's `AGENTS.md`, and tells the HQ concerned
+  in one line what it pushed; larger or cross-repository work still goes to
+  that HQ (owner, 2026-11-06). It is the one file `logbook.<session ID>` in
   Google Drive `AI/Status/Sessions/`; it hands over like a cloud HQ.
 - **Gateway session** (cloud, `Full`): research and Web fetching, also for
   HQs (`kni927/gateway` `AGENTS.md`). Disposable: never starts sessions or
@@ -213,16 +215,10 @@ Send each message only to the sessions that need it.
   `reload-all`; repository instruction files catch up by themselves
   when a session gets a new container, or on the owner's "reload-all" (cloud
   and local sessions).
-- **Cloud to Mac is refused:** since about 2026-10-20 the server refuses
-  `send_message` from a cloud session into a local one
-  (`elevated_session_untrusted_device`, anthropics/claude-code#103864); Mac
-  to cloud and cloud to cloud still arrive. Never approve the card that
-  offers to let a cloud session "use your computers and other sessions": it
-  cannot be undone, and the session then asks on every send to the Mac,
-  can no longer exchange messages with other cloud sessions, and needs a
-  fresh sign-in on the Web. Until the refusal is lifted, an HQ puts what a TF
-  needs in its start prompt (`offer-tf`) or the repository; TFs report to
-  their HQ as before.
+- **Cloud to Mac is refused:** a cloud session's `send_message` to a local
+  one is refused (anthropics/claude-code#103864); use the Mac relay below.
+  Never approve the card that offers to let a cloud session "use your
+  computers and other sessions" (`mac-relay` has why).
 - **Mac relay:** a later message to a local session on a Mac goes as a file
   in Google Drive, `AI/Handoff/Inbox/` for the server Mac (the Mac mini) and
   `AI/Handoff/Inbox/Client/` for the client Mac (a MacBook), which
@@ -321,18 +317,10 @@ next, what is on hold, what waits on the owner, and short-lived notes.
 - **Owner steps count as done** once given, unless the step is critical,
   urgent, or a next step depends on it, or the owner says it is pending. Only
   those are kept, as tasks in the owner's Todoist project **Checklist**
-  (`6hv5QRGXXcX7vqRR`; section Waiting `6hv5QRWwJPh6FVFR` when a next step
-  depends on it, else On hold `6hv5QRVX8HMhVRX2`; one label naming the
-  repository), added with the Todoist connector (`add-tasks`): a short
-  `content`, and the steps in `description` as a bulleted list, one command
-  per line, starting with "Added by <session>, <date>." Erga kai Hemerai
-  (https://claude.ai/artifact/BfRA69hSfCditT5eUz8fzY) shows it, and the
-  owner completes them there or in Todoist. The artifact's database is not
-  used: its writes raise a dialog. "Waiting on owner" in a STATUS file
-  points to the Checklist. Do not ask the owner to report the rest. Read the
-  Checklist (`find-tasks` with that project) at the start of a turn that
-  follows up an owner step: a task no longer open is done; do not ask about
-  it.
+  (`checklist` skill), which Erga kai Hemerai shows. "Waiting on owner" in a
+  STATUS file points to the Checklist. Do not ask the owner to report the
+  rest; at the start of a turn that follows up an owner step, read the
+  Checklist: a task no longer open is done.
 - Before an item goes to the owner or stays under "Waiting on owner", check
   whether it is already done (`list_sessions`, `git log`, GitHub, the
   Google Drive connector, `list_events`), unless checking costs far more than
@@ -366,7 +354,8 @@ a session), `start-session` (Project HQ, everyday, or gateway session),
 `offer-tf` (a local TF as a one-click card), `rc-server` (TFs through Remote
 Control server mode), `find-session`, `mac-relay` (a message to a Mac
 session through the Google Drive inbox), `reload-all` (bring a
-running session's instructions up to date), `explain-before-shorten` (rewrite a
+running session's instructions up to date), `checklist` (owner steps in
+Todoist), `explain-before-shorten` (rewrite a
 Japanese explanation so it is understood, then shorten it; copied text with no
 license, so not in public repositories). `.claude/cloud-setup.sh`, copied the
 same way, is the `Trusted` environment's setup script
