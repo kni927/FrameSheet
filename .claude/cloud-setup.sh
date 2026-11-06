@@ -11,7 +11,7 @@
 # because plugins load before the hook runs.
 # The repositories are already cloned when it runs, but GitHub is not yet
 # reachable. kni927/dotfiles docs/CLOUD_ENVIRONMENTS.md explains each part.
-version=2026-11-04.1
+version=2026-11-06.1
 refresh=0; [ "${1:-}" = --refresh ] && refresh=1
 
 if [ $refresh = 0 ]; then
@@ -252,6 +252,14 @@ time spent in permission prompts, so the wait is
 (PostToolUse time - PreToolUse time) - duration_ms. Overlapping waits
 (parallel calls, subagents) are merged so no second is counted twice.
 
+A turn started by a background-task notification (a build or test run with
+run_in_background finished) counts the gap since the previous Stop as
+working time (`background_s`): the session was working, not the owner. A
+turn started by another session's message counts its gap as waiting on that
+session (`peer_wait_s`). Only a gap before the owner's own prompt stays
+uncounted. The kind comes from the prompt text, or from the transcript's
+last user entry (`origin.kind`) when the text does not tell.
+
 Each finished turn appends one JSON line to the log, with any `Estimate:`
 or `Took:` line of the turn's last reply, so estimates can be compared with
 the measured time. Prints nothing and
@@ -304,6 +312,29 @@ def tagged_lines(text):
             if l.strip().startswith(("Estimate:", "Took:"))][:4]
 
 
+def prompt_kind(data):
+    text = (data.get("prompt") or "").lstrip()
+    if text.startswith("<task-notification>"):
+        return "task-notification"
+    if text.startswith(("<cross-session-message", "Another Claude session sent a message")):
+        return "peer"
+    try:  # the transcript's last user entry carries origin.kind
+        with open(data.get("transcript_path") or "", "rb") as f:
+            f.seek(0, 2)
+            f.seek(max(0, f.tell() - 262144))
+            tail = f.read().decode("utf-8", "ignore").splitlines()
+        for raw in reversed(tail):
+            try:
+                e = json.loads(raw)
+            except ValueError:
+                continue
+            if e.get("type") == "user" and isinstance(e.get("origin"), dict):
+                return e["origin"].get("kind") or "human"
+    except OSError:
+        pass
+    return "human"
+
+
 def close_turn(state, end, session_id, how, reply=None):
     waits = state.get("waits", [])
     line = {
@@ -316,6 +347,9 @@ def close_turn(state, end, session_id, how, reply=None):
         "dialogs": len(waits),
         "end": how,
     }
+    for key in ("background_s", "peer_wait_s"):
+        if state.get(key):
+            line[key] = round(state[key])
     tags = tagged_lines(reply)
     if tags:
         line["lines"] = tags
@@ -340,6 +374,14 @@ def hook():
         if state:  # the last turn never reached Stop (interrupted)
             close_turn(state, state.get("last", state["start"]), session_id, "interrupted")
         state = {"start": now, "last": now, "cwd": data.get("cwd"), "pre": {}, "waits": []}
+        stopped = load(STATE_DIR / f"{session_id}.stop")
+        if stopped and stopped.get("t") and now > stopped["t"]:
+            gap = now - stopped["t"]
+            kind = prompt_kind(data)
+            if kind == "task-notification":
+                state["background_s"] = gap
+            elif kind == "peer":
+                state["peer_wait_s"] = gap
     elif state is None:
         # A turn that did not start with a prompt (a message from another
         # session, a scheduled task): start it at the first event we see.
@@ -357,6 +399,7 @@ def hook():
     if event == "Stop":
         close_turn(state, now, session_id, "stop", data.get("last_assistant_message"))
         path.unlink(missing_ok=True)
+        (STATE_DIR / f"{session_id}.stop").write_text(json.dumps({"t": now}))
     else:
         path.write_text(json.dumps(state))
 
@@ -371,7 +414,7 @@ def report(args):
             session = next(it)
         elif a == "--cwd":
             cwd = os.path.realpath(next(it))
-    elapsed = waited = dialogs = turns = 0
+    elapsed = waited = dialogs = turns = background = peer = 0
     try:
         lines = LOG.read_text(encoding="utf-8").splitlines()
     except OSError:
@@ -391,13 +434,17 @@ def report(args):
         elapsed += t.get("elapsed_s", 0)
         waited += t.get("waited_s", 0)
         dialogs += t.get("dialogs", 0)
+        background += t.get("background_s", 0)
+        peer += t.get("peer_wait_s", 0)
 
     def mins(s):
         return f"{round(s / 60)} min" if s >= 60 else f"{s} s"
 
     print(
         f"turns {turns}, elapsed {mins(elapsed)}, waited on the owner {mins(waited)} "
-        f"({dialogs} dialogs), working {mins(elapsed - waited)}"
+        f"({dialogs} dialogs), background {mins(background)}, "
+        f"working {mins(elapsed - waited + background)}, "
+        f"waited on other sessions {mins(peer)}"
     )
 
 
