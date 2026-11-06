@@ -40,3 +40,6 @@ xcuserdata/
 /.build/
 /tools/spike/.build/
 .swiftpm/
+
+# Editor settings (VS Code's Swift extension writes launch.json here)
+.vscode/
