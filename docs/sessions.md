@@ -387,8 +387,4 @@ lossy summary.
   successor checks that it is detached before archiving its predecessor
   (`local-handover`, `/tf`): `archive_session` on a parent the caller still
   hangs from has not been tested.
-- **Screen operations:** before computer use, ask the owner to stand by;
-  run `open -a Claude` right before each computer-use approval, or the
-  dialog stays hidden. Screen work runs in the main session or a new
-  foreground subagent, never a resumed background one, and a long-lived TF
-  asks for app access once.
+- **Screen operations:** follow `~/.claude/CLAUDE.md` (Environment).
