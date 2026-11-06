@@ -121,6 +121,13 @@ Send each message only to the sessions that need it.
   buttons (in the Claude desktop app, `wrap_up`'s `ask`/`actions`: pass the
   recap only); a skipped or unanswered question is not a decision (owner,
   2026-11-03, 2026-11-04).
+- **Short checks:** when a check would settle a `Guess:` or an open
+  question, needs no special permission (no permission dialog, no sandbox
+  bypass, no change outside the working directory, nothing sent outside),
+  and should take under 10 minutes, run it in the same turn and report the
+  result instead of proposing it or asking first; only checks outside that
+  end a reply with `Investigate further? (y/n)` (owner's decision,
+  2026-11-06).
 - **Earlier results:** before a test or an investigation, a session
   searches the records (`docs/` and `docs/archives/` in the repositories,
   `git log --grep`) for an earlier result and cites it; it tests again only
