@@ -88,9 +88,9 @@ builds them.
   2026-11-03; customizable since 2026-11-05: one item per control, a short
   default set, the rest in the customization palette; Fit height/width are
   disabled, not hidden, when they do not apply): Back to parent; Add shot-detection sheet; Add interval
-  sheet (presets 2×2 … 6×6); Add faces sheet (click: default scope; hold:
+  sheet (presets 2×2 … 6×6); Add faces sheet (a click opens its scopes:
   every 10th / every 100th frame between the lowest and highest thumb, or
-  these thumbs; T07); Sort (Reverse, Frame number, Face count, Face
+  these thumbs; T07; owner, 2026-11-05); Sort (Reverse, Frame number, Face count, Face
   size, Confidence; disabled for shot sheets); Filter (faces); Duplicate;
   Grid/timeline; Player view (key 2); Zoom out / Fit / Zoom in (0.25, 0.33,
   0.5, 0.75, 1, 2 … 8; default 1); Show hidden thumbs; Show header; cycle frame
@@ -293,7 +293,7 @@ Alt and Ctrl become Option and Control.
   the scan cache, counting only faces that pass the thresholds. Scope: the multiples of 10 (default) / of 100 between
   the lowest and highest visible thumb (a fixed frame grid, so every sheet
   of a movie shares analyzed frames; MoviePrint spreads them per sheet;
-  owner, 2026-11-05), or exactly the current thumbs. When the
+  owner, 2026-11-05), or exactly the current thumbs. A range that holds no multiple of the step analyzes its lowest thumb; with no visible thumb nothing is analyzed (HQ, 2026-11-06; the frame-0 case is KNOWN_ISSUES 7). When the
   shot scan has not run, a face scan runs the same combined pass. On the
   ffmpeg path, every 100th frame is the default. Sort by face
   count, size, confidence; filters (each toggleable): face count 1–10
