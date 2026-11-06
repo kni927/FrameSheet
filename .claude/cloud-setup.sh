@@ -11,7 +11,7 @@
 # because plugins load before the hook runs.
 # The repositories are already cloned when it runs, but GitHub is not yet
 # reachable. kni927/dotfiles docs/CLOUD_ENVIRONMENTS.md explains each part.
-version=2026-11-06.2
+version=2026-11-06.4
 refresh=0; [ "${1:-}" = --refresh ] && refresh=1
 
 if [ $refresh = 0 ]; then
@@ -257,15 +257,18 @@ run_in_background finished) counts the gap since the previous Stop as
 working time (`background_s`): the session was working, not the owner. A
 turn started by another session's message counts its gap as waiting on that
 session (`peer_wait_s`). Only a gap before the owner's own prompt stays
-uncounted. The kind comes from the prompt text, or from the transcript's
-last user entry (`origin.kind`) when the text does not tell.
+uncounted. The kind comes from the prompt text only: at UserPromptSubmit
+the transcript's last user entry is still the previous one (an owner prompt
+read as the peer message before it, 2026-11-06).
 
 Each finished turn appends one JSON line to the log, with any `Estimate:`
 or `Took:` line of the turn's last reply, so estimates can be compared with
 the measured time. Prints nothing and
 always exits 0, so it never changes a decision or blocks a turn.
 
-    work-timer --report [--since ISO-TIME] [--session ID | --cwd DIR]
+    work-timer --report [--since ISO-TIME] [--session ID | --cwd DIR | --all]
+
+Without --session, --cwd or --all it reports the calling session only.
 
 sums the logged turns, and the open turn of each matching session up to now
 (so a report made in the turn it describes includes that turn): elapsed,
@@ -315,25 +318,17 @@ def tagged_lines(text):
 
 
 def prompt_kind(data):
+    """What started the turn: `background` (this session's own background task
+    or subagent finished), `peer` (another session's message), or `human`.
+    A queued-remote-notifications ping (a scheduled task, a remote message
+    waiting) is the session idling, not working, so it counts as `human`."""
     text = (data.get("prompt") or "").lstrip()
-    if text.startswith("<task-notification>"):
-        return "task-notification"
+    if "queued-remote-notifications" in text[:2000]:
+        return "human"
+    if text.startswith("<task-notification>") or "Subagent hand-back" in text[:600]:
+        return "background"
     if text.startswith(("<cross-session-message", "Another Claude session sent a message")):
         return "peer"
-    try:  # the transcript's last user entry carries origin.kind
-        with open(data.get("transcript_path") or "", "rb") as f:
-            f.seek(0, 2)
-            f.seek(max(0, f.tell() - 262144))
-            tail = f.read().decode("utf-8", "ignore").splitlines()
-        for raw in reversed(tail):
-            try:
-                e = json.loads(raw)
-            except ValueError:
-                continue
-            if e.get("type") == "user" and isinstance(e.get("origin"), dict):
-                return e["origin"].get("kind") or "human"
-    except OSError:
-        pass
     return "human"
 
 
@@ -372,15 +367,21 @@ def hook():
     path = STATE_DIR / f"{session_id}.json"
     state = load(path)
 
+    ended = STATE_DIR / f"{session_id}.stop"
     if event == "UserPromptSubmit":
-        if state:  # the last turn never reached Stop (interrupted)
-            close_turn(state, state.get("last", state["start"]), session_id, "interrupted")
+        if state:  # the last turn never reached Stop (interrupted, or a
+            # message arrived while background work kept the turn open)
+            end = state.get("last", state["start"])
+            close_turn(state, end, session_id, "interrupted")
+            ended.write_text(json.dumps({"t": end}))
         state = {"start": now, "last": now, "cwd": data.get("cwd"), "pre": {}, "waits": []}
-        stopped = load(STATE_DIR / f"{session_id}.stop")
+        # The gap runs from the end of the previous turn, however it ended,
+        # so no second is counted both in a turn and in the next gap.
+        stopped = load(ended)
         if stopped and stopped.get("t") and now > stopped["t"]:
             gap = now - stopped["t"]
             kind = prompt_kind(data)
-            if kind == "task-notification":
+            if kind == "background":
                 state["background_s"] = gap
             elif kind == "peer":
                 state["peer_wait_s"] = gap
@@ -393,29 +394,45 @@ def hook():
         state["pre"][data["tool_use_id"]] = now
     elif event in ("PostToolUse", "PostToolUseFailure"):
         started = state["pre"].pop(data.get("tool_use_id"), None)
-        duration = (data.get("duration_ms") or 0) / 1000
-        if started is not None and (now - started) - duration >= MIN_WAIT:
+        # Without duration_ms (some MCP tools, failures) the call's own run
+        # time cannot be told from a dialog, so it is not counted as one.
+        raw = data.get("duration_ms")
+        duration = (raw or 0) / 1000
+        if started is not None and raw is not None and (now - started) - duration >= MIN_WAIT:
             state["waits"].append([started, now - duration])
 
     state["last"] = now
     if event == "Stop":
         close_turn(state, now, session_id, "stop", data.get("last_assistant_message"))
         path.unlink(missing_ok=True)
-        (STATE_DIR / f"{session_id}.stop").write_text(json.dumps({"t": now}))
+        ended.write_text(json.dumps({"t": now}))
     else:
         path.write_text(json.dumps(state))
 
 
 def report(args):
     since = session = cwd = None
+    every = False
     it = iter(args)
     for a in it:
+        if a == "--all":
+            every = True
+            continue
         if a == "--since":
             since = datetime.fromisoformat(next(it)).astimezone()
         elif a == "--session":
             session = next(it)
         elif a == "--cwd":
             cwd = os.path.realpath(next(it))
+    if session is None and cwd is None and not every:
+        # Default to the session calling --report: its open turn's state file
+        # is the newest one (its Bash call has just been recorded). Other
+        # sessions on the same machine, subagents' `claude -p` included, stay out.
+        try:
+            newest = max(STATE_DIR.glob("*.json"), key=lambda f: f.stat().st_mtime)
+            session = newest.stem
+        except (OSError, ValueError):
+            pass
     elapsed = waited = dialogs = turns = background = peer = 0
     try:
         lines = LOG.read_text(encoding="utf-8").splitlines()
