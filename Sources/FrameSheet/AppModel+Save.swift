@@ -75,6 +75,21 @@ extension AppModel {
 
     func cancelSave() { saveJob?.cancel() }
 
+    /// Save Sheet and Save All pause playback first: it holds the DecodeGate
+    /// while it plays, so a save would wait behind it (or, on the ffmpeg
+    /// path, decode beside it), and Save All's modal covers its controls.
+    private func pausePlaybackForSave() {
+        if player.isPlaying { player.pause() }
+    }
+
+    /// Returns once the paused player has given the DecodeGate back and its
+    /// last decode is done.
+    private func playbackYielded() async {
+        await player.waitForDecodes()
+        await DecoderSessionGate.acquire()
+        await DecoderSessionGate.release()
+    }
+
     /// Save Sheet (key M): decodes the print's frames fresh at about twice
     /// their size in the print, in small sequential batches through the
     /// movie's backend (never in parallel; the AVFoundation backend holds the
@@ -96,12 +111,14 @@ extension AppModel {
             toast = "\(sheet.name) has no thumbs to save."
             return
         }
+        pausePlaybackForSave()
         progress = SaveProgress(message: "Saving \(sheet.name)…", fraction: nil)
         saveJob = Task {
             defer {
                 progress = nil
                 saveJob = nil
             }
+            await playbackYielded()
             do {
                 let (url, failures, fromWindow) = try await writeSheet(
                     file: file, sheet: sheet, settings: settings, plan: plan)
@@ -145,9 +162,7 @@ extension AppModel {
         let items = SaveAllPlan.items(library)
         guard !items.isEmpty else { return }
         let settings = library.settings
-        // Playback holds the DecodeGate while it plays, and the modal would
-        // cover its controls: it pauses first.
-        if player.isPlaying { player.pause() }
+        pausePlaybackForSave()
         saveAllProgress = SaveAllProgress(index: 0, count: items.count, title: "")
         let log = ScanLog("save all")
         saveJob = Task {
@@ -156,10 +171,7 @@ extension AppModel {
                 progress = nil
                 saveJob = nil
             }
-            // The paused player has given the gate back before the first decode.
-            await player.waitForDecodes()
-            await DecoderSessionGate.acquire()
-            await DecoderSessionGate.release()
+            await playbackYielded()
             log.write("app: save all, \(items.count) sheets of \(library.files.count) movies, "
                 + "\(settings.outputFormat == .png ? "PNG" : "JPG"), individual thumbs \(settings.includeIndividualThumbs)")
             let report = await SaveAllQueue.run(items) { index, item in
