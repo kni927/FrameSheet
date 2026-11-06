@@ -25,8 +25,11 @@ reproduces MoviePrint v0.2.23 for Apple Silicon: decisions 14–22 in
   finding 12 refuted; `docs/tasks/2026-11-05-02-audit-fixes.md`), so the
   second Codex audit's fixes are on `main` too (TF #03, 2026-11-06: A, B, C
   fixed, D in KNOWN_ISSUES 7–11; `docs/tasks/2026-11-06-01-audit2-fixes.md`;
-  release dry run passed), so a changes-only third audit comes next, and
-  the release unless it finds a blocker (owner, 2026-11-06). Manual checks of the first fixes: 1, 5, 10 OK; 9, 13,
+  release dry run passed), and the changes-only third audit (Drive
+  `codex-audit-20261106-03.md`) found one blocker (the private-path check
+  fails open) plus a playback regression after Replace; 💻 TF #03 fixes
+  both, records the other ten in KNOWN_ISSUES, and a release dry run closes
+  it (no fourth audit; owner, 2026-11-06). Then TF #02 releases. Manual checks of the first fixes: 1, 5, 10 OK; 9, 13,
   14 skipped. UI round 1 done (`docs/tasks/2026-11-05-03-toolbar-menus.md`;
   decision 27).
 - Face follow-ups (owner, 2026-11-04): a "per shot" scope (the middle frame of
