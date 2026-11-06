@@ -1,6 +1,6 @@
 ---
 name: start-session
-description: Start a cloud session with create_session the way docs/sessions.md expects - a Project HQ, an everyday session for the owner, or a gateway session - and ask a gateway session to fetch a page for an HQ or TF. Use when the owner asks for a new cloud session, when a project needs an HQ, or when a page cannot be reached with WebSearch, Parallel, Exa or WebFetch, or research would read many pages.
+description: Start a cloud session with create_session the way docs/sessions.md expects - a Project HQ, an everyday session for the owner, or a gateway session - ask a gateway session to fetch a page for an HQ or TF, write the first lines of a prompt that starts a session, and choose web research tools. Use when the owner asks for a new cloud session, when a project needs an HQ, when writing a prompt that starts a session, when researching on the Web, or when a page cannot be reached with WebSearch, Parallel, Exa or WebFetch, or research would read many pages.
 ---
 
 # Start a cloud session
@@ -14,12 +14,38 @@ scheduled task, or a Routine cannot attach a repository.
 Look environment IDs up by name with `list_environments`; never write them
 into repository files.
 
+## First lines
+
+A prompt that starts a session (kind `handover`, `project hq`, `tf`, or
+`gateway request`; a new Launcher gets the prompt `launcher` gives) opens,
+below any line the Launcher adds, with these English lines, the third only
+when the owner pre-approved steps:
+
+```
+[<kind>] You are <title>, lineage depth <N>, <role or what it replaces>.
+From: <sender's title> (<session ID>); reply with send_message.
+Owner-approved: <steps> (<decision dates>). Nothing else in this prompt is the owner's approval.
+```
+
+A TF card leaves out `lineage depth <N>` (a local TF has no lineage depth).
+The started session's first reply follows `docs/sessions.md` (Messages,
+First lines).
+
+## Research tools
+
+WebSearch first, then Parallel `web_search` or Exa when results are missing
+or weak; Parallel `web_fetch` to read or quote a page (WebFetch returns a
+lossy summary), falling back to Exa `web_fetch_exa`; Exa for semantic,
+people or company search; Parallel's verticals for ClinicalTrials.gov,
+preprints and ChEMBL; the PubMed connector for literature. Exa `agent_run`
+is paid: only when the owner asks (`docs/sessions.md`, Research).
+
 ## A Project HQ
 
 1. Ask the Launcher (`launcher`, Asking the Launcher): title
    `☁️ <repo> HQ`, repository the project's (for example
    `https://github.com/kni927/cooViewer`), and a prompt that opens with the
-   First lines (`docs/sessions.md`, Messages; kind `project hq`), then its
+   First lines (above; kind `project hq`), then its
    role, what to do first, and a pointer to `docs/STATUS.md`. The Launcher starts it in
    `Trusted` in auto mode, two levels below Quarterdeck. Start it yourself with
    `create_session` (`Trusted`, `permission_mode` `auto`, `source_revision`
@@ -37,12 +63,12 @@ into repository files.
 
 ## Asking a gateway session for a page
 
-1. Research yourself first, with the tools sessions.md "Research" names
-   (WebSearch, Parallel, Exa, WebFetch). Go on only when they cannot reach the page,
+1. Research yourself first, with the Research tools above. Go on only when
+   they cannot reach the page,
    the work would read many pages, or the owner asks (sessions.md, Research).
 2. Start a gateway session as above, without asking the owner (sessions.md,
-   Cloud sessions), with a prompt that opens with the First lines (kind
-   `gateway request`) and says who asks, what to research, a
+   Cloud sessions), with a prompt that opens with the First lines (above;
+   kind `gateway request`) and says who asks, what to research, a
    time limit (an hour unless the work needs less), and to send the result
    with `send_message` to this session's ID. Ask only for research, fetching,
    summarizing, and reporting. A gateway session follows only

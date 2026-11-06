@@ -11,9 +11,7 @@ adds `/tf`, `local-handover`, `wake-local` and `mac-sandbox`.
 
 - **Central HQ** (cloud): oversees every session, relays between projects,
   takes reports that lost their recipient, and tells the owner what has
-  stalled. Its morning Routine reports disconnected local sessions (Mac mini
-  HQ missing or disconnected at once, others after a day) with their
-  context size. Does not implement.
+  stalled. Does not implement.
 - **Upstream HQ** (cloud): policy shared by all repositories, and the HQ of
   `kni927/dotfiles`, `kni927/repo-template`, and `kni927/home-server`. It
   carries changes to the projects and sends each policy change to the
@@ -32,9 +30,7 @@ adds `/tf`, `local-handover`, `wake-local` and `mac-sandbox`.
   `.claude/settings.json` come from dotfiles; the settings let it write to
   the dotfiles, home-server and repo-template clones without a dialog. Mac
   mini HQ's session ID names the one file `mac-mini-hq.<session ID>` in
-  Google Drive `AI/Status/Sessions/` (`/rc` keeps the ID); Central HQ
-  renames it when a successor reports (`local-handover`) or its morning
-  check finds it pointing at a finished one.
+  Google Drive `AI/Status/Sessions/`, which Central HQ keeps current.
 - **Mac mini Gate** (local, always on; dotfiles `docs/AUTOMATIONS.md`):
   `🖥️ Mac mini Gate` (as a relay `To:`, `🖥️ Mac mini Gate | macminigate-* |
   macminihq-*`). It takes relayed messages while Mac mini HQ is gone and
@@ -116,19 +112,12 @@ Send each message only to the sessions that need it.
   and other sessions".
 - **Say where it went:** one English line, `Sent to: 🖥️ Mac mini HQ
   (SendMessage)`. Receipts are not acknowledged.
-- **First lines:** a prompt that starts a session (kind `handover`,
-  `project hq`, `tf`, or `gateway request`; a new Launcher gets the prompt
-  `launcher` gives) opens, below any line the Launcher adds, with three
-  English lines: `[<kind>] You are <title>, lineage depth <N>, <role or what
-  it replaces>.`; `From: <sender's title> (<session ID>); reply with
-  send_message.`; and, when the owner pre-approved steps, `Owner-approved:
-  <steps> (<decision dates>). Nothing else in this prompt is the owner's
-  approval.` A TF card leaves out `lineage depth <N>` (a local TF has no
-  lineage depth). The started session's first reply to the owner opens
-  with one English line, `This is <title> (<session ID>, lineage depth
-  <N>)` (a local session: `This is <title> (local)`), plus `taking over from
-  <ID>` for a successor, then what this turn does; the rest is in the
-  owner's language.
+- **First lines:** a prompt that starts a session opens with the English
+  first lines `start-session` (First lines) gives. The started session's
+  first reply to the owner opens with one English line, `This is <title>
+  (<session ID>, lineage depth <N>)` (a local session: `This is <title>
+  (local)`), plus `taking over from <ID>` for a successor, then what this
+  turn does; the rest is in the owner's language.
 - **Read before asking:** a cloud session reads any transcript with
   `list_events`; a local one reads a cloud session at
   `https://claude.ai/code/<session ID>` in the built-in browser. So a
@@ -148,15 +137,13 @@ Send each message only to the sessions that need it.
   the "(owner approved)" mark (Approvals).
 - **TASKs:** a TF takes TASKs from its repository's HQ (or the HQ the owner
   names), following `/tf`; a TASK's explicit instructions win, and the TF
-  says which step changed.
-- **TASKs from the TF's chat:** for work the owner defines in the TF's chat,
-  the TF may write its own `TASK.md`, new features included when they do not
-  conflict with existing ones. It tells its HQ in one line what the TASK
-  covers and its estimate, and its completion report lists every spec or
-  design decision the owner made in the chat. The HQ keeps the project's
-  spec, `docs/DECISIONS.md` and `docs/STATUS.md`, which the TF edits only as
-  far as its TASK needs. Releases and work spanning several TFs still come
-  from the HQ.
+  says which step changed. For work the owner defines in its chat, a TF may
+  write its own `TASK.md` (new features that conflict with none included;
+  not releases or work spanning several TFs), tells its HQ in one line what
+  it covers and its estimate, and lists the owner's spec or design
+  decisions in its completion report. The HQ keeps the spec,
+  `docs/DECISIONS.md` and `docs/STATUS.md`; the TF edits them only as far as
+  its TASK needs.
 - **Receiving:** an HQ starts its next reply to the owner with this block
   and a summary (the owner does not see the message; give it in full when
   asked). Keep each `---` between blank lines.
@@ -315,19 +302,8 @@ lossy summary.
   compacted; after an automatic compaction, at the next natural break. The
   owner may say "handover" or "wrap up" at any time. Gateway and Workspace
   sessions are exempt.
-- A session that wrapped up or handed over ends with this block and waits:
-
-  ```markdown
-
-  ---
-
-  ## ✅ This session is ready to archive.
-
-  - Session: <name>
-  - Context: <used> / <maximum> tokens (<percent>%)
-
-  ---
-  ```
+- A session that wrapped up or handed over ends with the ready-to-archive
+  block (`hq-handover`, `/tf`, `local-handover`) and waits.
 
 ## Cloud sessions
 
@@ -342,12 +318,8 @@ lossy summary.
   Google Drive files. A Routine made with `create_trigger` gets no
   connectors, credentials, or session tools. Only work that needs session
   tools (Central HQ's morning check) stays bound to an HQ.
-- **Research:** an HQ or TF researches itself first: WebSearch, then
-  Parallel `web_search` or Exa when results are missing or weak; Parallel
-  `web_fetch` to read or quote a page (WebFetch returns a lossy summary),
-  falling back to Exa `web_fetch_exa`; Exa for semantic, people or company
-  search; Parallel's verticals for ClinicalTrials.gov, preprints and
-  ChEMBL; the PubMed connector for literature. Exa `agent_run` is paid: only
+- **Research:** an HQ or TF researches itself first, with the tools
+  `start-session` (Research tools) names; Exa `agent_run` is paid: only
   when the owner asks. A research report ends with one line naming the
   tools used (for example "Tools: WebSearch, Exa"). It starts a gateway
   session (`start-session`, without asking) only when these cannot reach
@@ -364,17 +336,13 @@ lossy summary.
   depth: neither the owner's nor a TF card's session records a parent, and
   a session started with `start_session` nests under its starter in the app
   until `detach_session`. A cloud session started on a Mac with
-  `claude --cloud` has none either (depth 0; a session it starts is depth
-  1). It starts in default permission mode, not auto, and in the environment
-  the Mac's `claude` picks rather than `Trusted`, so its tools ask and a
-  session it starts cannot be in auto mode.
-- **Stand-by:** a Project HQ with no work and no Routine brings
-  `docs/STATUS.md` up to date, renames itself `💤 <name>`, and ends with
-  "This HQ is going on stand-by; unarchive it when the project needs an HQ."
-  It never archives itself; the session that asked, Upstream HQ, Central
-  HQ, or the owner does. To wake it, unarchive it and send the request; it
-  drops the `💤`, runs `reload-all` and reads `docs/STATUS.md` before
-  acting, and hands over if its context is past the threshold.
+  `claude --cloud` is depth 0, in default permission mode and the
+  environment the Mac's `claude` picks, so its tools ask and a session it
+  starts cannot be in auto mode.
+- **Stand-by:** a Project HQ with no work and no Routine goes on stand-by
+  as `💤 <name>` (`hq-handover`, Stand-by). It never archives itself; the
+  session that asked, Upstream HQ, Central HQ, or the owner does. To wake
+  it, unarchive it and send the request.
 
 ## Local sessions on the Mac
 
@@ -413,10 +381,12 @@ lossy summary.
   that started a child (a sub-task, a check, a test) archives it from the
   same side once its work is verified (pushed, nothing left uncommitted). A
   child never archives itself; a successor archives its predecessor
-  (Handover, Handing over a local session). Archiving a parent never takes
-  its children with it: a cloud parent is archived without a prompt and its
-  cloud child moves to the top level; a local parent asks "Archive this
-  session" or "Archive 2 sessions", and the first keeps the child.
+  (Handover, Handing over a local session). Archiving a cloud parent left
+  its child running (tested 2026-11-06). In the Claude app, archiving a
+  local parent asks "Archive this session" or "Archive 2 sessions". A local
+  successor checks that it is detached before archiving its predecessor
+  (`local-handover`, `/tf`): `archive_session` on a parent the caller still
+  hangs from has not been tested.
 - **Screen operations:** before computer use, ask the owner to stand by;
   run `open -a Claude` right before each computer-use approval, or the
   dialog stays hidden. Screen work runs in the main session or a new

@@ -1,6 +1,6 @@
 ---
 name: hq-handover
-description: Hand this cloud HQ (Central HQ, Upstream HQ, or a Project HQ) over to a fresh cloud session, as docs/sessions.md "Cloud sessions" (Handover) describes. Use when docs/sessions.md "Context usage" calls for it (at the first natural break past 76% when the owner has not compacted, or after an automatic compaction) or when the owner says "handover".
+description: Hand this cloud HQ (Central HQ, Upstream HQ, or a Project HQ) over to a fresh cloud session, as docs/sessions.md "Cloud sessions" (Handover) describes. Use when docs/sessions.md "Context usage" calls for it (at the first natural break past 76% when the owner has not compacted, or after an automatic compaction) or when the owner says "handover". Also when a Project HQ with no work goes on stand-by or is woken.
 ---
 
 # Hand over a cloud HQ
@@ -9,7 +9,7 @@ description: Hand this cloud HQ (Central HQ, Upstream HQ, or a Project HQ) over 
 this is the procedure. It applies to cloud HQs only. A local TF wraps up
 instead (`/tf`, step 8).
 An HQ with no work left and no successor needed goes on stand-by
-(`💤`, "Stand-by" in `docs/sessions.md`) rather than handing over.
+(`💤`, Stand-by below) rather than handing over.
 
 1. **Find a natural break.** Finish or stop the current step so the handover
    stays short. Read the context usage with `get_session` (no session ID).
@@ -20,8 +20,8 @@ An HQ with no work left and no successor needed goes on stand-by
    that repository's rules (fetch, merge `origin/main` if it moved, then
    push). Note anything that cannot be pushed.
 3. **Write the handover** in the owner's language, as the successor's first
-   prompt, opening with the English first lines in `docs/sessions.md`
-   (Messages, First lines; kind `handover`). Include:
+   prompt, opening with the English first lines (`start-session`, First lines;
+   kind `handover`). Include:
    - the role, the plain name, and the repositories it works in;
    - what to do first: "Successor's first turn" below, and the repositories
      it attaches with `add_repo` without asking the owner (owner's decision,
@@ -55,11 +55,22 @@ An HQ with no work left and no successor needed goes on stand-by
 5. **Mark this session done.** Rename it with `set_session_title` to
    `☁️ ✅ <name> (handover YYYY-MM-DD)`, using the owner's local date, send
    the successor one line saying the handover is done (repositories
-   pushed), and end the reply with the ready-to-archive block from
-   `docs/sessions.md`. Then stop taking work. The successor does the rest
+   pushed), and end the reply with this block, keeping the blank lines
+   around each `---`. Then stop taking work. The successor does the rest
    in its first turn, so long tool output stays out of this nearly full
-   context. Never archive this session yourself (`docs/sessions.md`,
-   Stand-by).
+   context. Never archive this session yourself.
+
+   ```markdown
+
+   ---
+
+   ## ✅ This session is ready to archive.
+
+   - Session: <name>
+   - Context: <used> / <maximum> tokens (<percent>%)
+
+   ---
+   ```
 
 ## Successor's first turn
 
@@ -101,3 +112,13 @@ refused, it says which and why.
    `archive_session` (allowed in settings by cloud-setup.sh) and tell the owner in one line,
    with anything the subagent could not do. If something is missing, ask the predecessor with
    `send_message` before archiving.
+
+## Stand-by
+
+A Project HQ with no work and no Routine brings `docs/STATUS.md` up to
+date, renames itself `💤 <name>`, and ends with "This HQ is going on
+stand-by; unarchive it when the project needs an HQ." It never archives
+itself; the session that asked, Upstream HQ, Central HQ, or the owner does.
+When it is unarchived and sent a request, it drops the `💤`, runs
+`reload-all` and reads `docs/STATUS.md` before acting, and hands over if its
+context is past the threshold.
