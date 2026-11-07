@@ -359,11 +359,12 @@ lossy summary.
   not run it by relaying commands and logs; when it finds itself doing so,
   it sends the local session what was tried, the commits and the current
   state (`mac-relay`), and stops.
-- **`chezmoi apply`:** a local session runs it when the owner asks or a
-  pulled dotfiles change needs it, as `mac-sandbox` (One dialog for push and
-  apply) says: it shows the owner `chezmoi-preview`, then runs
-  `push-and-apply --apply` through its one permission dialog. `chezmoi
-  apply` stays out of the allow list.
+- **`chezmoi apply`:** a local session pushes its dotfiles changes without
+  applying them. It applies only when the owner asks, or when a test on this
+  Mac needs the change now and the owner is in the conversation; then it
+  shows `chezmoi-preview` and runs `push-and-apply --apply` through one
+  permission dialog (`mac-sandbox`). Otherwise the change waits for the
+  owner's next `chezmoi apply`. `chezmoi apply` stays out of the allow list.
 - **Starting a TF:** a cloud HQ asks the Mac's base session to start it; a
   card or the owner typing `/tf` is the fallback (`offer-tf`).
 - **Handing over a local session:** with `local-handover` (Context usage
