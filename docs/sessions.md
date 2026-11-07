@@ -90,7 +90,11 @@ Send each message only to the sessions that need it.
   a policy change to every active Project HQ (a change to the custom
   instructions, dotfiles `instructions/full/claude.md`, as a request to run
   `reload-all`) and a one-line summary to Central HQ; a `💤` HQ gets nothing
-  (it re-reads this file when it wakes). Central HQ gets messages between
+  (it re-reads this file when it wakes). After a change to this file or the
+  global rules, Upstream HQ also asks each active session that follows them
+  (HQs, Logbook, base local sessions; local ones by `mac-relay`) to run the
+  `reload-all` skill; a session asked so invokes it with the Skill tool,
+  since a typed `/reload-all` arrives only as text. Central HQ gets messages between
   projects, lost reports, HQ handovers, and policy summaries.
 - **How to send:** from a cloud session, `send_message` (claude-code-remote)
   to the session ID, local ones too, replying to `from-session`. From a
