@@ -383,9 +383,12 @@ lossy summary.
   `main` only when the TASK says so. The owner removes the worktree and
   branch after archiving the TF.
 - **Lifetime:** after the Claude app restarts, local sessions are cut off
-  from Remote Control and cloud messages wait. The owner types `/rc` in the
-  base session, which wakes only the sessions the owner picks, where work is
-  about to go (`wake-local`).
+  from Remote Control and cloud messages wait. On the Mac mini,
+  `claude-app-watch` wakes Mac mini HQ 2 to 12 minutes later by typing one
+  line into it (dotfiles `docs/AUTOMATIONS.md`); on the MacBook, or when
+  that wake fails (Central HQ's morning check reports it), the owner types
+  `/rc` in the base session. The base session wakes only the sessions the
+  owner picks, where work is about to go (`wake-local`).
 - **How long a TF runs:** as `/tf` says. Never keep sessions warm with
   periodic messages; what the next TF needs goes into the repository.
 - **Archiving:** the owner archives local sessions in the Mac app; no cloud
