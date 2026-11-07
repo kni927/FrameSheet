@@ -9,6 +9,8 @@ editable thumbs and scenes, and export as PNG/JPG, JSON and EDL. The target
 behavior is in [docs/V3_SPEC.md](docs/V3_SPEC.md); v2 (up to tag `v2.3.1`)
 was a settings-to-one-image contact sheet generator.
 
+![FrameSheet v3 main window](assets/screenshot.png)
+
 ## Download
 
 Get `FrameSheet-3.0.0.zip` from the
