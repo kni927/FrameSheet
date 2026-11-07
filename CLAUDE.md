@@ -22,7 +22,6 @@ Before making changes, read:
 3. docs/PROJECT.md
 4. docs/ARCHITECTURE.md
 5. docs/KNOWN_ISSUES.md
-6. docs/ANTIGRAVITY.md
 
 ## Development Rules
 
@@ -41,7 +40,8 @@ Before making changes, read:
 - Reproduce MoviePrint's layout and interactions, not its look: content uses
   the kni Design System (Catppuccin Mocha), dark only.
 - Keep UI text in English.
-- Do not remove historical information from docs/ANTIGRAVITY.md.
+- Do not remove historical information from `docs/archives/v2/` (v2's
+  development record and UI audit; moved there 2026-11-07).
 
 ## Decode Conventions
 
