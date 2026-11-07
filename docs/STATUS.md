@@ -16,6 +16,12 @@ for Apple Silicon: decisions 14–27 in `docs/DECISIONS.md`, target behavior in
 
 ## Next
 
+- HQ: ☁️ FrameSheet HQ is on stand-by after v3.0.0 (owner, 2026-11-07); no TF
+  or Routine is active. New work starts with Upstream HQ unarchiving it or a
+  new HQ.
+- Audit leftovers: KNOWN_ISSUES 7–19 (races on source changes, pipe readers,
+  ImportLimits truncation, ffmpeg 5.1 check, and others), candidates for a
+  3.0.x.
 - Spike follow-ups: measure 4K HEVC and HDR once the owner has such files;
   re-measure on the fastest Mac before raising defaults; re-check decode speed
   with the macOS 27 `AVAssetReaderOutput.Provider` API.
@@ -25,8 +31,6 @@ for Apple Silicon: decisions 14–27 in `docs/DECISIONS.md`, target behavior in
   each scene); more Vision workers on chips with two Neural Engines (measure
   first).
 - Audio for ffmpeg playback (deferred from T08; the "no audio" label stays).
-- Spec wording (T08): full screen is 🌐F on macOS 27 (§8 says ⌃⌘F); the crop
-  is in the rotated frame's pixels (§3 says source pixels).
 - Run `tools/spike/run-all.sh quick` once with a rotated and a cropped movie.
 - Scans and timing tests run slower under load (a remote-screen app, a
   browser using much memory): KNOWN_ISSUES 6.
@@ -47,7 +51,8 @@ for Apple Silicon: decisions 14–27 in `docs/DECISIONS.md`, target behavior in
 
 ## Waiting on owner
 
-- None.
+- Archive the local TFs 🖥️ TF #02 and 💻 TF #03 (all their work is on
+  `main`).
 
 ## Notes
 
