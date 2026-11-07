@@ -26,11 +26,9 @@ history of this file up to tag v2.3.1.
 * **Workaround**: None needed for interval sheets; the shot scan (not built
   yet) will count frames as it reads them.
 
-### 3. The zip carries the v2 version until v3 is tagged
-* **Description**: `build.sh` names the zip and sets
-  `CFBundleShortVersionString` from the latest tag, which is still v2.3.1.
-* **Workaround**: Expected; the version changes when v3 is tagged (a task of
-  its own).
+### 3. (Resolved) The zip carried the v2 version until v3 was tagged
+* **Resolved**: v3.0.0 is tagged (2026-11-07); `build.sh` also takes
+  `FRAMESHEET_VERSION`, which `scripts/release.sh` sets.
 
 ### 4. Hardware decoder kernel panic under many parallel decodes
 * **Description**: Twice (2026-11-02, 2026-11-03) the Mac rebooted with a

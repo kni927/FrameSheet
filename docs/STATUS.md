@@ -5,34 +5,22 @@ what comes next, what is on hold, and what waits on the owner. Rewrite it
 rather than append; keep it under about 40 lines. Rules are in `AGENTS.md`,
 decisions in `docs/DECISIONS.md`, and history in `docs/tasks/` and Git.
 
-Updated: 2026-11-05
+Updated: 2026-11-07
 
 ## Summary
 
-FrameSheet: macOS contact-sheet app, v2.3.1 released. v3 is a rebuild that
-reproduces MoviePrint v0.2.23 for Apple Silicon: decisions 14–22 in
-`docs/DECISIONS.md`, target behavior in `docs/V3_SPEC.md`.
+FrameSheet: macOS contact-sheet app, v3.0.0 released (2026-11-07, GitHub
+Release with a notarized zip): a rebuild that reproduces MoviePrint v0.2.23
+for Apple Silicon: decisions 14–27 in `docs/DECISIONS.md`, target behavior in
+`docs/V3_SPEC.md`, release notes in `docs/release-notes/v3.0.0.md`.
 
 ## Next
 
 - Spike follow-ups: measure 4K HEVC and HDR once the owner has such files;
   re-measure on the fastest Mac before raising defaults; re-check decode speed
   with the macOS 27 `AVAssetReaderOutput.Provider` API.
-- v3.0.0 order (owner, 2026-11-02): T03 → T03b → T04 → T04b → T05 → T06 →
-  T07 → T08 transforms, Save All, polish (all done) → v3.0.0 release with a
-  notarized zip on a GitHub Release (TF #02). The Codex pre-release audit's
-  findings are fixed on `main` (TF #03, 2026-11-05: 15 confirmed and fixed,
-  finding 12 refuted; `docs/tasks/2026-11-05-02-audit-fixes.md`), so the
-  second Codex audit's fixes are on `main` too (TF #03, 2026-11-06: A, B, C
-  fixed, D in KNOWN_ISSUES 7–11; `docs/tasks/2026-11-06-01-audit2-fixes.md`;
-  release dry run passed), and the changes-only third audit (Drive
-  `codex-audit-20261106-03.md`) found one blocker (the private-path check
-  fails open) plus a playback regression after Replace; both are fixed
-  (TF #03, `docs/tasks/2026-11-06-03-audit3-fixes.md`), the other ten are in
-  KNOWN_ISSUES 12–19, and the release dry run passed at d37cdb4 (no fourth
-  audit; owner, 2026-11-06). Then TF #02 releases. Manual checks of the first fixes: 1, 5, 10 OK; 9, 13,
-  14 skipped. UI round 1 done (`docs/tasks/2026-11-05-03-toolbar-menus.md`;
-  decision 27).
+- Releases: `scripts/release.sh X.Y.Z [--dry-run]` on the Mac with the notary
+  profile file; the owner tags the commit it prints; then `gh release create`.
 - Face follow-ups (owner, 2026-11-04): a "per shot" scope (the middle frame of
   each scene); more Vision workers on chips with two Neural Engines (measure
   first).
@@ -59,15 +47,7 @@ reproduces MoviePrint v0.2.23 for Apple Silicon: decisions 14–22 in
 
 ## Waiting on owner
 
-- Manual check of the second audit's fixes on the owner's Mac: B9 OK (Save
-  All, 2026-11-06); Save Sheet while playing OK (aae1e27); B10 and C
-  (Replace → undo with the player open; Play works after each, third
-  audit finding 3) still to check; B11 needs a file whose frames
-  decode only as neighbors (skip without one). Steps:
-  `docs/tasks/2026-11-06-01-audit2-fixes.md`.
-- Notary profile: the owner wrote its name to
-  `~/.config/framesheet/notary-profile` on the releasing Mac (2026-11-06);
-  `scripts/release.sh` has no default.
+- None.
 
 ## Notes
 
